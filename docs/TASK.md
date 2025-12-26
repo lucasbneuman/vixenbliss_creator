@@ -43,3 +43,10 @@ Cada tarea debe registrarse en **2 líneas**:
 [SM-004] E01-004 completada: Cloudflare R2 storage service + presigned URLs + S3 backup + API endpoints (upload, delete, list)
 [SM-005] E01-005 completada: Tests unitarios backend/frontend + conftest + Jest config (ÉPICA 01 COMPLETADA 100%)
 [BE-001] Celery workers implementado: celery_app.py + 9 tasks (content generation, LoRA training, social posting, chatbot, revenue)
+[SM-006] E02-001 completada: API generación facial multi-provider (Replicate SDXL, Leonardo, DALL-E 3) + routing inteligente + metadata extraction
+[SM-007] E02-002 completada: Dataset builder implementado - genera 50 imágenes/avatar con variaciones (ángulos, iluminación, expresiones, poses) + ZIP para training
+[SM-008] E02-003 completada: LoRA training integration con Replicate + Celery task async + progress tracking + cost tracking ($2.50/avatar)
+[SM-009] E02-004 completada: Sistema de prompts + 6 presets (fitness, lifestyle, glamorous, artistic, wellness, beach) + customización por niche
+[SM-010] E02-005 completada: Auto-bio generator con Claude 3.5 Sonnet/GPT-4 - genera biografía completa, personality traits, interests, goals, tone of voice
+[SM-011] E02-006 completada: Persona engine + OpenAI embeddings (ada-002) + pgvector storage para RAG + location/lifestyle context generator
+[SM-012] E02-007 completada: Cost tracking service - monitoreo por avatar, batch, y user + breakdown detallado + estimación de costos (ÉPICA 02 COMPLETADA 100%)

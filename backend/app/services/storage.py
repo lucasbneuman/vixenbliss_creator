@@ -1,0 +1,224 @@
+import boto3
+from botocore.client import Config
+from botocore.exceptions import ClientError
+from datetime import datetime, timedelta
+from typing import Optional
+import os
+import logging
+
+logger = logging.getLogger(__name__)
+
+class StorageService:
+    """
+    Cloudflare R2 Storage Service with presigned URLs
+    """
+
+    def __init__(self):
+        # Cloudflare R2 Configuration
+        self.r2_client = boto3.client(
+            's3',
+            endpoint_url=os.getenv('R2_ENDPOINT_URL'),
+            aws_access_key_id=os.getenv('R2_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('R2_SECRET_ACCESS_KEY'),
+            config=Config(signature_version='s3v4'),
+            region_name='auto'
+        )
+        self.r2_bucket = os.getenv('R2_BUCKET_NAME')
+
+        # AWS S3 Backup Configuration (optional)
+        self.s3_client = None
+        if os.getenv('AWS_ACCESS_KEY_ID'):
+            self.s3_client = boto3.client(
+                's3',
+                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+                region_name=os.getenv('AWS_REGION', 'us-east-1')
+            )
+            self.s3_bucket = os.getenv('S3_BUCKET_NAME')
+
+    def upload_file(
+        self,
+        file_content: bytes,
+        file_path: str,
+        content_type: str = 'application/octet-stream',
+        metadata: Optional[dict] = None
+    ) -> dict:
+        """
+        Upload file to R2 and optionally to S3 backup
+
+        Args:
+            file_content: File content as bytes
+            file_path: Path in bucket (e.g., 'avatars/uuid/image.jpg')
+            content_type: MIME type
+            metadata: Additional metadata
+
+        Returns:
+            dict with r2_url, s3_url (if backup enabled)
+        """
+        try:
+            # Upload to R2 (primary)
+            extra_args = {
+                'ContentType': content_type,
+            }
+            if metadata:
+                extra_args['Metadata'] = metadata
+
+            self.r2_client.put_object(
+                Bucket=self.r2_bucket,
+                Key=file_path,
+                Body=file_content,
+                **extra_args
+            )
+
+            r2_url = f"{os.getenv('R2_PUBLIC_URL')}/{file_path}"
+            logger.info(f"Uploaded to R2: {file_path}")
+
+            result = {"r2_url": r2_url}
+
+            # Backup to S3 (if configured)
+            if self.s3_client:
+                try:
+                    self.s3_client.put_object(
+                        Bucket=self.s3_bucket,
+                        Key=file_path,
+                        Body=file_content,
+                        **extra_args
+                    )
+                    result["s3_url"] = f"https://{self.s3_bucket}.s3.amazonaws.com/{file_path}"
+                    logger.info(f"Backed up to S3: {file_path}")
+                except ClientError as e:
+                    logger.warning(f"S3 backup failed: {str(e)}")
+
+            return result
+
+        except ClientError as e:
+            logger.error(f"Upload failed: {str(e)}")
+            raise
+
+    def generate_presigned_url(
+        self,
+        file_path: str,
+        expiration: int = 3600,
+        download_as: Optional[str] = None
+    ) -> str:
+        """
+        Generate presigned URL for secure access
+
+        Args:
+            file_path: Path in bucket
+            expiration: URL expiration time in seconds (default 1 hour)
+            download_as: Force download with this filename
+
+        Returns:
+            Presigned URL
+        """
+        try:
+            params = {
+                'Bucket': self.r2_bucket,
+                'Key': file_path
+            }
+
+            if download_as:
+                params['ResponseContentDisposition'] = f'attachment; filename="{download_as}"'
+
+            presigned_url = self.r2_client.generate_presigned_url(
+                'get_object',
+                Params=params,
+                ExpiresIn=expiration
+            )
+
+            return presigned_url
+
+        except ClientError as e:
+            logger.error(f"Presigned URL generation failed: {str(e)}")
+            raise
+
+    def delete_file(self, file_path: str, delete_backup: bool = True) -> bool:
+        """
+        Delete file from R2 and optionally from S3 backup
+
+        Args:
+            file_path: Path in bucket
+            delete_backup: Also delete from S3 backup
+
+        Returns:
+            Success status
+        """
+        try:
+            # Delete from R2
+            self.r2_client.delete_object(
+                Bucket=self.r2_bucket,
+                Key=file_path
+            )
+            logger.info(f"Deleted from R2: {file_path}")
+
+            # Delete from S3 backup
+            if delete_backup and self.s3_client:
+                try:
+                    self.s3_client.delete_object(
+                        Bucket=self.s3_bucket,
+                        Key=file_path
+                    )
+                    logger.info(f"Deleted from S3: {file_path}")
+                except ClientError as e:
+                    logger.warning(f"S3 deletion failed: {str(e)}")
+
+            return True
+
+        except ClientError as e:
+            logger.error(f"Deletion failed: {str(e)}")
+            return False
+
+    def list_files(self, prefix: str = '', max_keys: int = 1000) -> list:
+        """
+        List files in bucket with optional prefix
+
+        Args:
+            prefix: Filter by prefix (e.g., 'avatars/uuid/')
+            max_keys: Maximum number of keys to return
+
+        Returns:
+            List of file objects
+        """
+        try:
+            response = self.r2_client.list_objects_v2(
+                Bucket=self.r2_bucket,
+                Prefix=prefix,
+                MaxKeys=max_keys
+            )
+
+            return response.get('Contents', [])
+
+        except ClientError as e:
+            logger.error(f"List files failed: {str(e)}")
+            return []
+
+    def get_file_metadata(self, file_path: str) -> Optional[dict]:
+        """
+        Get file metadata from R2
+
+        Args:
+            file_path: Path in bucket
+
+        Returns:
+            File metadata
+        """
+        try:
+            response = self.r2_client.head_object(
+                Bucket=self.r2_bucket,
+                Key=file_path
+            )
+
+            return {
+                'size': response['ContentLength'],
+                'content_type': response['ContentType'],
+                'last_modified': response['LastModified'],
+                'metadata': response.get('Metadata', {})
+            }
+
+        except ClientError as e:
+            logger.error(f"Get metadata failed: {str(e)}")
+            return None
+
+# Singleton instance
+storage_service = StorageService()
