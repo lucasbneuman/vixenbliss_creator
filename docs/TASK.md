@@ -37,3 +37,9 @@ Cada tarea debe registrarse en **2 líneas**:
 ## Tareas Completadas
 
 <!-- Las tareas se registran aquí cronológicamente -->
+[SM-001] E01-001 completada: Next.js 14 App Router + shadcn/ui + TailwindCSS configurados (layout.tsx, globals.css, Button component)
+[SM-002] E01-002 completada: Docker Compose + Coolify config + GitHub Actions CI/CD (6 servicios orquestados)
+[SM-003] E01-003 completada: PostgreSQL schema + SQLAlchemy models + FastAPI main.py (10 tablas, pgvector, health endpoint)
+[SM-004] E01-004 completada: Cloudflare R2 storage service + presigned URLs + S3 backup + API endpoints (upload, delete, list)
+[SM-005] E01-005 completada: Tests unitarios backend/frontend + conftest + Jest config (ÉPICA 01 COMPLETADA 100%)
+[BE-001] Celery workers implementado: celery_app.py + 9 tasks (content generation, LoRA training, social posting, chatbot, revenue)
