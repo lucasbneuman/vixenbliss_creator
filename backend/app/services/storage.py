@@ -220,5 +220,139 @@ class StorageService:
             logger.error(f"Get metadata failed: {str(e)}")
             return None
 
+    def upload_content_batch(
+        self,
+        content_files: list[dict],
+        avatar_id: str
+    ) -> list[dict]:
+        """
+        Upload batch of content files to R2
+
+        Args:
+            content_files: List of dicts with 'file_content', 'file_name', 'content_type', 'metadata'
+            avatar_id: Avatar ID for organizing files
+
+        Returns:
+            List of upload results with URLs
+        """
+        results = []
+
+        for idx, file_info in enumerate(content_files):
+            try:
+                file_content = file_info['file_content']
+                file_name = file_info.get('file_name', f'content_{idx}.jpg')
+                content_type = file_info.get('content_type', 'image/jpeg')
+                metadata = file_info.get('metadata', {})
+
+                # Generate file path
+                file_path = f"content/{avatar_id}/{file_name}"
+
+                # Add batch metadata
+                metadata['batch_upload'] = 'true'
+                metadata['batch_index'] = str(idx)
+                metadata['avatar_id'] = avatar_id
+
+                # Upload file
+                upload_result = self.upload_file(
+                    file_content=file_content,
+                    file_path=file_path,
+                    content_type=content_type,
+                    metadata=metadata
+                )
+
+                results.append({
+                    'success': True,
+                    'file_name': file_name,
+                    'file_path': file_path,
+                    'r2_url': upload_result['r2_url'],
+                    's3_url': upload_result.get('s3_url'),
+                    'index': idx
+                })
+
+            except Exception as e:
+                logger.error(f"Batch upload failed for file {idx}: {str(e)}")
+                results.append({
+                    'success': False,
+                    'file_name': file_info.get('file_name', f'content_{idx}.jpg'),
+                    'error': str(e),
+                    'index': idx
+                })
+
+        return results
+
+    def get_cdn_url(self, file_path: str) -> str:
+        """
+        Get CDN URL for a file (public R2 URL)
+
+        Args:
+            file_path: Path in bucket
+
+        Returns:
+            Public CDN URL
+        """
+        # Cloudflare R2 public URL
+        public_url = f"{os.getenv('R2_PUBLIC_URL')}/{file_path}"
+
+        return public_url
+
+    def get_cdn_urls_batch(self, file_paths: list[str]) -> list[str]:
+        """
+        Get CDN URLs for batch of files
+
+        Args:
+            file_paths: List of file paths in bucket
+
+        Returns:
+            List of public CDN URLs
+        """
+        return [self.get_cdn_url(path) for path in file_paths]
+
+    def download_file(self, file_path: str) -> Optional[bytes]:
+        """
+        Download file content from R2
+
+        Args:
+            file_path: Path in bucket
+
+        Returns:
+            File content as bytes
+        """
+        try:
+            response = self.r2_client.get_object(
+                Bucket=self.r2_bucket,
+                Key=file_path
+            )
+
+            return response['Body'].read()
+
+        except ClientError as e:
+            logger.error(f"Download failed: {str(e)}")
+            return None
+
+    def copy_file(self, source_path: str, destination_path: str) -> bool:
+        """
+        Copy file within R2 bucket
+
+        Args:
+            source_path: Source file path
+            destination_path: Destination file path
+
+        Returns:
+            Success status
+        """
+        try:
+            self.r2_client.copy_object(
+                Bucket=self.r2_bucket,
+                CopySource={'Bucket': self.r2_bucket, 'Key': source_path},
+                Key=destination_path
+            )
+
+            logger.info(f"Copied {source_path} to {destination_path}")
+            return True
+
+        except ClientError as e:
+            logger.error(f"Copy failed: {str(e)}")
+            return False
+
 # Singleton instance
 storage_service = StorageService()

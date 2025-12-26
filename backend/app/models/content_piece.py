@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer, Float
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -18,6 +18,11 @@ class ContentPiece(Base):
     hook_text = Column(Text)
     metadata = Column(JSONB, default={})
     safety_rating = Column(String(20))  # safe, suggestive, borderline
+
+    # Premium content fields (E07-001)
+    explicitness_level = Column(Integer, nullable=True)  # 1-10 (1=soft, 10=explicit)
+    price_usd = Column(Float, nullable=True)  # Price for premium packs
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     published_at = Column(DateTime(timezone=True))
 

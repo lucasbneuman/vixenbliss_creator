@@ -45,33 +45,114 @@ def update_avatar_statistics():
     return {"status": "success", "timestamp": datetime.utcnow().isoformat()}
 
 
-@celery_app.task(name="app.workers.tasks.generate_content_batch")
-def generate_content_batch(avatar_id: str, count: int = 50):
+@celery_app.task(name="app.workers.tasks.generate_content_batch", bind=True)
+def generate_content_batch(
+    self,
+    avatar_id: str,
+    num_pieces: int = 50,
+    platform: str = "instagram",
+    tier_distribution: dict = None,
+    include_hooks: bool = True,
+    safety_check: bool = True,
+    upload_to_storage: bool = True
+):
     """
-    Generate batch of content pieces for an avatar (triggered manually).
+    Generate batch of content pieces for an avatar (ÉPICA 03 - E03-005).
 
     Args:
         avatar_id: UUID of the avatar
-        count: Number of content pieces to generate (default: 50)
+        num_pieces: Number of content pieces to generate (default: 50)
+        platform: Target platform for hooks
+        tier_distribution: Distribution of content tiers
+        include_hooks: Whether to generate hooks
+        safety_check: Whether to run safety checks
+        upload_to_storage: Whether to upload to R2
     """
-    logger.info(f"Starting content generation for avatar {avatar_id}...")
+    import asyncio
+    from app.database import SessionLocal
+    from app.models.avatar import Avatar
+    from app.services.batch_processor import batch_processor, BatchProcessorConfig
+    from app.services.hook_generator import Platform
+    from uuid import UUID
 
-    # TODO: Implement content generation logic (ÉPICA 03)
-    # 1. Get avatar LoRA model
-    # 2. Select templates from library
-    # 3. Generate images using Replicate
-    # 4. Generate hooks using LLM
-    # 5. Run safety checks
-    # 6. Upload to R2
-    # 7. Save to content_pieces table
+    logger.info(f"Starting batch content generation for avatar {avatar_id}...")
 
-    logger.info(f"Generated {count} content pieces for avatar {avatar_id}")
-    return {
-        "status": "success",
-        "avatar_id": avatar_id,
-        "count": count,
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    db = SessionLocal()
+
+    try:
+        # Get avatar
+        avatar = db.query(Avatar).filter(Avatar.id == UUID(avatar_id)).first()
+        if not avatar:
+            raise ValueError(f"Avatar {avatar_id} not found")
+
+        if not avatar.lora_weights_url:
+            raise ValueError(f"Avatar {avatar_id} has no trained LoRA weights")
+
+        # Update task state
+        self.update_state(
+            state="STARTED",
+            meta={
+                "progress": 0,
+                "stage": "Initializing",
+                "num_pieces": num_pieces
+            }
+        )
+
+        # Create batch processor config
+        config = BatchProcessorConfig(
+            num_pieces=num_pieces,
+            platform=Platform(platform),
+            tier_distribution=tier_distribution,
+            include_hooks=include_hooks,
+            safety_check=safety_check,
+            upload_to_storage=upload_to_storage
+        )
+
+        # Update state: template selection
+        self.update_state(
+            state="STARTED",
+            meta={
+                "progress": 10,
+                "stage": "Selecting templates",
+                "num_pieces": num_pieces
+            }
+        )
+
+        # Process batch
+        result = asyncio.run(
+            batch_processor.process_batch(
+                db=db,
+                avatar=avatar,
+                config=config
+            )
+        )
+
+        # Update state: generation complete
+        self.update_state(
+            state="STARTED",
+            meta={
+                "progress": 100,
+                "stage": "Complete",
+                "num_pieces": result["total_pieces"]
+            }
+        )
+
+        logger.info(f"Generated {result['total_pieces']} content pieces for avatar {avatar_id}")
+
+        return {
+            "status": "success",
+            "avatar_id": avatar_id,
+            "total_pieces": result["total_pieces"],
+            "statistics": result["statistics"],
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Batch content generation failed for avatar {avatar_id}: {str(e)}")
+        raise
+
+    finally:
+        db.close()
 
 
 @celery_app.task(name="app.workers.tasks.train_lora_task", bind=True)
@@ -239,54 +320,278 @@ def schedule_social_post(content_id: str, platform: str, scheduled_time: str):
     }
 
 
-@celery_app.task(name="app.workers.tasks.publish_social_post")
-def publish_social_post(scheduled_post_id: str):
+@celery_app.task(name="app.workers.tasks.publish_social_post", bind=True)
+def publish_social_post(self, scheduled_post_id: str):
     """
     Publish scheduled social media post (triggered by Celery Beat).
 
     Args:
         scheduled_post_id: UUID of scheduled post
+
+    E04-001 & E04-002: Auto-publishing
+    E04-006: Auto-retry with exponential backoff
     """
+    import asyncio
+    from app.database import SessionLocal
+    from app.models.social_account import ScheduledPost, SocialAccount, Platform
+    from app.models.content_piece import ContentPiece
+    from app.services.instagram_integration import instagram_service
+    from app.services.tiktok_integration import tiktok_service
+    from app.services.smart_scheduler import smart_scheduler
+    from uuid import UUID
+
     logger.info(f"Publishing scheduled post {scheduled_post_id}")
 
-    # TODO: Implement publishing logic (ÉPICA 04)
-    # 1. Get content piece and platform account
-    # 2. Upload media to platform API
-    # 3. Create post with caption
-    # 4. Update scheduled_post status
-    # 5. Handle errors with retry logic
+    db = SessionLocal()
 
-    return {
-        "status": "published",
-        "scheduled_post_id": scheduled_post_id,
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    try:
+        # Get scheduled post
+        scheduled_post = db.query(ScheduledPost).filter(
+            ScheduledPost.id == UUID(scheduled_post_id)
+        ).first()
+
+        if not scheduled_post:
+            raise ValueError(f"Scheduled post {scheduled_post_id} not found")
+
+        if scheduled_post.status != "pending":
+            logger.warning(f"Post {scheduled_post_id} already processed (status: {scheduled_post.status})")
+            return {"status": "skipped", "reason": f"Post already {scheduled_post.status}"}
+
+        # Get social account
+        social_account = db.query(SocialAccount).filter(
+            SocialAccount.id == scheduled_post.social_account_id
+        ).first()
+
+        if not social_account:
+            raise ValueError(f"Social account not found")
+
+        # Get content piece
+        content_piece = db.query(ContentPiece).filter(
+            ContentPiece.id == scheduled_post.content_piece_id
+        ).first()
+
+        if not content_piece:
+            raise ValueError(f"Content piece not found")
+
+        # Check if account is healthy
+        if not social_account.is_healthy():
+            logger.warning(f"Account {social_account.id} is unhealthy, skipping post")
+            scheduled_post.status = "failed"
+            scheduled_post.error_message = f"Account unhealthy (status: {social_account.status.value})"
+            db.commit()
+            return {"status": "failed", "reason": "Account unhealthy"}
+
+        # Get platform service
+        if social_account.platform == Platform.INSTAGRAM:
+            service = instagram_service
+        elif social_account.platform == Platform.TIKTOK:
+            service = tiktok_service
+        else:
+            raise ValueError(f"Platform {social_account.platform.value} not supported")
+
+        # Decrypt access token
+        access_token = service.decrypt_token(social_account.access_token)
+
+        # Build caption with hashtags
+        caption = scheduled_post.caption or content_piece.hook_text or ""
+        hashtags = scheduled_post.hashtags or []
+
+        # Publish with retry (E04-006: Auto-retry)
+        result = asyncio.run(
+            service.publish_with_retry(
+                access_token=access_token,
+                media_urls=[content_piece.url],
+                caption=caption,
+                hashtags=hashtags,
+                max_retries=3
+            )
+        )
+
+        # Update scheduled post
+        scheduled_post.status = "published"
+        scheduled_post.published_at = datetime.utcnow()
+        scheduled_post.platform_post_id = result.get("post_id")
+        scheduled_post.platform_url = result.get("platform_url")
+
+        # Update social account last post time
+        social_account.last_post_at = datetime.utcnow()
+
+        db.commit()
+
+        logger.info(f"Successfully published post {scheduled_post_id}")
+
+        return {
+            "status": "published",
+            "scheduled_post_id": scheduled_post_id,
+            "platform_post_id": result.get("post_id"),
+            "platform_url": result.get("platform_url"),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to publish post {scheduled_post_id}: {str(e)}")
+
+        # Get scheduled post for retry logic
+        scheduled_post = db.query(ScheduledPost).filter(
+            ScheduledPost.id == UUID(scheduled_post_id)
+        ).first()
+
+        if scheduled_post and scheduled_post.can_retry():
+            # Reschedule with exponential backoff (E04-006)
+            smart_scheduler.reschedule_failed_post(db, scheduled_post)
+            logger.info(f"Rescheduled post {scheduled_post_id} for retry")
+        else:
+            # Max retries exceeded
+            if scheduled_post:
+                scheduled_post.status = "failed"
+                scheduled_post.error_message = str(e)
+                db.commit()
+
+        raise
+
+    finally:
+        db.close()
 
 
 @celery_app.task(name="app.workers.tasks.process_dm_message")
-def process_dm_message(conversation_id: str, message_text: str):
+def process_dm_message(conversation_id: str, message_text: str, platform: str = "instagram"):
     """
-    Process incoming DM message with chatbot (triggered by webhook).
+    Process incoming DM message with chatbot (triggered by webhook) - E06-001
 
     Args:
         conversation_id: UUID of conversation
         message_text: Message text from user
+        platform: Platform name (instagram, tiktok)
     """
-    logger.info(f"Processing DM for conversation {conversation_id}")
+    import asyncio
+    from uuid import UUID
+    from app.database import SessionLocal
+    from app.models.conversation import Conversation
+    from app.models.social_account import SocialAccount
+    from app.services.chatbot_agent import chatbot_agent
+    from app.services.instagram_integration import instagram_service
+    from app.services.tiktok_integration import tiktok_service
 
-    # TODO: Implement chatbot logic (ÉPICA 06)
-    # 1. Get avatar personality context
-    # 2. Get conversation history
-    # 3. Call LangGraph agent for response
-    # 4. Update lead score
-    # 5. Detect upsell opportunity
-    # 6. Send response via platform API
+    logger.info(f"Processing DM for conversation {conversation_id} on {platform}")
 
-    return {
-        "status": "processed",
-        "conversation_id": conversation_id,
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    db = SessionLocal()
+
+    try:
+        # Get conversation
+        conversation = db.query(Conversation).filter(
+            Conversation.id == UUID(conversation_id)
+        ).first()
+
+        if not conversation:
+            raise ValueError(f"Conversation {conversation_id} not found")
+
+        # Process message with chatbot agent
+        bot_response_data = asyncio.run(
+            chatbot_agent.process_message(
+                db=db,
+                conversation=conversation,
+                user_message_text=message_text
+            )
+        )
+
+        # Get social account for sending response
+        social_account = db.query(SocialAccount).filter(
+            SocialAccount.id == conversation.social_account_id
+        ).first()
+
+        if not social_account:
+            raise ValueError(f"Social account not found")
+
+        # Send bot response via platform API
+        if platform == "instagram":
+            service = instagram_service
+        elif platform == "tiktok":
+            service = tiktok_service
+        else:
+            raise ValueError(f"Platform {platform} not supported")
+
+        # Decrypt access token
+        access_token = service.decrypt_token(social_account.access_token)
+
+        # Extract recipient ID from platform conversation ID
+        # Format: "instagram_<sender_id>_<recipient_id>" or "tiktok_<sender_id>_<recipient_id>"
+        parts = conversation.platform_conversation_id.split("_")
+        recipient_id = parts[1] if len(parts) >= 3 else None
+
+        if not recipient_id:
+            raise ValueError(f"Could not extract recipient ID from {conversation.platform_conversation_id}")
+
+        # Send response
+        asyncio.run(
+            service.send_dm(
+                access_token=access_token,
+                recipient_id=recipient_id,
+                message_text=bot_response_data["bot_response"]
+            )
+        )
+
+        logger.info(f"Sent bot response for conversation {conversation_id}: {bot_response_data['bot_response'][:100]}")
+
+        # Check if upsell should be triggered
+        if bot_response_data.get("should_upsell"):
+            logger.info(f"Upsell opportunity detected for conversation {conversation_id}")
+            # Could trigger another task to handle upsell tracking
+
+        return {
+            "status": "processed",
+            "conversation_id": conversation_id,
+            "bot_response": bot_response_data["bot_response"],
+            "lead_score": bot_response_data["lead_score"],
+            "funnel_stage": bot_response_data["funnel_stage"],
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to process DM for conversation {conversation_id}: {str(e)}")
+        raise
+
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.workers.tasks.monitor_account_health")
+def monitor_account_health():
+    """
+    Run health checks on all social media accounts (scheduled hourly).
+
+    E04-005: Health monitoring automation
+    """
+    import asyncio
+    from app.database import SessionLocal
+    from app.services.health_monitoring import health_monitoring_service
+
+    logger.info("Starting health monitoring for all accounts...")
+
+    db = SessionLocal()
+
+    try:
+        # Check all accounts
+        results = asyncio.run(health_monitoring_service.check_all_accounts(db))
+
+        # Auto-pause unhealthy accounts
+        paused_count = asyncio.run(health_monitoring_service.auto_pause_unhealthy_accounts(db))
+
+        logger.info(f"Health check completed: {len(results)} accounts checked, {paused_count} auto-paused")
+
+        return {
+            "status": "success",
+            "accounts_checked": len(results),
+            "accounts_paused": paused_count,
+            "results": results,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Health monitoring failed: {str(e)}")
+        raise
+
+    finally:
+        db.close()
 
 
 @celery_app.task(name="app.workers.tasks.calculate_daily_revenue")

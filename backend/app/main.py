@@ -50,12 +50,13 @@ async def health_check(db: Session = Depends(get_db)):
         }
 
 # API Routes
-from app.api import identities, storage, loras, costs
+from app.api import identities, storage, loras, costs, content
 
 app.include_router(identities.router)
 app.include_router(storage.router)
 app.include_router(loras.router)
 app.include_router(costs.router)
+app.include_router(content.router)
 
 if __name__ == "__main__":
     import uvicorn
