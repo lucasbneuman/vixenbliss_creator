@@ -59,6 +59,9 @@ coverage/
 *~
 .DS_Store
 
+# Local assistant settings
+.claude/settings.local.json
+
 # Docker
 *.log
 docker-compose.override.yml
