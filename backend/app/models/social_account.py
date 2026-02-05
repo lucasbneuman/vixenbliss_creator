@@ -4,13 +4,12 @@ Stores connected social media accounts (Instagram, TikTok)
 """
 
 from sqlalchemy import Column, String, DateTime, JSON, Boolean, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
 import enum
 
-from app.database import Base
+from app.database import Base, GUID
 
 
 class Platform(str, enum.Enum):
@@ -33,11 +32,11 @@ class SocialAccount(Base):
 
     __tablename__ = "social_accounts"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
 
     # Account details
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    avatar_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    user_id = Column(GUID, nullable=False, index=True)
+    avatar_id = Column(GUID, nullable=True, index=True)
     platform = Column(SQLEnum(Platform), nullable=False, index=True)
 
     # Platform-specific identifiers
@@ -56,7 +55,7 @@ class SocialAccount(Base):
     last_health_check = Column(DateTime, nullable=True)
 
     # Platform metadata
-    metadata = Column(JSON, default=dict)  # Followers, verified status, etc.
+    meta_data = Column(JSON, default=dict)  # Followers, verified status, etc.
 
     # Settings
     auto_post_enabled = Column(Boolean, default=True)
@@ -89,12 +88,12 @@ class ScheduledPost(Base):
 
     __tablename__ = "scheduled_posts"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
 
     # Relations
-    social_account_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    content_piece_id = Column(UUID(as_uuid=True), nullable=False)
-    avatar_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    social_account_id = Column(GUID, nullable=False, index=True)
+    content_piece_id = Column(GUID, nullable=False)
+    avatar_id = Column(GUID, nullable=False, index=True)
 
     # Scheduling
     scheduled_time = Column(DateTime, nullable=False, index=True)
@@ -116,7 +115,7 @@ class ScheduledPost(Base):
     retry_count = Column(String, default="0")
 
     # Metadata
-    metadata = Column(JSON, default=dict)
+    meta_data = Column(JSON, default=dict)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -126,6 +126,30 @@ class AvatarCreateRequest(BaseModel):
         }
 
 
+class AvatarCreateWithLoRARequest(BaseModel):
+    """Request to create avatar with pre-trained LoRA (skip training)"""
+    name: str = Field(..., min_length=1, max_length=255)
+    niche: str = Field(..., description="Target niche (e.g., 'fitness', 'lifestyle', 'fashion')")
+    aesthetic_style: str
+    lora_model_id: str = Field(..., description="Pre-trained LoRA model ID (e.g., Replicate model version)")
+    lora_weights_url: str = Field(..., description="URL to LoRA weights file (.safetensors)")
+    base_image_url: Optional[str] = Field(None, description="Optional reference image of the avatar")
+    bio: Optional[str] = Field(None, description="Avatar biography/personality description")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "name": "Sofia Fitness",
+                "niche": "fitness",
+                "aesthetic_style": "athletic_natural",
+                "lora_model_id": "ostris/flux-dev-lora-trainer:abc123",
+                "lora_weights_url": "https://replicate.delivery/pbxt/lora_weights.safetensors",
+                "base_image_url": "https://r2.vixenbliss.com/avatars/sofia-reference.jpg",
+                "bio": "Fitness enthusiast and wellness coach from Miami"
+            }
+        }
+
+
 class AvatarResponse(BaseModel):
     """Avatar details response"""
     id: UUID

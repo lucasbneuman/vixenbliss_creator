@@ -11,6 +11,7 @@ from typing import List
 from app.database import get_db
 from app.schemas.identity import (
     AvatarCreateRequest,
+    AvatarCreateWithLoRARequest,
     FacialGenerationRequest,
     FacialGenerationResponse,
     AvatarResponse
@@ -69,6 +70,44 @@ async def create_avatar(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Avatar creation failed: {str(e)}"
+        )
+
+
+@router.post("/avatars/with-lora", response_model=AvatarResponse)
+async def create_avatar_with_pretrained_lora(
+    request: AvatarCreateWithLoRARequest,
+    user_id: UUID,  # TODO: Extract from JWT token
+    db: Session = Depends(get_db)
+):
+    """
+    Create avatar with pre-trained LoRA weights (skip training)
+
+    **FAST TRACK**: This endpoint allows creating avatars with LoRAs
+    that were trained externally. Skips:
+    - Facial generation
+    - Dataset building (50 images)
+    - LoRA training (20-30 minutes)
+
+    Perfect for:
+    - Testing with pre-trained models
+    - Using LoRAs from Replicate/CivitAI
+    - Quick prototyping
+    - Production with externally trained models
+
+    The avatar will be created in "lora_ready" stage, immediately
+    ready for content generation (Sistema 2).
+    """
+    try:
+        result = await identity_service.create_avatar_with_pretrained_lora(
+            db=db,
+            user_id=user_id,
+            request=request
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Avatar creation with LoRA failed: {str(e)}"
         )
 
 

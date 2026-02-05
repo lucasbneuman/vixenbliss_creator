@@ -4,13 +4,12 @@ Database models for chatbot lead generation system (ÉPICA 06)
 """
 
 from sqlalchemy import Column, String, DateTime, JSON, Boolean, Integer, Float, Enum as SQLEnum, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
 import enum
 
-from app.database import Base
+from app.database import Base, GUID
 
 
 class ChannelType(str, enum.Enum):
@@ -52,12 +51,12 @@ class Conversation(Base):
 
     __tablename__ = "conversations"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
 
     # Relations
-    avatar_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    social_account_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    avatar_id = Column(GUID, nullable=False, index=True)
+    social_account_id = Column(GUID, nullable=False, index=True)
+    user_id = Column(GUID, nullable=False, index=True)
 
     # Platform details
     platform = Column(String, nullable=False, index=True)  # instagram, tiktok, twitter
@@ -90,7 +89,7 @@ class Conversation(Base):
     total_revenue = Column(Float, default=0.0)
 
     # A/B testing (E06-005)
-    ab_test_variant_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    ab_test_variant_id = Column(GUID, nullable=True, index=True)
     ab_test_name = Column(String, nullable=True)
 
     # Status
@@ -99,7 +98,7 @@ class Conversation(Base):
     last_message_at = Column(DateTime, nullable=True)
 
     # Metadata
-    metadata = Column(JSON, default=dict)  # Platform-specific data, preferences, notes
+    meta_data = Column(JSON, default=dict)  # Platform-specific data, preferences, notes
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
@@ -147,10 +146,10 @@ class Message(Base):
 
     __tablename__ = "messages"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
 
     # Relations
-    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    conversation_id = Column(GUID, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # Message details
     sender_type = Column(SQLEnum(SenderType), nullable=False, index=True)
@@ -171,7 +170,7 @@ class Message(Base):
     bot_fallback_triggered = Column(Boolean, default=False)
 
     # Metadata
-    metadata = Column(JSON, default=dict)
+    meta_data = Column(JSON, default=dict)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
@@ -192,12 +191,12 @@ class UpsellEvent(Base):
 
     __tablename__ = "upsell_events"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
 
     # Relations
-    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
-    avatar_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    conversation_id = Column(GUID, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    avatar_id = Column(GUID, nullable=False, index=True)
+    user_id = Column(GUID, nullable=False, index=True)
 
     # Offer details
     offer_type = Column(String, nullable=False, index=True)  # subscription_tier_1, tier_2, tier_3, custom_content, premium_pack
@@ -213,11 +212,11 @@ class UpsellEvent(Base):
     revenue_generated = Column(Float, default=0.0)
 
     # A/B testing
-    ab_test_variant_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    ab_test_variant_id = Column(GUID, nullable=True, index=True)
     pricing_strategy = Column(String, nullable=True)  # anchor_pricing, scarcity, urgency, social_proof
 
     # Metadata
-    metadata = Column(JSON, default=dict)
+    meta_data = Column(JSON, default=dict)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
@@ -238,7 +237,7 @@ class ABTestVariant(Base):
 
     __tablename__ = "ab_test_variants"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
 
     # Test configuration
     test_name = Column(String, nullable=False, index=True)  # welcome_message_test, pricing_test, objection_handling_test
@@ -265,7 +264,7 @@ class ABTestVariant(Base):
     is_winner = Column(Boolean, default=False)
 
     # Metadata
-    metadata = Column(JSON, default=dict)
+    meta_data = Column(JSON, default=dict)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

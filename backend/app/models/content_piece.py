@@ -1,22 +1,21 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer, Float
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer, Float, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
 
-from app.database import Base
+from app.database import Base, GUID
 
 class ContentPiece(Base):
     __tablename__ = "content_pieces"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    avatar_id = Column(UUID(as_uuid=True), ForeignKey("avatars.id", ondelete="CASCADE"), nullable=False)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
+    avatar_id = Column(GUID, ForeignKey("avatars.id", ondelete="CASCADE"), nullable=False)
     content_type = Column(String(50), nullable=False)  # image, video
     access_tier = Column(String(20), nullable=False, default="capa1")  # capa1, capa2, capa3
     url = Column(Text, nullable=False)
     thumbnail_url = Column(Text)
     hook_text = Column(Text)
-    metadata = Column(JSONB, default={})
+    meta_data = Column(JSON, default=dict)
     safety_rating = Column(String(20))  # safe, suggestive, borderline
 
     # Premium content fields (E07-001)

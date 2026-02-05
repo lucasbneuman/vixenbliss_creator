@@ -12,6 +12,7 @@ from app.models.avatar import Avatar
 from app.models.identity_component import IdentityComponent
 from app.schemas.identity import (
     AvatarCreateRequest,
+    AvatarCreateWithLoRARequest,
     FacialGenerationRequest,
     FacialGenerationResponse,
     AvatarResponse
@@ -127,6 +128,58 @@ class IdentityService:
             generation_time_seconds=0,
             provider=provider
         )
+
+    async def create_avatar_with_pretrained_lora(
+        self,
+        db: Session,
+        user_id: UUID,
+        request: AvatarCreateWithLoRARequest
+    ) -> AvatarResponse:
+        """
+        Create avatar with pre-trained LoRA weights (skip training)
+
+        Workflow:
+        1. Create avatar record with LoRA info
+        2. Optionally create bio identity component
+        3. Stage set to "lora_ready" (ready for content generation)
+
+        This allows using LoRAs trained externally without going through
+        the full dataset generation + training pipeline.
+        """
+
+        # Create avatar with LoRA already configured
+        avatar = Avatar(
+            user_id=user_id,
+            name=request.name,
+            stage="lora_ready",  # Skip to ready state
+            base_image_url=request.base_image_url,
+            lora_model_id=request.lora_model_id,
+            lora_weights_url=request.lora_weights_url,
+            niche=request.niche,
+            aesthetic_style=request.aesthetic_style,
+            meta_data={
+                "pretrained_lora": True,
+                "skipped_training": True,
+                "creation_method": "with_pretrained_lora"
+            }
+        )
+
+        db.add(avatar)
+        db.commit()
+        db.refresh(avatar)
+
+        # If bio provided, create identity component
+        if request.bio:
+            identity_comp = IdentityComponent(
+                avatar_id=avatar.id,
+                component_type="biography",
+                content={"bio": request.bio},
+                metadata={"source": "user_provided"}
+            )
+            db.add(identity_comp)
+            db.commit()
+
+        return AvatarResponse.model_validate(avatar)
 
     def get_avatar(self, db: Session, avatar_id: UUID) -> Optional[Avatar]:
         """Retrieve avatar by ID"""

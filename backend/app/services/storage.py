@@ -15,15 +15,19 @@ class StorageService:
 
     def __init__(self):
         # Cloudflare R2 Configuration
-        self.r2_client = boto3.client(
-            's3',
-            endpoint_url=os.getenv('R2_ENDPOINT_URL'),
-            aws_access_key_id=os.getenv('R2_ACCESS_KEY_ID'),
-            aws_secret_access_key=os.getenv('R2_SECRET_ACCESS_KEY'),
-            config=Config(signature_version='s3v4'),
-            region_name='auto'
-        )
-        self.r2_bucket = os.getenv('R2_BUCKET_NAME')
+        self.r2_client = None
+        self.r2_bucket = None
+
+        if os.getenv('R2_ENDPOINT_URL'):
+            self.r2_client = boto3.client(
+                's3',
+                endpoint_url=os.getenv('R2_ENDPOINT_URL'),
+                aws_access_key_id=os.getenv('R2_ACCESS_KEY_ID'),
+                aws_secret_access_key=os.getenv('R2_SECRET_ACCESS_KEY'),
+                config=Config(signature_version='s3v4'),
+                region_name='auto'
+            )
+            self.r2_bucket = os.getenv('R2_BUCKET_NAME')
 
         # AWS S3 Backup Configuration (optional)
         self.s3_client = None
@@ -55,6 +59,9 @@ class StorageService:
         Returns:
             dict with r2_url, s3_url (if backup enabled)
         """
+        if not self.r2_client:
+            raise ValueError("R2 storage is not configured. Please set R2_ENDPOINT_URL and related environment variables.")
+
         try:
             # Upload to R2 (primary)
             extra_args = {

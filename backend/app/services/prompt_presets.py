@@ -3,7 +3,7 @@ Prompt Presets Service
 Manages customized prompts and style presets for avatar generation
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from pydantic import BaseModel
 
 
@@ -16,7 +16,7 @@ class PromptPreset(BaseModel):
     style_keywords: List[str]
     lighting_suggestions: List[str]
     pose_suggestions: List[str]
-    recommended_params: Dict[str, any]
+    recommended_params: Dict[str, Any]
 
 
 # Built-in presets
