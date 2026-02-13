@@ -145,7 +145,7 @@ export default function ContentFactoryPage() {
   const getStatusIcon = (status: ContentBatch["status"]) => {
     switch (status) {
       case "completed":
-        return <CheckCircle2 className="h-4 w-4 text-green-500" />
+        return <CheckCircle2 className="h-4 w-4 text-brand-100" />
       case "processing":
         return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
       case "queued":
@@ -157,7 +157,7 @@ export default function ContentFactoryPage() {
 
   const getStatusBadge = (status: ContentBatch["status"]) => {
     const configs = {
-      completed: { variant: "default" as const, className: "bg-emerald-600/80 text-slate-100" },
+      completed: { variant: "default" as const, className: "bg-[hsl(var(--brand-1))]/85 text-slate-100" },
       processing: { variant: "default" as const, className: "bg-sky-600/80 text-slate-100" },
       queued: { variant: "default" as const, className: "bg-yellow-600 text-slate-100" },
       failed: { variant: "destructive" as const, className: "" }
@@ -176,7 +176,7 @@ export default function ContentFactoryPage() {
     return (
       <div className="space-y-8">
         <div>
-          <h1 className="text-3xl font-semibold text-high">Crear contenido</h1>
+          <h1 className="text-3xl font-semibold text-high">Sistema 2: Fabrica de Contenido</h1>
           <p className="text-soft mt-1">Cargando datos...</p>
         </div>
         <LoadingSpinner />
@@ -187,9 +187,9 @@ export default function ContentFactoryPage() {
   return (
     <div className="space-y-8">
       <div className="space-y-2">
-        <h1 className="text-3xl font-semibold text-high">Crear contenido</h1>
+        <h1 className="text-3xl font-semibold text-high">Sistema 2: Fabrica de Contenido</h1>
         <p className="text-soft max-w-2xl">
-          Selecciona un avatar, elige una plantilla y genera un lote.
+          Selecciona un avatar, define prompts y produce lotes sin romper contratos API v1.
         </p>
       </div>
 
@@ -366,7 +366,7 @@ export default function ContentFactoryPage() {
               <div className="flex items-center justify-between">
                 <p className="font-semibold text-lg">Total</p>
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-green-500">
+                  <div className="text-2xl font-bold text-brand-100">
                     ${costSummary?.total_cost?.toFixed(2) || "0.00"}
                   </div>
                   <div className="text-xs text-soft">últimos 30 días</div>
@@ -421,3 +421,4 @@ export default function ContentFactoryPage() {
     </div>
   )
 }
+

@@ -103,3 +103,5 @@ Cada tarea debe registrarse en **2 líneas**:
 [FE-008] UX improvements implementados - jerarquía visual clara (8 secciones organizadas), mejor legibilidad (tipografía consistente, espaciado grid 8px, contraste adecuado), navegación intuitiva (estados activos claros, hover states sutiles), diseño profesional estilo Linear/Vercel/Notion
 [FE-009] Documentación UX creada - frontend/UX_IMPROVEMENTS.md (análisis detallado cambios, before/after comparison, performance benefits) + CLEAN_UI_SUMMARY.md (resumen ejecutivo, code reduction metrics, philosophy clean design)
 [FE-010] Frontend alineado a API backend - "use client" en ModelTable y ajustes endpoints/content/costs para compatibilidad (avatars, templates, upload-batch, summary)
+[FE-011] Dark Vixen base UI S1/S2: shell global implementado con sidebar fija, topbar con breadcrumb/busqueda y drawer movil, manteniendo contratos API v1 sin cambios.
+[FE-012] Validacion frontend completada para este alcance: lint + tests ejecutados, ajuste de test home y compatibilidad de payloads S1 (/avatars) y S2 (/factory) preservada.

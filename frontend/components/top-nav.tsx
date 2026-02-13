@@ -2,103 +2,62 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { cn } from "@/lib/utils"
-import {
-  LayoutDashboard,
-  Target,
-  Factory,
-  Antenna,
-  DollarSign,
-  Settings,
-  TrendingUp,
-  Sparkles
-} from "lucide-react"
+import { getRouteLabel } from "@/components/navigation"
+import { Bell, Menu, Search, UserCircle2 } from "lucide-react"
 
-const routes = [
-  {
-    label: "Dashboard",
-    icon: LayoutDashboard,
-    href: "/",
-  },
-  {
-    label: "Models",
-    icon: Target,
-    href: "/models",
-  },
-  {
-    label: "Content Factory",
-    icon: Factory,
-    href: "/factory",
-  },
-  {
-    label: "Distribution",
-    icon: Antenna,
-    href: "/distribution",
-  },
-  {
-    label: "Revenue",
-    icon: DollarSign,
-    href: "/revenue",
-  },
-  {
-    label: "Analytics",
-    icon: TrendingUp,
-    href: "/analytics",
-  },
-]
+type TopNavProps = {
+  onMenuToggle: () => void
+}
 
-export default function TopNav() {
+export default function TopNav({ onMenuToggle }: TopNavProps) {
   const pathname = usePathname()
+  const current = getRouteLabel(pathname)
 
   return (
-    <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/85 backdrop-blur">
-      <div className="mx-auto flex max-w-[1320px] items-center gap-6 px-5 py-3.5">
-        <Link href="/" className="flex items-center gap-3 group shrink-0">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-[0_8px_24px_rgba(16,185,129,0.25)]">
-            <Sparkles className="h-5 w-5" />
-          </div>
-          <div className="hidden sm:block">
-            <h1 className="text-sm font-semibold text-high">Vixen Bliss Creator</h1>
-            <p className="text-[11px] text-soft">Premium Control Center</p>
-          </div>
-        </Link>
-
-        <nav className="flex flex-1 items-center justify-center gap-1.5 overflow-x-auto">
-          {routes.map((route) => {
-            const isActive = pathname === route.href
-            return (
-              <Link
-                key={route.href}
-                href={route.href}
-                className={cn(
-                  "flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition-colors",
-                  isActive
-                    ? "border-white/15 bg-white/10 text-white"
-                    : "border-transparent text-slate-300 hover:text-white hover:bg-white/10 hover:border-white/15"
-                )}
-              >
-                <route.icon className={cn(
-                  "h-4 w-4 shrink-0",
-                  isActive ? "text-emerald-300" : "text-slate-300"
-                )} />
-                <span className="whitespace-nowrap">{route.label}</span>
-              </Link>
-            )
-          })}
-        </nav>
-
-        <div className="hidden lg:flex items-center gap-3 shrink-0">
-          <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-200">
-            <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
-            <span className="font-semibold text-emerald-300">Live</span>
-          </div>
-          <Link
-            href="/settings"
-            className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
+    <header className="sticky top-0 z-40 border-b border-white/10 bg-background/95 backdrop-blur">
+      <div className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-soft lg:hidden"
+            onClick={onMenuToggle}
+            aria-label="Abrir menu"
           >
-            <Settings className="h-4 w-4" />
-            Settings
-          </Link>
+            <Menu className="h-4 w-4" />
+          </button>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-xs text-soft">
+              <Link href="/" className="hover:text-high">Vixen Creator</Link>
+              <span>/</span>
+              <span className="truncate">{current}</span>
+            </div>
+            <h2 className="truncate text-sm font-semibold text-high">{current}</h2>
+          </div>
+        </div>
+
+        <div className="hidden flex-1 items-center justify-center md:flex">
+          <label className="flex w-full max-w-md items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+            <Search className="h-4 w-4 text-soft" />
+            <input
+              className="w-full bg-transparent text-sm text-high placeholder:text-soft focus:outline-none"
+              placeholder="Buscar avatar, lote o accion..."
+              aria-label="Buscar"
+            />
+          </label>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-soft hover:text-high"
+            aria-label="Notificaciones"
+          >
+            <Bell className="h-4 w-4" />
+          </button>
+          <div className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-soft">
+            <UserCircle2 className="h-4 w-4 text-brand-100" />
+            <span className="hidden sm:inline">Usuario</span>
+          </div>
         </div>
       </div>
     </header>

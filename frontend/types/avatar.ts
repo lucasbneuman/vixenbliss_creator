@@ -43,14 +43,15 @@ export interface Model {
 
 export interface AvatarCreateRequest {
   name: string
-  niche?: string
-  aesthetic_style?: string
-  facial_characteristics?: {
-    age_range?: string
+  niche: string
+  aesthetic_style: string
+  lora_model_id?: string
+  facial_generation: {
+    age_range: "18-25" | "26-35" | "36-45" | "46+"
     ethnicity?: string
-    hair_color?: string
-    eye_color?: string
-    body_type?: string
+    aesthetic_style: string
+    gender: "female" | "male" | "non-binary"
+    custom_prompt?: string
   }
 }
 

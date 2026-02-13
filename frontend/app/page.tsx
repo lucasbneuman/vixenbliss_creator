@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { RevenueChart } from "@/components/revenue-chart"
 
 export default function Home() {
@@ -15,7 +16,27 @@ export default function Home() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-semibold text-high">Revenue Breakdown</h1>
+      <div className="space-y-2">
+        <h1 className="text-3xl font-semibold text-high">Panel</h1>
+        <p className="text-soft">Vista general operativa para Sistemas 1 y 2.</p>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <Link
+          href="/avatars"
+          className="inline-flex items-center justify-center rounded-lg border border-white/15 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-high hover:bg-white/[0.1]"
+        >
+          Crear avatar
+        </Link>
+        <Link
+          href="/factory"
+          className="inline-flex items-center justify-center rounded-lg bg-brand-gradient px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+        >
+          Crear contenido
+        </Link>
+      </div>
+
+      <h2 className="text-2xl font-semibold text-high">Revenue Breakdown</h2>
       <RevenueChart
         data={revenueData}
         title="Revenue Breakdown"

@@ -3,146 +3,104 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { navRoutes } from "@/components/navigation"
 import {
   LayoutDashboard,
-  Target,
+  UserRound,
   Factory,
   Antenna,
   DollarSign,
   Settings,
-  TrendingUp,
-  Sparkles
+  Sparkles,
+  CircleDot,
 } from "lucide-react"
 
-const routes = [
-  {
-    label: "Dashboard",
-    icon: LayoutDashboard,
-    href: "/",
-  },
-  {
-    label: "Models",
-    icon: Target,
-    href: "/models",
-  },
-  {
-    label: "Content Factory",
-    icon: Factory,
-    href: "/factory",
-  },
-  {
-    label: "Distribution",
-    icon: Antenna,
-    href: "/distribution",
-  },
-  {
-    label: "Revenue",
-    icon: DollarSign,
-    href: "/revenue",
-  },
-  {
-    label: "Analytics",
-    icon: TrendingUp,
-    href: "/analytics",
-  },
-]
+type SidebarProps = {
+  onNavigate?: () => void
+}
 
-export default function Sidebar() {
+const iconByPath = {
+  "/": LayoutDashboard,
+  "/avatars": UserRound,
+  "/factory": Factory,
+  "/distribution": Antenna,
+  "/revenue": DollarSign,
+} as const
+
+export default function Sidebar({ onNavigate }: SidebarProps) {
   const pathname = usePathname()
 
   return (
-    <div className="flex flex-col h-full text-slate-100 bg-slate-950/90">
-      {/* Logo */}
-      <div className="p-6 border-b border-white/10">
-        <Link href="/" className="flex items-center gap-3 group">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-slate-100 shadow-[0_10px_30px_rgba(16,185,129,0.35)]">
+    <div className="flex h-full flex-col bg-background text-foreground">
+      <div className="border-b border-white/10 px-5 py-5">
+        <Link href="/" className="flex items-center gap-3" onClick={onNavigate}>
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-[0_10px_30px_rgba(107,33,168,0.35)]">
             <Sparkles className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-high">Vixen Bliss Creator</h1>
-            <p className="text-xs text-soft">Premium Control Center</p>
+            <h1 className="text-sm font-semibold text-high">Vixen Creator</h1>
+            <p className="text-xs text-soft">S1 + S2 Control</p>
           </div>
         </Link>
       </div>
 
-      {/* Key Metrics Summary */}
-      <div className="px-5 py-5 border-b border-white/10">
-        <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-soft uppercase tracking-[0.2em]">MRR</span>
-            <span className="text-sm font-semibold text-emerald-300">$156.8K</span>
+      <div className="border-b border-white/10 px-5 py-4">
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          <div className="flex items-center justify-between text-xs">
+            <span className="uppercase tracking-[0.2em] text-soft">Estado</span>
+            <span className="inline-flex items-center gap-1 text-brand-100">
+              <CircleDot className="h-3 w-3" />
+              Activo
+            </span>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <div className="text-xs text-soft">Models</div>
-              <div className="font-semibold text-high">48</div>
-            </div>
-            <div>
-              <div className="text-xs text-soft">Subscribers</div>
-              <div className="font-semibold text-high">3,742</div>
-            </div>
-          </div>
+          <p className="mt-2 text-xs text-soft">Base visual dark para Sistemas 1 y 2.</p>
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-4 py-5 space-y-1.5">
-        <div className="px-2 pb-2 text-[11px] uppercase tracking-[0.25em] text-soft">
-          Core
-        </div>
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-2 space-y-1.5">
-          {routes.map((route) => {
+      <nav className="flex-1 px-3 py-4">
+        <div className="mb-2 px-2 text-[11px] uppercase tracking-[0.24em] text-soft">Navegacion</div>
+        <div className="space-y-1">
+          {navRoutes.map((route) => {
+            const Icon = iconByPath[route.href as keyof typeof iconByPath]
             const isActive = pathname === route.href
             return (
               <Link
                 key={route.href}
                 href={route.href}
+                onClick={onNavigate}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors border border-transparent",
+                  "flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition-colors",
                   isActive
-                    ? "bg-white/15 text-high border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
-                    : "text-soft hover:text-high hover:bg-white/5 hover:border-white/10"
+                    ? "border-white/15 bg-white/10 text-high"
+                    : "border-transparent text-soft hover:border-white/10 hover:bg-white/[0.04] hover:text-high"
                 )}
               >
-                <div className={cn(
-                  "flex h-9 w-9 items-center justify-center rounded-lg",
-                  isActive ? "bg-emerald-400/20 text-emerald-300" : "bg-white/5 text-soft"
-                )}>
-                  <route.icon className="h-5 w-5 shrink-0" />
-                </div>
-                <span className="text-[15px]">{route.label}</span>
+                <span
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-lg",
+                    isActive ? "bg-brand-gradient text-white" : "bg-white/[0.06] text-soft"
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span>{route.label}</span>
               </Link>
             )
           })}
         </div>
       </nav>
 
-      {/* Bottom Section */}
-      <div className="p-4 border-t border-white/10">
+      <div className="border-t border-white/10 p-3">
         <Link
           href="/settings"
-          className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-soft hover:text-high hover:bg-white/5 transition-colors border border-transparent hover:border-white/10"
+          onClick={onNavigate}
+          className="flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm text-soft transition-colors hover:border-white/10 hover:bg-white/[0.04] hover:text-high"
         >
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/5 text-soft">
-            <Settings className="h-5 w-5 shrink-0" />
-          </div>
-          <span className="text-[15px]">Settings</span>
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06]">
+            <Settings className="h-4 w-4" />
+          </span>
+          Configuracion
         </Link>
-
-        {/* System Status */}
-        <div className="mt-3 px-3 py-3 rounded-xl border border-white/10 bg-white/10">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] text-soft uppercase tracking-[0.2em]">Status</span>
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-emerald-400"></div>
-              <span className="text-xs font-semibold text-emerald-300">Live</span>
-            </div>
-          </div>
-          <div className="h-1 bg-white/10 rounded-full overflow-hidden">
-            <div className="h-full bg-emerald-400 rounded-full" style={{ width: '99.9%' }}></div>
-          </div>
-          <p className="text-xs text-soft mt-1">99.9% uptime</p>
-        </div>
       </div>
     </div>
   )

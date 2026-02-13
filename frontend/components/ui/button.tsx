@@ -8,14 +8,14 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-emerald-600 text-white hover:bg-emerald-500 shadow-[0_10px_30px_rgba(16,185,129,0.2)]",
+        default: "bg-brand-gradient text-white hover:brightness-110 shadow-[0_10px_30px_rgba(107,33,168,0.22)]",
         destructive: "bg-red-600 text-white hover:bg-red-700",
-        outline: "border border-white/15 bg-white/5 hover:bg-white/10 text-slate-100 shadow-[0_10px_25px_rgba(0,0,0,0.2)]",
-        secondary: "bg-slate-800/80 text-slate-100 hover:bg-slate-700/80 border border-white/5",
-        ghost: "hover:bg-white/10 hover:text-slate-100",
-        link: "text-slate-100 underline-offset-4 hover:underline",
-        success: "bg-emerald-600 text-white hover:bg-emerald-500 shadow-[0_10px_30px_rgba(16,185,129,0.2)]",
-        warning: "bg-amber-600 text-white hover:bg-amber-500",
+        outline: "border border-white/15 bg-white/[0.03] text-high hover:bg-white/[0.08]",
+        secondary: "border border-white/10 bg-white/[0.05] text-high hover:bg-white/[0.1]",
+        ghost: "text-soft hover:bg-white/[0.08] hover:text-high",
+        link: "text-high underline-offset-4 hover:underline",
+        success: "bg-brand-gradient text-white hover:brightness-110 shadow-[0_10px_30px_rgba(107,33,168,0.22)]",
+        warning: "bg-[hsl(var(--brand-2))] text-white hover:brightness-110",
       },
       size: {
         default: "h-10 px-4 py-2",

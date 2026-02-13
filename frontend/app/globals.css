@@ -23,30 +23,33 @@
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
+    --brand-1: 273 67% 39%;
+    --brand-2: 334 63% 30%;
+    --brand-3: 276 16% 8%;
+    --brand-gradient: linear-gradient(120deg, hsl(var(--brand-1)), hsl(var(--brand-2)));
     --radius: 0.5rem;
   }
 
   .dark {
-    /* Neon Premium - high contrast dark */
-    --background: 222 52% 6%;
-    --foreground: 210 40% 98%;
-    --card: 222 40% 10%;
-    --card-foreground: 210 40% 98%;
-    --popover: 224 36% 9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 156 75% 45%;
-    --primary-foreground: 220 45% 8%;
-    --secondary: 222 26% 16%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 222 26% 16%;
-    --muted-foreground: 210 30% 90%;
-    --accent: 214 30% 14%;
-    --accent-foreground: 210 40% 98%;
+    --background: 252 20% 7%;
+    --foreground: 220 30% 96%;
+    --card: 252 18% 11%;
+    --card-foreground: 220 30% 96%;
+    --popover: 252 20% 9%;
+    --popover-foreground: 220 30% 96%;
+    --primary: 273 67% 39%;
+    --primary-foreground: 220 45% 98%;
+    --secondary: 252 14% 16%;
+    --secondary-foreground: 220 30% 96%;
+    --muted: 252 12% 16%;
+    --muted-foreground: 220 14% 70%;
+    --accent: 252 16% 14%;
+    --accent-foreground: 220 30% 96%;
     --destructive: 0 72% 50%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 220 22% 22%;
-    --input: 220 22% 22%;
-    --ring: 156 75% 45%;
+    --destructive-foreground: 220 30% 96%;
+    --border: 253 14% 24%;
+    --input: 253 14% 24%;
+    --ring: 273 67% 39%;
   }
 }
 
@@ -54,151 +57,147 @@
   * {
     @apply border-border;
   }
-  html, body {
+
+  html,
+  body {
     height: 100%;
   }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-body);
     font-feature-settings: "ss01" on, "ss02" on;
   }
-  h1, h2, h3, h4, h5, h6 {
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     font-family: var(--font-display);
     letter-spacing: -0.02em;
   }
+
   ::selection {
-    background: rgba(74, 222, 128, 0.25);
+    background: rgba(121, 71, 201, 0.35);
   }
 
-  /* Clean scrollbar */
   ::-webkit-scrollbar {
     width: 10px;
   }
 
   ::-webkit-scrollbar-track {
-    background: #1e293b;
+    background: #120f1a;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #475569;
+    background: #2c243d;
     border-radius: 5px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #64748b;
+    background: #3c3153;
+  }
+
+  ::placeholder {
+    color: rgba(184, 177, 204, 0.95);
+  }
+
+  input,
+  textarea,
+  select {
+    background-color: rgb(13, 10, 20) !important;
+    color: rgba(242, 238, 252, 0.98) !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    caret-color: rgba(242, 238, 252, 0.98) !important;
   }
 }
 
 @layer utilities {
-  /* Simple, functional utilities only */
-
-  .text-balance {
-    text-wrap: balance;
-  }
-
-  /* Subtle focus ring for accessibility */
-  .focus-ring {
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
-  }
-
-  /* Clean card hover - subtle lift only */
-  .card-hover {
-    @apply transition-shadow duration-200 hover:shadow-lg;
-  }
-
-  /* Simple status indicators */
-  .status-dot {
-    @apply h-2 w-2 rounded-full;
-  }
-
-  .status-healthy {
-    @apply bg-green-500;
-  }
-
-  .status-warning {
-    @apply bg-yellow-500;
-  }
-
-  .status-critical {
-    @apply bg-red-500;
-  }
-
   .font-body {
     font-family: var(--font-body);
   }
 
   .app-shell {
     min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr;
     background-color: hsl(var(--background));
-    background-image: none;
+  }
+
+  .shell-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 280px;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .shell-main {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .shell-content {
+    flex: 1;
+  }
+
+  @media (min-width: 1024px) {
+    .shell-main {
+      margin-left: 280px;
+    }
   }
 
   .page-container {
     max-width: 1320px;
     margin: 0 auto;
-    padding: 28px 22px 72px;
+    padding: 24px 18px 72px;
   }
+
   @media (min-width: 768px) {
     .page-container {
-      padding: 32px 28px 80px;
+      padding: 28px 26px 80px;
     }
   }
+
   @media (min-width: 1280px) {
     .page-container {
-      padding: 36px 36px 90px;
+      padding: 34px 34px 88px;
     }
   }
 
   .panel {
-    @apply rounded-2xl border border-white/15 bg-slate-900/80 backdrop-blur;
+    @apply rounded-2xl border border-white/10 bg-card/80 backdrop-blur;
     box-shadow:
-      0 1px 0 rgba(255,255,255,0.04) inset,
-      0 18px 40px rgba(0,0,0,0.35);
+      0 1px 0 rgba(255, 255, 255, 0.03) inset,
+      0 18px 40px rgba(0, 0, 0, 0.35);
   }
 
-  .panel-glow {
-    @apply panel;
-    border-color: rgba(56, 189, 248, 0.2);
-    box-shadow:
-      0 0 0 1px rgba(56, 189, 248, 0.08),
-      0 18px 40px rgba(0,0,0,0.35);
-  }
-
-  .panel-emerald {
-    @apply panel;
-    border-color: rgba(16, 185, 129, 0.25);
-    box-shadow:
-      0 0 0 1px rgba(16, 185, 129, 0.08),
-      0 18px 40px rgba(0,0,0,0.35);
-  }
-
-  .panel-sky {
-    @apply panel;
-    border-color: rgba(56, 189, 248, 0.2);
-    box-shadow:
-      0 0 0 1px rgba(56, 189, 248, 0.08),
-      0 18px 40px rgba(0,0,0,0.35);
-  }
-
+  .panel-glow,
+  .panel-emerald,
+  .panel-sky,
   .panel-amber {
     @apply panel;
-    border-color: rgba(245, 158, 11, 0.25);
+    border-color: rgba(139, 92, 246, 0.25);
     box-shadow:
-      0 0 0 1px rgba(245, 158, 11, 0.08),
-      0 18px 40px rgba(0,0,0,0.35);
+      0 0 0 1px rgba(139, 92, 246, 0.1),
+      0 18px 40px rgba(0, 0, 0, 0.35);
   }
 
   .text-high {
-    color: rgba(248,250,252,0.98);
+    color: rgba(248, 246, 252, 0.98);
   }
 
   .text-soft {
-    color: rgba(226,232,240,0.95);
+    color: rgba(189, 182, 208, 0.95);
   }
 
   .divider {
     height: 1px;
-    background: linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.16), rgba(255,255,255,0.06));
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(139, 92, 246, 0.2), rgba(255, 255, 255, 0.04));
   }
 
   .section-head {
@@ -208,20 +207,63 @@
   .section-kicker {
     @apply text-[11px] uppercase tracking-[0.3em] text-soft;
   }
-}
 
-@layer base {
-  html.dark body {
-    color: hsl(var(--foreground));
+  .text-balance {
+    text-wrap: balance;
   }
 
-  :where(h1, h2, h3, h4, h5, h6,
-         p, span, li, label, th, td,
-         a, button, input, textarea, select) {
-    color: hsl(var(--foreground));
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
 
-  ::placeholder {
-    color: rgba(226,232,240,0.95);
+  .card-hover {
+    @apply transition-shadow duration-200 hover:shadow-lg;
+  }
+
+  .bg-brand-gradient {
+    background-image: var(--brand-gradient) !important;
+  }
+
+  .choice-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+  }
+
+  .choice-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(22, 17, 33, 0.7);
+    color: rgba(248, 246, 252, 0.98);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease;
+  }
+
+  .choice-item input {
+    accent-color: #8b5cf6;
+  }
+
+  .choice-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.24);
+  }
+
+  .btn-contrast {
+    background-color: rgb(35, 28, 48) !important;
+    color: #ffffff !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+  }
+
+  .btn-contrast-primary {
+    background-image: var(--brand-gradient) !important;
+    color: #ffffff !important;
+    border: 0 !important;
   }
 }

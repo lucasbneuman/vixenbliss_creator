@@ -3,11 +3,11 @@ import type { Config } from "tailwindcss"
 const config = {
   darkMode: ["class"],
   content: [
-    './pages/**/*.{ts,tsx}',
-    './components/**/*.{ts,tsx}',
-    './app/**/*.{ts,tsx}',
-    './src/**/*.{ts,tsx}',
-	],
+    "./pages/**/*.{ts,tsx}",
+    "./components/**/*.{ts,tsx}",
+    "./app/**/*.{ts,tsx}",
+    "./src/**/*.{ts,tsx}",
+  ],
   prefix: "",
   theme: {
     container: {
@@ -18,7 +18,17 @@ const config = {
       },
     },
     extend: {
+      backgroundImage: {
+        "brand-gradient": "linear-gradient(120deg, hsl(var(--brand-1)), hsl(var(--brand-2)))",
+      },
       colors: {
+        brand: {
+          DEFAULT: "hsl(var(--brand-1))",
+          1: "hsl(var(--brand-1))",
+          2: "hsl(var(--brand-2))",
+          3: "hsl(var(--brand-3))",
+          100: "rgb(216 180 254)",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
