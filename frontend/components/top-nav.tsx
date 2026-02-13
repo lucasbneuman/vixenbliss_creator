@@ -51,10 +51,10 @@ export default function TopNav() {
   const pathname = usePathname()
 
   return (
-    <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/85 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-border bg-background backdrop-blur">
       <div className="mx-auto flex max-w-[1320px] items-center gap-6 px-5 py-3.5">
         <Link href="/" className="flex items-center gap-3 group shrink-0">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-[0_8px_24px_rgba(16,185,129,0.25)]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] shadow-[0_8px_24px_rgba(107,33,168,0.25)]">
             <Sparkles className="h-5 w-5" />
           </div>
           <div className="hidden sm:block">
@@ -79,7 +79,7 @@ export default function TopNav() {
               >
                 <route.icon className={cn(
                   "h-4 w-4 shrink-0",
-                  isActive ? "text-emerald-300" : "text-slate-300"
+                  isActive ? "text-[hsl(var(--primary))]" : "text-slate-300"
                 )} />
                 <span className="whitespace-nowrap">{route.label}</span>
               </Link>
@@ -87,10 +87,10 @@ export default function TopNav() {
           })}
         </nav>
 
-        <div className="hidden lg:flex items-center gap-3 shrink-0">
+          <div className="hidden lg:flex items-center gap-3 shrink-0">
           <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-200">
-            <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
-            <span className="font-semibold text-emerald-300">Live</span>
+            <span className="h-2 w-2 rounded-full bg-[hsl(var(--primary))]"></span>
+            <span className="font-semibold text-[hsl(var(--primary))]">Live</span>
           </div>
           <Link
             href="/settings"
