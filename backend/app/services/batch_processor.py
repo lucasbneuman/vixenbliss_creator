@@ -5,6 +5,7 @@ Template selection → LoRA generation → Hook creation → Safety check → St
 """
 
 import asyncio
+import time
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from uuid import UUID
@@ -15,6 +16,7 @@ from app.models.content_piece import ContentPiece
 from app.services.template_library import template_library, TemplateTier
 from app.services.lora_inference import lora_inference_engine
 from app.services.hook_generator import hook_generator, Platform
+from app.services.prompt_enhancer import prompt_enhancer
 from app.services.content_safety import content_safety_service, SafetyRating
 from app.services.storage import storage_service
 
@@ -61,85 +63,240 @@ class BatchProcessor:
         self,
         db: Session,
         avatar: Avatar,
-        config: BatchProcessorConfig
+        config: BatchProcessorConfig,
+        custom_prompts: Optional[List[str]] = None,
+        custom_tiers: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
-        Process complete batch of content
+        Process complete batch of content with granular timing
 
         Args:
             db: Database session
             avatar: Avatar to generate content for
             config: Batch processing configuration
+            custom_prompts: Custom prompts (optional)
+            custom_tiers: Custom access tiers (optional)
 
         Returns:
-            Processing results with generated content, statistics, costs
+            Processing results with generated content, statistics, costs, and timing metrics
         """
 
-        logger.info(f"Starting batch processing for avatar {avatar.id}")
+        batch_start = time.time()
+        total_duration = 0
+        step_metrics = []
 
-        # Step 1: Select templates
-        templates = self._select_templates(avatar, config)
-        logger.info(f"Selected {len(templates)} templates")
+        try:
+            logger.info(
+                f"[BATCH START] Avatar: {avatar.id}, "
+                f"Pieces: {config.num_pieces}, Platform: {config.platform.value}"
+            )
 
-        # Step 2: Generate images with LoRA
-        content_pieces = await self._generate_images(avatar, templates, config)
-        logger.info(f"Generated {len(content_pieces)} images")
+            # Step 1: Select templates or use custom prompts
+            step1_start = time.time()
+            templates = self._select_templates(avatar, config, custom_prompts)
+            step1_duration = time.time() - step1_start
+            step_metrics.append({
+                "step": 1,
+                "name": "template_selection",
+                "duration_ms": round(step1_duration * 1000, 2),
+                "result_count": len(templates),
+                "status": "success"
+            })
+            logger.info(
+                f"[STEP 1/7] Template Selection | "
+                f"Selected: {len(templates)} | Duration: {step1_duration:.2f}s"
+            )
 
-        # Step 3: Generate hooks (if enabled)
-        if config.include_hooks:
-            content_pieces = await self._generate_hooks(avatar, content_pieces, config)
-            logger.info(f"Generated hooks for {len(content_pieces)} pieces")
+            # Step 2: Generate images with LoRA
+            step2_start = time.time()
+            content_pieces = await self._generate_images(
+                avatar=avatar,
+                templates=templates,
+                config=config,
+                custom_prompts=custom_prompts,
+                custom_tiers=custom_tiers
+            )
+            step2_duration = time.time() - step2_start
+            step_metrics.append({
+                "step": 2,
+                "name": "image_generation",
+                "duration_ms": round(step2_duration * 1000, 2),
+                "result_count": len(content_pieces),
+                "status": "success"
+            })
+            logger.info(
+                f"[STEP 2/7] Image Generation | "
+                f"Generated: {len(content_pieces)} | Duration: {step2_duration:.2f}s | "
+                f"Avg per image: {(step2_duration / len(content_pieces) if content_pieces else 0):.2f}s"
+            )
 
-        # Step 4: Safety check (if enabled)
-        if config.safety_check:
-            content_pieces = await self._safety_check(content_pieces)
-            logger.info(f"Safety check passed for {len(content_pieces)} pieces")
+            # Step 3: Generate hooks (if enabled)
+            if config.include_hooks:
+                step3_start = time.time()
+                content_pieces = await self._generate_hooks(avatar, content_pieces, config)
+                step3_duration = time.time() - step3_start
+                with_hooks = sum(1 for p in content_pieces if p.get("content_piece").hook_text)
+                step_metrics.append({
+                    "step": 3,
+                    "name": "hook_generation",
+                    "duration_ms": round(step3_duration * 1000, 2),
+                    "result_count": with_hooks,
+                    "status": "success"
+                })
+                logger.info(
+                    f"[STEP 3/7] Hook Generation | "
+                    f"Generated: {with_hooks}/{len(content_pieces)} | Duration: {step3_duration:.2f}s"
+                )
+            else:
+                logger.info("[STEP 3/7] Hook Generation | SKIPPED (disabled)")
 
-        # Step 5: Upload to storage (if enabled)
-        if config.upload_to_storage:
-            content_pieces = await self._upload_to_storage(avatar, content_pieces)
-            logger.info(f"Uploaded {len(content_pieces)} pieces to storage")
+            # Step 4: Safety check (if enabled)
+            if config.safety_check:
+                step4_start = time.time()
+                content_pieces = await self._safety_check(content_pieces)
+                step4_duration = time.time() - step4_start
+                rejected = config.num_pieces - len(content_pieces)
+                step_metrics.append({
+                    "step": 4,
+                    "name": "safety_check",
+                    "duration_ms": round(step4_duration * 1000, 2),
+                    "result_count": len(content_pieces),
+                    "rejected_count": rejected,
+                    "status": "success"
+                })
+                logger.info(
+                    f"[STEP 4/7] Safety Check | "
+                    f"Passed: {len(content_pieces)}, Rejected: {rejected} | Duration: {step4_duration:.2f}s"
+                )
+            else:
+                logger.info("[STEP 4/7] Safety Check | SKIPPED (disabled)")
 
-        # Step 6: Save to database
-        saved_pieces = self._save_to_database(db, content_pieces)
-        logger.info(f"Saved {len(saved_pieces)} pieces to database")
+            # Step 5: Upload to storage (if enabled)
+            if config.upload_to_storage:
+                step5_start = time.time()
+                content_pieces = await self._upload_to_storage(avatar, content_pieces)
+                step5_duration = time.time() - step5_start
+                uploaded = sum(1 for p in content_pieces if "r2_url" in str(p.get("content_piece").url))
+                step_metrics.append({
+                    "step": 5,
+                    "name": "storage_upload",
+                    "duration_ms": round(step5_duration * 1000, 2),
+                    "result_count": uploaded,
+                    "status": "success"
+                })
+                logger.info(
+                    f"[STEP 5/7] Storage Upload | "
+                    f"Uploaded: {uploaded}/{len(content_pieces)} to R2 | Duration: {step5_duration:.2f}s"
+                )
+            else:
+                logger.info("[STEP 5/7] Storage Upload | SKIPPED (disabled)")
 
-        # Step 7: Calculate statistics
-        stats = self._calculate_statistics(saved_pieces, config)
+            # Step 6: Save to database
+            step6_start = time.time()
+            saved_pieces = self._save_to_database(db, content_pieces)
+            step6_duration = time.time() - step6_start
+            step_metrics.append({
+                "step": 6,
+                "name": "database_save",
+                "duration_ms": round(step6_duration * 1000, 2),
+                "result_count": len(saved_pieces),
+                "status": "success"
+            })
+            logger.info(
+                f"[STEP 6/7] Database Save | "
+                f"Saved: {len(saved_pieces)} | Duration: {step6_duration:.2f}s"
+            )
 
-        return {
-            "success": True,
-            "avatar_id": str(avatar.id),
-            "total_pieces": len(saved_pieces),
-            "content_pieces": [self._serialize_content_piece(p) for p in saved_pieces],
-            "statistics": stats,
-            "config": {
-                "num_pieces": config.num_pieces,
-                "platform": config.platform.value,
-                "tier_distribution": config.tier_distribution
+            # Step 7: Calculate statistics
+            step7_start = time.time()
+            stats = self._calculate_statistics(saved_pieces, config)
+            step7_duration = time.time() - step7_start
+            step_metrics.append({
+                "step": 7,
+                "name": "statistics_calculation",
+                "duration_ms": round(step7_duration * 1000, 2),
+                "result_count": 1,
+                "status": "success"
+            })
+            logger.info(
+                f"[STEP 7/7] Statistics Calculation | Duration: {step7_duration:.2f}s"
+            )
+
+            total_duration = time.time() - batch_start
+            logger.info(
+                f"[BATCH COMPLETE] Avatar: {avatar.id} | "
+                f"Total Duration: {total_duration:.2f}s | "
+                f"Pieces: {len(saved_pieces)} | Cost: ${stats['total_cost_usd']:.4f}"
+            )
+
+            return {
+                "success": True,
+                "avatar_id": str(avatar.id),
+                "total_pieces": len(saved_pieces),
+                "content_pieces": [self._serialize_content_piece(p) for p in saved_pieces],
+                "statistics": stats,
+                "timing_metrics": {
+                    "batch_total_ms": round(total_duration * 1000, 2),
+                    "step_timings": step_metrics
+                },
+                "config": {
+                    "num_pieces": config.num_pieces,
+                    "platform": config.platform.value,
+                    "tier_distribution": config.tier_distribution
+                }
             }
-        }
+
+        except Exception as e:
+            total_duration = time.time() - batch_start
+            logger.error(
+                f"[BATCH ERROR] Avatar: {avatar.id} | "
+                f"Duration: {total_duration:.2f}s | Error: {str(e)}"
+            )
+            raise
 
     def _select_templates(
         self,
         avatar: Avatar,
-        config: BatchProcessorConfig
+        config: BatchProcessorConfig,
+        custom_prompts: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
-        """Select templates based on avatar niche and tier distribution"""
+        """Select templates based on avatar niche and tier distribution with logging"""
+
+        if custom_prompts:
+            logger.debug(
+                f"Template selection | Using {len(custom_prompts)} custom prompts"
+            )
+            return [
+                {
+                    "id": "custom",
+                    "category": "custom",
+                    "tier": "capa1",
+                    "prompt_template": prompt
+                }
+                for prompt in custom_prompts
+            ]
 
         # Get templates optimized for avatar's niche
         niche = avatar.niche or "lifestyle"
+        logger.debug(f"Template selection | Avatar niche: {niche}")
 
         # Get tier-distributed templates
         templates = self.template_lib.get_tier_distribution(
             count=config.num_pieces,
             **config.tier_distribution
         )
+        logger.debug(
+            f"Template selection | Tier distribution: {config.tier_distribution} | "
+            f"Retrieved: {len(templates)} templates"
+        )
 
         # Filter by niche preference
         niche_templates = self.template_lib.get_templates_for_avatar(
             avatar_niche=niche,
             count=config.num_pieces
+        )
+        logger.debug(
+            f"Template selection | Niche-optimized: {len(niche_templates)} templates"
         )
 
         # Merge: prioritize niche templates but maintain tier distribution
@@ -156,28 +313,59 @@ class BatchProcessor:
             final_templates.append(niche_match)
             tier_counts[tier] += 1
 
-        return final_templates[:config.num_pieces]
+        final_templates = final_templates[:config.num_pieces]
+
+        logger.debug(
+            f"Template selection | Final tier distribution: {tier_counts} | "
+            f"Total selected: {len(final_templates)}"
+        )
+
+        return final_templates
 
     async def _generate_images(
         self,
         avatar: Avatar,
         templates: List[Dict[str, Any]],
-        config: BatchProcessorConfig
+        config: BatchProcessorConfig,
+        custom_prompts: Optional[List[str]] = None,
+        custom_tiers: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """Generate images using LoRA inference"""
 
-        # Build prompts from templates
-        prompts = []
-        for template in templates:
-            # Extract template details
-            base_prompt = template["prompt_template"]
-            lighting = template.get("lighting", "natural lighting")
-            angle = template.get("angle", "medium shot")
-            pose = template.get("pose_description", "confident pose")
+        # Build prompts
+        if custom_prompts:
+            prompts = custom_prompts
+        else:
+            prompts = []
+            for template in templates:
+                # Extract template details
+                base_prompt = template["prompt_template"]
+                lighting = template.get("lighting", "natural lighting")
+                angle = template.get("angle", "medium shot")
+                pose = template.get("pose_description", "confident pose")
 
-            # Combine into full prompt
-            full_prompt = f"{base_prompt}, {lighting}, {angle}, {pose}"
-            prompts.append(full_prompt)
+                # Combine into full prompt
+                full_prompt = f"{base_prompt}, {lighting}, {angle}, {pose}"
+                prompts.append(full_prompt)
+
+        # Optional prompt enhancement (GPT-4o mini)
+        if config.generation_config.get("enhance_prompts", True):
+            context_items = []
+            for template, prompt in zip(templates, prompts):
+                context_items.append({
+                    "template": {
+                        "id": template.get("id"),
+                        "category": template.get("category"),
+                        "tier": template.get("tier"),
+                        "tags": template.get("tags", [])
+                    },
+                    "avatar": {
+                        "niche": avatar.niche,
+                        "style": avatar.aesthetic_style
+                    },
+                    "base_prompt": prompt
+                })
+            prompts = await prompt_enhancer.enhance_prompts(prompts, context_items)
 
         # Generate images in batch
         content_pieces = await self.inference_engine.batch_generate_images(
@@ -188,7 +376,7 @@ class BatchProcessor:
         )
 
         # Add template metadata to content pieces
-        for piece, template in zip(content_pieces, templates):
+        for idx, (piece, template) in enumerate(zip(content_pieces, templates)):
             piece.metadata = piece.metadata or {}
             piece.metadata["template"] = {
                 "id": template["id"],
@@ -196,7 +384,10 @@ class BatchProcessor:
                 "tier": template["tier"],
                 "tags": template.get("tags", [])
             }
-            piece.access_tier = template["tier"]  # Set tier from template
+            if custom_tiers and idx < len(custom_tiers):
+                piece.access_tier = custom_tiers[idx]
+            else:
+                piece.access_tier = template["tier"]  # Set tier from template
 
         return [
             {
@@ -213,13 +404,17 @@ class BatchProcessor:
         content_pieces: List[Dict[str, Any]],
         config: BatchProcessorConfig
     ) -> List[Dict[str, Any]]:
-        """Generate social media hooks for content"""
+        """Generate social media hooks for content with detailed logging"""
 
         # Get avatar personality
-        personality = avatar.metadata.get("personality", {})
+        avatar_meta = getattr(avatar, "meta_data", None) or getattr(avatar, "metadata", None) or {}
+        personality = avatar_meta.get("personality", {})
+
+        success_count = 0
+        error_count = 0
 
         # Generate hooks for each piece
-        for item in content_pieces:
+        for idx, item in enumerate(content_pieces, 1):
             template = item["template"]
             piece = item["content_piece"]
 
@@ -239,15 +434,34 @@ class BatchProcessor:
                     piece.hook_text = best_hook["text"]
 
                     # Store all variations in metadata
+                    piece.metadata = piece.metadata or {}
                     piece.metadata["hooks"] = {
-                        "selected": best_hook["text"],
-                        "variations": [h["text"] for h in hooks],
+                        "selected": best_hook["text"][:100],  # Truncate for logging safety
+                        "variations_count": len(hooks),
                         "platform": config.platform.value
                     }
+                    success_count += 1
+                    logger.debug(
+                        f"Hook generation [{idx}/{len(content_pieces)}] | "
+                        f"Success | Category: {template['category']} | "
+                        f"Variations: {len(hooks)}"
+                    )
+                else:
+                    error_count += 1
+                    logger.warning(f"Hook generation [{idx}/{len(content_pieces)}] | No hooks generated")
 
             except Exception as e:
-                logger.warning(f"Hook generation failed for piece: {str(e)}")
+                error_count += 1
+                logger.warning(
+                    f"Hook generation [{idx}/{len(content_pieces)}] | "
+                    f"Error: {str(e)[:100]}"
+                )
                 piece.hook_text = None
+
+        logger.debug(
+            f"Hook generation summary | Success: {success_count}/{len(content_pieces)} | "
+            f"Errors: {error_count}"
+        )
 
         return content_pieces
 
@@ -255,7 +469,7 @@ class BatchProcessor:
         self,
         content_pieces: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Check content safety and filter rejected pieces"""
+        """Check content safety and filter rejected pieces with detailed logging"""
 
         # Prepare items for batch safety check
         items = [
@@ -266,33 +480,56 @@ class BatchProcessor:
             for item in content_pieces
         ]
 
+        logger.debug(f"Running safety check on {len(items)} items")
+
         # Run batch safety check
         safety_results = await self.safety_service.batch_check_safety(items)
 
         # Filter and update content pieces
         safe_pieces = []
+        rejected_count = 0
+        rating_distribution = {}
 
-        for item, safety in zip(content_pieces, safety_results):
+        for idx, (item, safety) in enumerate(zip(content_pieces, safety_results), 1):
             piece = item["content_piece"]
+
+            # Track rating distribution
+            rating = safety.get("rating", "unknown")
+            rating_distribution[rating] = rating_distribution.get(rating, 0) + 1
 
             # Skip rejected content
             if safety["rating"] == SafetyRating.REJECTED:
-                logger.warning(f"Content rejected by safety check: {safety.get('reason', 'Unknown')}")
+                rejected_count += 1
+                reason = safety.get("reason", "Unknown")
+                logger.debug(
+                    f"Content rejected [{idx}/{len(content_pieces)}] | "
+                    f"Reason: {reason[:80]}"
+                )
                 continue
 
             # Update piece with safety info
             piece.safety_rating = safety["rating"]
+            piece.metadata = piece.metadata or {}
             piece.metadata["safety"] = {
                 "rating": safety["rating"],
-                "scores": safety.get("scores", {}),
                 "flagged_categories": safety.get("flagged_categories", [])
             }
 
             # Override tier if safety check suggests different tier
             if safety.get("access_tier"):
                 piece.access_tier = safety["access_tier"]
+                logger.debug(
+                    f"Content tier updated [{idx}/{len(content_pieces)}] | "
+                    f"New tier: {safety['access_tier']} | Rating: {rating}"
+                )
 
             safe_pieces.append(item)
+
+        logger.debug(
+            f"Safety check summary | Rating distribution: {rating_distribution} | "
+            f"Rejected: {rejected_count}/{len(content_pieces)} | "
+            f"Approved: {len(safe_pieces)}"
+        )
 
         return safe_pieces
 
@@ -301,28 +538,79 @@ class BatchProcessor:
         avatar: Avatar,
         content_pieces: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Upload images to R2 storage and update URLs"""
+        """Upload images to R2 storage and update URLs with detailed logging"""
 
         import httpx
+        import os
+        import base64
+
+        r2_public_url = os.getenv("R2_PUBLIC_URL", "").rstrip("/")
+        upload_success = 0
+        upload_skipped = 0
+        upload_errors = 0
 
         async with httpx.AsyncClient() as client:
-            for idx, item in enumerate(content_pieces):
+            for idx, item in enumerate(content_pieces, 1):
                 piece = item["content_piece"]
 
                 try:
-                    # Download image from Replicate
-                    response = await client.get(piece.url, timeout=30.0)
-                    response.raise_for_status()
-                    image_content = response.content
+                    if not piece.url:
+                        upload_skipped += 1
+                        logger.debug(f"Upload [{idx}/{len(content_pieces)}] | Skipped: No URL")
+                        continue
+
+                    # Skip if already stored in R2
+                    if r2_public_url and str(piece.url).startswith(r2_public_url):
+                        upload_skipped += 1
+                        logger.debug(f"Upload [{idx}/{len(content_pieces)}] | Skipped: Already in R2")
+                        continue
+
+                    original_url = piece.url
+                    image_content = None
+                    content_type = "image/jpeg"
+
+                    url_str = str(piece.url)
+
+                    # Fetch image content
+                    if url_str.startswith("data:"):
+                        header, data = url_str.split(",", 1)
+                        if ";base64" in header:
+                            content_type = header.split(";")[0].replace("data:", "") or "image/png"
+                            image_content = base64.b64decode(data)
+                        else:
+                            raise ValueError("Unsupported data URL format")
+                    elif url_str.startswith("http"):
+                        response = await client.get(url_str, timeout=30.0)
+                        response.raise_for_status()
+                        image_content = response.content
+                        content_type = response.headers.get("Content-Type", "image/jpeg")
+                    else:
+                        # Assume raw base64 without prefix
+                        image_content = base64.b64decode(url_str)
+                        content_type = "image/png"
+
+                    if image_content is None:
+                        raise ValueError("No image content to upload")
 
                     # Generate R2 path
-                    file_path = f"content/{avatar.id}/{piece.id}.jpg"
+                    piece_id = piece.id
+                    if not piece_id:
+                        import uuid as uuid_pkg
+                        piece_id = uuid_pkg.uuid4()
+
+                    file_ext = "jpg"
+                    if "png" in content_type:
+                        file_ext = "png"
+                    elif "webp" in content_type:
+                        file_ext = "webp"
+
+                    file_path = f"content/{avatar.id}/{piece_id}.{file_ext}"
 
                     # Upload to R2
                     upload_result = self.storage.upload_file(
                         file_content=image_content,
                         file_path=file_path,
-                        content_type="image/jpeg",
+                        content_type=content_type,
                         metadata={
                             "avatar_id": str(avatar.id),
                             "content_id": str(piece.id),
@@ -334,14 +622,28 @@ class BatchProcessor:
                     # Update piece with R2 URL
                     piece.url = upload_result["r2_url"]
 
-                    # Store original Replicate URL in metadata
-                    piece.metadata["original_url"] = piece.url
+                    # Store original URL in metadata
+                    piece.metadata = piece.metadata or {}
+                    piece.metadata["original_url"] = original_url
 
-                    logger.info(f"Uploaded piece {idx + 1}/{len(content_pieces)} to R2")
+                    upload_success += 1
+                    logger.debug(
+                        f"Upload [{idx}/{len(content_pieces)}] | Success | "
+                        f"Size: {len(image_content)//1024}KB | Type: {file_ext}"
+                    )
 
                 except Exception as e:
-                    logger.error(f"Upload failed for piece {idx}: {str(e)}")
+                    upload_errors += 1
+                    logger.error(
+                        f"Upload [{idx}/{len(content_pieces)}] | Error: {str(e)[:100]}"
+                    )
                     # Keep original URL on failure
+
+        logger.debug(
+            f"Storage upload summary | Success: {upload_success} | "
+            f"Skipped: {upload_skipped} | Errors: {upload_errors} | "
+            f"Total: {len(content_pieces)}"
+        )
 
         return content_pieces
 
@@ -350,11 +652,12 @@ class BatchProcessor:
         db: Session,
         content_pieces: List[Dict[str, Any]]
     ) -> List[ContentPiece]:
-        """Save content pieces to database"""
+        """Save content pieces to database with detailed logging"""
 
         saved_pieces = []
+        save_errors = 0
 
-        for item in content_pieces:
+        for idx, item in enumerate(content_pieces, 1):
             piece = item["content_piece"]
 
             try:
@@ -363,9 +666,23 @@ class BatchProcessor:
                 db.refresh(piece)
                 saved_pieces.append(piece)
 
+                logger.debug(
+                    f"Database save [{idx}/{len(content_pieces)}] | Success | "
+                    f"ID: {piece.id} | Tier: {piece.access_tier}"
+                )
+
             except Exception as e:
-                logger.error(f"Database save failed: {str(e)}")
+                save_errors += 1
+                logger.error(
+                    f"Database save [{idx}/{len(content_pieces)}] | "
+                    f"Error: {str(e)[:100]}"
+                )
                 db.rollback()
+
+        logger.debug(
+            f"Database save summary | Saved: {len(saved_pieces)}/{len(content_pieces)} | "
+            f"Errors: {save_errors}"
+        )
 
         return saved_pieces
 

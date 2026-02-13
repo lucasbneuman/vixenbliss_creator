@@ -5,6 +5,7 @@ Endpoints for content production system
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 from typing import List, Dict, Any
 from uuid import UUID
 
@@ -23,17 +24,37 @@ from app.schemas.content import (
     SafetyCheckResponse
 )
 from app.services.lora_inference import lora_inference_engine
+from app.services.lora_inference_fallback import fallback_generate_image
+import os
 from app.services.template_library import template_library, TemplateCategory, TemplateTier
-from app.services.hook_generator import hook_generator, Platform
-from app.services.content_safety import content_safety_service
-from app.services.batch_processor import batch_processor, BatchProcessorConfig
-from app.workers.tasks import generate_content_batch
+from sqlalchemy import func
+
+try:
+    from app.services.hook_generator import hook_generator, Platform
+except ModuleNotFoundError:
+    hook_generator = None
+    Platform = None
+
+try:
+    from app.services.content_safety import content_safety_service
+except ModuleNotFoundError:
+    content_safety_service = None
 
 
 router = APIRouter(
     prefix="/api/v1/content",
     tags=["Content Generation"]
 )
+
+
+def _require_hook_generator() -> None:
+    if hook_generator is None or Platform is None:
+        raise HTTPException(status_code=503, detail="Hook generation service is not available")
+
+
+def _require_content_safety() -> None:
+    if content_safety_service is None:
+        raise HTTPException(status_code=503, detail="Content safety service is not available")
 
 
 @router.post("/generate", response_model=ContentPieceResponse)
@@ -47,8 +68,9 @@ async def generate_single_content(
     E03-001: LoRA inference endpoint
     """
 
-    # Get avatar
-    avatar = db.query(Avatar).filter(Avatar.id == UUID(request.avatar_id)).first()
+    # Get avatar (SQLAlchemy 2.0 style)
+    stmt = select(Avatar).where(Avatar.id == UUID(request.avatar_id))
+    avatar = db.execute(stmt).scalars().first()
     if not avatar:
         raise HTTPException(status_code=404, detail="Avatar not found")
 
@@ -62,25 +84,55 @@ async def generate_single_content(
             raise HTTPException(status_code=404, detail="Template not found")
 
         # Generate with template
-        result = await lora_inference_engine.generate_with_template(
-            avatar=avatar,
-            template=template
-        )
+        try:
+            result = await lora_inference_engine.generate_with_template(
+                avatar=avatar,
+                template=template
+            )
+        except Exception:
+            # Fallback to local/simple generator if enabled
+            if os.getenv("ENABLE_REPLICATE_FALLBACK", "false").lower() == "true":
+                fb = await fallback_generate_image(prompt=template.get("prompt_template", ""))
+                if fb:
+                    result = fb
+                else:
+                    raise
+            else:
+                raise
     elif request.custom_prompt:
         # Generate with custom prompt
-        result = await lora_inference_engine.generate_image_with_lora(
-            avatar=avatar,
-            prompt=request.custom_prompt
-        )
+        try:
+            result = await lora_inference_engine.generate_image_with_lora(
+                avatar=avatar,
+                prompt=request.custom_prompt
+            )
+        except Exception:
+            if os.getenv("ENABLE_REPLICATE_FALLBACK", "false").lower() == "true":
+                fb = await fallback_generate_image(prompt=request.custom_prompt)
+                if fb:
+                    result = fb
+                else:
+                    raise
+            else:
+                raise
     else:
         raise HTTPException(status_code=400, detail="Either template_id or custom_prompt required")
+
+    # Modal can return base64 only (without persisted URL). Persist a data URL so DB
+    # non-null constraints are satisfied even when storage upload is not configured.
+    image_url = result.get("image_url")
+    if not image_url and result.get("image_base64"):
+        image_url = f"data:image/png;base64,{result['image_base64']}"
+
+    if not image_url:
+        raise HTTPException(status_code=502, detail="Generation succeeded but no image URL/base64 returned")
 
     # Create content piece
     content_piece = ContentPiece(
         avatar_id=avatar.id,
         content_type="image",
         access_tier=request.tier or "capa1",
-        url=result["image_url"],
+        url=image_url,
         metadata={
             "generation_params": result["parameters"],
             "generation_time": result["generation_time"],
@@ -108,15 +160,24 @@ async def generate_batch_content(
     Triggers async Celery task for processing
     """
 
-    # Get avatar
-    avatar = db.query(Avatar).filter(Avatar.id == UUID(request.avatar_id)).first()
+    # Get avatar (SQLAlchemy 2.0 style)
+    stmt = select(Avatar).where(Avatar.id == UUID(request.avatar_id))
+    avatar = db.execute(stmt).scalars().first()
     if not avatar:
         raise HTTPException(status_code=404, detail="Avatar not found")
 
     if not avatar.lora_weights_url:
         raise HTTPException(status_code=400, detail="Avatar has no trained LoRA weights")
 
+    # Import lazily so /generate can run without Celery dependency installed.
+    from app.workers.tasks import generate_content_batch
+
     # Trigger async batch generation task
+    avatar_meta = getattr(avatar, "meta_data", None) or getattr(avatar, "metadata", None) or {}
+    generation_config = request.generation_config
+    if not generation_config:
+        generation_config = avatar_meta.get("generation_config")
+
     task = generate_content_batch.delay(
         avatar_id=request.avatar_id,
         num_pieces=request.num_pieces,
@@ -124,7 +185,10 @@ async def generate_batch_content(
         tier_distribution=request.tier_distribution,
         include_hooks=request.include_hooks,
         safety_check=request.safety_check,
-        upload_to_storage=request.upload_to_storage
+        upload_to_storage=request.upload_to_storage,
+        custom_prompts=request.custom_prompts,
+        custom_tiers=request.custom_tiers,
+        generation_config=generation_config
     )
 
     return {
@@ -149,8 +213,9 @@ async def generate_batch_content_sync(
     E03-005: Synchronous batch processing
     """
 
-    # Get avatar
-    avatar = db.query(Avatar).filter(Avatar.id == UUID(request.avatar_id)).first()
+    # Get avatar (SQLAlchemy 2.0 style)
+    stmt = select(Avatar).where(Avatar.id == UUID(request.avatar_id))
+    avatar = db.execute(stmt).scalars().first()
     if not avatar:
         raise HTTPException(status_code=404, detail="Avatar not found")
 
@@ -158,20 +223,33 @@ async def generate_batch_content_sync(
         raise HTTPException(status_code=400, detail="Avatar has no trained LoRA weights")
 
     # Create config
+    avatar_meta = getattr(avatar, "meta_data", None) or getattr(avatar, "metadata", None) or {}
+    generation_config = request.generation_config
+    if not generation_config:
+        generation_config = avatar_meta.get("generation_config")
+
+    from app.services.batch_processor import batch_processor, BatchProcessorConfig
+
+    if request.include_hooks:
+        _require_hook_generator()
+
     config = BatchProcessorConfig(
         num_pieces=request.num_pieces,
         platform=Platform(request.platform),
         tier_distribution=request.tier_distribution,
         include_hooks=request.include_hooks,
         safety_check=request.safety_check,
-        upload_to_storage=request.upload_to_storage
+        upload_to_storage=request.upload_to_storage,
+        generation_config=generation_config
     )
 
     # Process batch
     result = await batch_processor.process_batch(
         db=db,
         avatar=avatar,
-        config=config
+        config=config,
+        custom_prompts=request.custom_prompts,
+        custom_tiers=request.custom_tiers
     )
 
     return result
@@ -192,8 +270,9 @@ async def get_templates(
 
     # Get templates
     if avatar_id:
-        # Get templates optimized for avatar's niche
-        avatar = db.query(Avatar).filter(Avatar.id == UUID(avatar_id)).first()
+        # Get templates optimized for avatar's niche (SQLAlchemy 2.0 style)
+        stmt = select(Avatar).where(Avatar.id == UUID(avatar_id))
+        avatar = db.execute(stmt).scalars().first()
         if not avatar:
             raise HTTPException(status_code=404, detail="Avatar not found")
 
@@ -255,13 +334,17 @@ async def generate_hooks(
     E03-003: Hook generator endpoint
     """
 
-    # Get avatar
-    avatar = db.query(Avatar).filter(Avatar.id == UUID(request.avatar_id)).first()
+    # Get avatar (SQLAlchemy 2.0 style)
+    stmt = select(Avatar).where(Avatar.id == UUID(request.avatar_id))
+    avatar = db.execute(stmt).scalars().first()
     if not avatar:
         raise HTTPException(status_code=404, detail="Avatar not found")
 
     # Get personality
-    personality = avatar.metadata.get("personality", {})
+    avatar_meta = getattr(avatar, "meta_data", None) or getattr(avatar, "metadata", None) or {}
+    personality = avatar_meta.get("personality", {})
+
+    _require_hook_generator()
 
     # Generate hooks
     try:
@@ -291,6 +374,8 @@ async def check_content_safety(request: SafetyCheckRequest):
     E03-004: Content safety endpoint
     """
 
+    _require_content_safety()
+
     result = await content_safety_service.check_image_safety(
         image_url=request.image_url,
         prompt=request.prompt
@@ -311,15 +396,17 @@ async def upload_content_batch(
     E03-006: Batch upload endpoint
     """
 
-    # Get avatar
-    avatar = db.query(Avatar).filter(Avatar.id == UUID(avatar_id)).first()
+    # Get avatar (SQLAlchemy 2.0 style)
+    stmt = select(Avatar).where(Avatar.id == UUID(avatar_id))
+    avatar = db.execute(stmt).scalars().first()
     if not avatar:
         raise HTTPException(status_code=404, detail="Avatar not found")
 
-    # Get content pieces
-    content_pieces = db.query(ContentPiece).filter(
+    # Get content pieces (SQLAlchemy 2.0 style)
+    stmt = select(ContentPiece).where(
         ContentPiece.id.in_([UUID(cid) for cid in content_ids])
-    ).all()
+    )
+    content_pieces = db.execute(stmt).scalars().all()
 
     if not content_pieces:
         raise HTTPException(status_code=404, detail="No content pieces found")
@@ -388,12 +475,14 @@ async def get_avatar_content(
     Query with optional tier filter
     """
 
-    query = db.query(ContentPiece).filter(ContentPiece.avatar_id == UUID(avatar_id))
+    # Build query (SQLAlchemy 2.0 style)
+    stmt = select(ContentPiece).where(ContentPiece.avatar_id == UUID(avatar_id))
 
     if tier:
-        query = query.filter(ContentPiece.access_tier == tier)
+        stmt = stmt.where(ContentPiece.access_tier == tier)
 
-    content_pieces = query.order_by(ContentPiece.created_at.desc()).offset(offset).limit(limit).all()
+    stmt = stmt.order_by(ContentPiece.created_at.desc()).offset(offset).limit(limit)
+    content_pieces = db.execute(stmt).scalars().all()
 
     return content_pieces
 
@@ -407,28 +496,39 @@ async def get_content_stats(
     Get content generation statistics for avatar
     """
 
-    avatar = db.query(Avatar).filter(Avatar.id == UUID(avatar_id)).first()
+    # Get avatar (SQLAlchemy 2.0 style)
+    stmt = select(Avatar).where(Avatar.id == UUID(avatar_id))
+    avatar = db.execute(stmt).scalars().first()
     if not avatar:
         raise HTTPException(status_code=404, detail="Avatar not found")
 
-    # Count by tier
-    content_count = db.query(ContentPiece).filter(ContentPiece.avatar_id == UUID(avatar_id)).count()
+    # Count by tier (SQLAlchemy 2.0 style)
+    from sqlalchemy import func
+    content_count = db.execute(
+        select(func.count()).select_from(ContentPiece).where(
+            ContentPiece.avatar_id == UUID(avatar_id)
+        )
+    ).scalar()
 
     tier_counts = {}
     for tier in ["capa1", "capa2", "capa3"]:
-        count = db.query(ContentPiece).filter(
-            ContentPiece.avatar_id == UUID(avatar_id),
-            ContentPiece.access_tier == tier
-        ).count()
+        count = db.execute(
+            select(func.count()).select_from(ContentPiece).where(
+                ContentPiece.avatar_id == UUID(avatar_id),
+                ContentPiece.access_tier == tier
+            )
+        ).scalar()
         tier_counts[tier] = count
 
-    # Safety rating distribution
+    # Safety rating distribution (SQLAlchemy 2.0 style)
     safety_counts = {}
     for rating in ["safe", "suggestive", "borderline"]:
-        count = db.query(ContentPiece).filter(
-            ContentPiece.avatar_id == UUID(avatar_id),
-            ContentPiece.safety_rating == rating
-        ).count()
+        count = db.execute(
+            select(func.count()).select_from(ContentPiece).where(
+                ContentPiece.avatar_id == UUID(avatar_id),
+                ContentPiece.safety_rating == rating
+            )
+        ).scalar()
         safety_counts[rating] = count
 
     return {
@@ -438,3 +538,185 @@ async def get_content_stats(
         "safety_distribution": safety_counts,
         "has_lora_weights": bool(avatar.lora_weights_url)
     }
+
+
+@router.get("/health")
+async def system_2_health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Health check endpoint for System 2 (Content Production)
+    
+    Verifies:
+    - Database connectivity
+    - Template library functionality
+    - Provider chain availability
+    - R2 storage credentials
+    
+    Returns:
+    - status: "healthy" | "degraded" | "unhealthy"
+    - checks: detailed status of each component
+    - timestamp: check timestamp in ISO format
+    """
+    import logging
+    import time
+    from datetime import datetime
+
+    logger = logging.getLogger(__name__)
+    check_start = time.time()
+
+    status = "healthy"
+    checks = {}
+    errors = []
+
+    # Check 1: Database connectivity
+    try:
+        avatars_count = db.execute(select(func.count()).select_from(Avatar)).scalar()
+        content_count = db.execute(select(func.count()).select_from(ContentPiece)).scalar()
+        checks["database"] = {
+            "status": "online",
+            "avatars_count": avatars_count,
+            "content_pieces_count": content_count
+        }
+        logger.debug(f"Health check: Database OK | Avatars: {avatars_count}, Content: {content_count}")
+    except Exception as e:
+        status = "unhealthy"
+        checks["database"] = {
+            "status": "offline",
+            "error": str(e)[:100]
+        }
+        errors.append(f"Database: {str(e)[:100]}")
+        logger.error(f"Health check: Database FAILED | Error: {str(e)[:100]}")
+
+    # Check 2: Template library functionality
+    try:
+        all_templates = template_library.get_all_templates()
+        templates_by_tier = {
+            "capa1": len(template_library.get_by_tier(TemplateTier.CAPA1)),
+            "capa2": len(template_library.get_by_tier(TemplateTier.CAPA2)),
+            "capa3": len(template_library.get_by_tier(TemplateTier.CAPA3))
+        }
+        cache_stats = template_library.get_cache_stats()
+        checks["template_library"] = {
+            "status": "loaded",
+            "total_templates": len(all_templates),
+            "tier_distribution": templates_by_tier,
+            "cache_performance": cache_stats
+        }
+        logger.debug(
+            f"Health check: Template library OK | Templates: {len(all_templates)} | "
+            f"Cache hits: {cache_stats['cache_hits']}"
+        )
+    except Exception as e:
+        status = "degraded"
+        checks["template_library"] = {
+            "status": "error",
+            "error": str(e)[:100]
+        }
+        errors.append(f"Template library: {str(e)[:100]}")
+        logger.error(f"Health check: Template library FAILED | Error: {str(e)[:100]}")
+
+    # Check 3: Inference engine availability
+    try:
+        inference_status = lora_inference_engine.get_status()
+        checks["inference_engine"] = {
+            "status": "available",
+            "engine_type": type(lora_inference_engine).__name__,
+            "details": inference_status
+        }
+        logger.debug(f"Health check: Inference engine OK | Type: {type(lora_inference_engine).__name__}")
+    except Exception as e:
+        status = "degraded"
+        checks["inference_engine"] = {
+            "status": "error",
+            "error": str(e)[:100]
+        }
+        errors.append(f"Inference engine: {str(e)[:100]}")
+        logger.warning(f"Health check: Inference engine FAILED | Error: {str(e)[:100]}")
+
+    # Check 4: Hook generator availability
+    try:
+        if hook_generator:
+            checks["hook_generator"] = {
+                "status": "available",
+                "engine_type": type(hook_generator).__name__
+            }
+            logger.debug(f"Health check: Hook generator OK | Type: {type(hook_generator).__name__}")
+        else:
+            checks["hook_generator"] = {
+                "status": "disabled",
+                "note": "Hook generator not configured"
+            }
+            logger.debug("Health check: Hook generator disabled")
+    except Exception as e:
+        status = "degraded"
+        checks["hook_generator"] = {
+            "status": "error",
+            "error": str(e)[:100]
+        }
+        errors.append(f"Hook generator: {str(e)[:100]}")
+        logger.warning(f"Health check: Hook generator FAILED | Error: {str(e)[:100]}")
+
+    # Check 5: Safety service availability
+    try:
+        if content_safety_service:
+            checks["safety_service"] = {
+                "status": "available",
+                "engine_type": type(content_safety_service).__name__
+            }
+            logger.debug(f"Health check: Safety service OK | Type: {type(content_safety_service).__name__}")
+        else:
+            checks["safety_service"] = {
+                "status": "disabled",
+                "note": "Safety service not configured"
+            }
+            logger.debug("Health check: Safety service disabled")
+    except Exception as e:
+        status = "degraded"
+        checks["safety_service"] = {
+            "status": "error",
+            "error": str(e)[:100]
+        }
+        errors.append(f"Safety service: {str(e)[:100]}")
+        logger.warning(f"Health check: Safety service FAILED | Error: {str(e)[:100]}")
+
+    # Check 6: R2 storage credentials
+    try:
+        r2_account = os.getenv("R2_ACCOUNT_ID")
+        r2_access = os.getenv("R2_ACCESS_KEY_ID")
+        r2_secret = os.getenv("R2_SECRET_ACCESS_KEY")
+        r2_bucket = os.getenv("R2_BUCKET_NAME")
+
+        r2_configured = bool(r2_account and r2_access and r2_secret and r2_bucket)
+
+        checks["r2_storage"] = {
+            "status": "configured" if r2_configured else "unconfigured",
+            "account_id_set": bool(r2_account),
+            "access_key_set": bool(r2_access),
+            "secret_key_set": bool(r2_secret),
+            "bucket_name": r2_bucket or "not-set"
+        }
+
+        if r2_configured:
+            logger.debug(f"Health check: R2 storage OK | Bucket: {r2_bucket}")
+        else:
+            status = "degraded"
+            logger.warning("Health check: R2 storage NOT fully configured")
+
+    except Exception as e:
+        status = "degraded"
+        checks["r2_storage"] = {
+            "status": "error",
+            "error": str(e)[:100]
+        }
+        errors.append(f"R2 storage: {str(e)[:100]}")
+        logger.warning(f"Health check: R2 storage FAILED | Error: {str(e)[:100]}")
+
+    check_duration = time.time() - check_start
+
+    return {
+        "status": status,
+        "timestamp": datetime.utcnow().isoformat(),
+        "checks": checks,
+        "errors": errors,
+        "duration_ms": round(check_duration * 1000, 2)
+    }
+

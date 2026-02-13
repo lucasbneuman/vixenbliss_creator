@@ -23,6 +23,11 @@
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
+    /* Brand tokens (violet / bordo) - numeric HSL triplets for use with hsl(var(--...)) */
+    --brand-1: 273 67% 39%; /* #6B21A8 */
+    --brand-2: 294 76% 23%; /* #5B0E66 */
+    --brand-3: 276 10% 8%;  /* #1B1220 (deep background stop) */
+    --brand-gradient: linear-gradient(90deg, hsl(var(--brand-1)), hsl(var(--brand-2)));
     --radius: 0.5rem;
   }
 
@@ -34,8 +39,13 @@
     --card-foreground: 210 40% 98%;
     --popover: 224 36% 9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 156 75% 45%;
-    --primary-foreground: 220 45% 8%;
+    /* Primary/accent remapped to brand tokens (violet → bordo) */
+    --primary: 273 67% 39%;
+    --primary-foreground: 220 45% 98%;
+    --brand-1: 273 67% 39%;
+    --brand-2: 294 76% 23%;
+    --brand-3: 276 10% 8%;
+    --brand-gradient: linear-gradient(90deg, hsl(var(--brand-1)), hsl(var(--brand-2)));
     --secondary: 222 26% 16%;
     --secondary-foreground: 210 40% 98%;
     --muted: 222 26% 16%;
@@ -208,6 +218,11 @@
   .section-kicker {
     @apply text-[11px] uppercase tracking-[0.3em] text-soft;
   }
+
+  /* Brand gradient utility (use sparingly for CTAs and highlights) */
+  .bg-brand-gradient {
+    background-image: var(--brand-gradient) !important;
+  }
 }
 
 @layer base {
@@ -223,5 +238,70 @@
 
   ::placeholder {
     color: rgba(226,232,240,0.95);
+  }
+
+  select,
+  option {
+    background-color: rgb(2, 6, 23);
+    color: rgba(248,250,252,0.98);
+  }
+
+  input,
+  textarea,
+  select {
+    background-color: rgb(2, 6, 23) !important;
+    color: rgba(248,250,252,0.98) !important;
+    border-color: rgba(255,255,255,0.2) !important;
+    caret-color: rgba(248,250,252,0.98) !important;
+  }
+}
+
+@layer utilities {
+  .select-dark {
+    background-color: rgb(2, 6, 23) !important;
+    color: rgba(248,250,252,0.98) !important;
+    border-color: rgba(255,255,255,0.15) !important;
+  }
+
+  .choice-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+  }
+
+  .choice-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(15,23,42,0.6);
+    color: rgba(248,250,252,0.98);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease;
+  }
+
+  .choice-item input {
+    accent-color: #34d399;
+  }
+
+  .choice-item:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.3);
+  }
+
+  .btn-contrast {
+    background-color: rgb(30, 41, 59) !important;
+    color: #ffffff !important;
+    border-color: rgba(255,255,255,0.25) !important;
+  }
+
+  .btn-contrast-primary {
+    background-color: rgb(16, 185, 129) !important;
+    color: #ffffff !important;
   }
 }

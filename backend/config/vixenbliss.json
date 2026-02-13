@@ -1,0 +1,15 @@
+﻿{
+  "meta": {
+    "note": "Replace this file with an exported ComfyUI workflow JSON.",
+    "placeholders": [
+      "{{PROMPT}}",
+      "{{NEGATIVE_PROMPT}}",
+      "{{WIDTH}}",
+      "{{HEIGHT}}",
+      "{{SEED}}",
+      "{{LORA_URL}}",
+      "{{LORA_SCALE}}"
+    ]
+  },
+  "prompt": {}
+}

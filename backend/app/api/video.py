@@ -37,6 +37,7 @@ async def generate_video(
     duration: int = 4,
     aspect_ratio: str = "16:9",
     style: Optional[str] = None,
+    image_url: Optional[str] = None,
     provider: Optional[str] = None,
     enable_fallback: bool = True,
     background_tasks: BackgroundTasks = None,
@@ -64,6 +65,7 @@ async def generate_video(
             duration=duration,
             aspect_ratio=aspect_ratio,
             style=style,
+            image_url=image_url,
             provider=provider,
             enable_fallback=enable_fallback
         )
@@ -78,10 +80,13 @@ async def generate_video(
         import httpx
 
         async with httpx.AsyncClient(timeout=300.0) as client:
-            video_response = await client.get(video_url)
-            video_response.raise_for_status()
-
-            video_data = video_response.content
+            if video_url.startswith("data:"):
+                header, data = video_url.split(",", 1)
+                video_data = base64.b64decode(data)
+            else:
+                video_response = await client.get(video_url)
+                video_response.raise_for_status()
+                video_data = video_response.content
 
         # Upload to R2
         r2_url = await storage_service.upload_content_piece(

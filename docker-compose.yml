@@ -1,9 +1,10 @@
 services:
   # Frontend - Next.js 14
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
     ports:
       - "3000:3000"
     environment:
@@ -14,6 +15,7 @@ services:
       - backend
     networks:
       - vixenbliss-network
+    command: sh -c "npm install && npm run dev -- --hostname 0.0.0.0 --port 3000"
 
   # Backend - FastAPI
   backend:
@@ -97,6 +99,8 @@ services:
     networks:
       - vixenbliss-network
     command: celery -A app.workers.celery_app worker --loglevel=info
+    healthcheck:
+      disable: true
 
   # Celery Beat - Scheduler
   celery-beat:
@@ -115,6 +119,8 @@ services:
     networks:
       - vixenbliss-network
     command: celery -A app.workers.celery_app beat --loglevel=info
+    healthcheck:
+      disable: true
 
 volumes:
   postgres_data:

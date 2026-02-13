@@ -13,6 +13,7 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 
+
 class VideoGenerationService:
     """
     Multi-provider video generation service
@@ -53,7 +54,7 @@ class VideoGenerationService:
         }
 
         # Fallback order (E08-003)
-        self.fallback_order = ["runway", "pika", "luma"]
+        self.fallback_order = ["luma", "pika", "runway"]
 
     async def generate_video(
         self,
@@ -62,6 +63,7 @@ class VideoGenerationService:
         aspect_ratio: str = "16:9",
         style: Optional[str] = None,
         provider: Optional[str] = None,
+        image_url: Optional[str] = None,
         enable_fallback: bool = True
     ) -> Dict[str, Any]:
         """
@@ -90,6 +92,9 @@ class VideoGenerationService:
         else:
             provider_order = self.fallback_order.copy()
 
+        # Filter providers that are not configured
+        provider_order = [p for p in provider_order if self._is_provider_available(p)]
+
         last_error = None
         attempts = []
 
@@ -102,7 +107,8 @@ class VideoGenerationService:
                     prompt=prompt,
                     duration=duration,
                     aspect_ratio=aspect_ratio,
-                    style=style
+                    style=style,
+                    image_url=image_url
                 )
 
                 # Success!
@@ -137,7 +143,8 @@ class VideoGenerationService:
         prompt: str,
         duration: int,
         aspect_ratio: str,
-        style: Optional[str]
+        style: Optional[str],
+        image_url: Optional[str]
     ) -> Dict[str, Any]:
         """Generate video using specific provider"""
 
@@ -400,6 +407,13 @@ class VideoGenerationService:
                 return "luma"
 
         return "pika"  # Default to balanced
+
+    def _is_provider_available(self, provider: str) -> bool:
+        provider_config = self.providers.get(provider, {})
+        api_key_env = provider_config.get("api_key_env")
+        if not api_key_env:
+            return False
+        return bool(os.getenv(api_key_env))
 
 
 # Singleton instance

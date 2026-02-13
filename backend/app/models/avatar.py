@@ -13,7 +13,7 @@ class Avatar(Base):
     name = Column(String(255), nullable=False)
     stage = Column(String(50), nullable=False, default="draft")
     base_image_url = Column(Text)
-    lora_model_id = Column(String(255))
+    lora_model_id = Column(GUID, ForeignKey("lora_models.id"), nullable=True)
     lora_weights_url = Column(Text)
     niche = Column(String(100))
     aesthetic_style = Column(String(100))
@@ -23,5 +23,6 @@ class Avatar(Base):
 
     # Relationships
     user = relationship("User", back_populates="avatars")
+    lora_model = relationship("LoRAModel", back_populates="avatars")
     identity_components = relationship("IdentityComponent", back_populates="avatar", cascade="all, delete-orphan")
     content_pieces = relationship("ContentPiece", back_populates="avatar", cascade="all, delete-orphan")

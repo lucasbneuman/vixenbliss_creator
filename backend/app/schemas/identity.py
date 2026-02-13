@@ -4,7 +4,7 @@ from uuid import UUID
 from datetime import datetime
 
 # Provider types
-ProviderType = Literal["replicate_sdxl", "midjourney", "leonardo", "dall_e_3"]
+ProviderType = Literal["modal_sdxl_lora", "replicate_sdxl", "midjourney", "leonardo", "dall_e_3"]
 
 # Request schemas
 class FacialGenerationRequest(BaseModel):
@@ -92,12 +92,12 @@ class FacialGenerationResponse(BaseModel):
                     "aesthetic_style": "fitness",
                     "dominant_features": ["athletic build", "confident expression"],
                     "quality_score": 0.92,
-                    "provider_used": "replicate_sdxl",
+                    "provider_used": "modal_sdxl_lora",
                     "generation_params": {"steps": 30, "cfg_scale": 7.5}
                 },
                 "cost_usd": 0.015,
                 "generation_time_seconds": 8.5,
-                "provider": "replicate_sdxl"
+                "provider": "modal_sdxl_lora"
             }
         }
 
@@ -109,6 +109,7 @@ class AvatarCreateRequest(BaseModel):
     niche: str = Field(..., description="Target niche (e.g., 'fitness', 'lifestyle', 'fashion')")
     aesthetic_style: str
     facial_generation: FacialGenerationRequest
+    lora_model_id: Optional[UUID] = Field(default=None, description="Optional preloaded LoRA model ID")
 
     class Config:
         json_schema_extra = {
@@ -131,8 +132,8 @@ class AvatarCreateWithLoRARequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     niche: str = Field(..., description="Target niche (e.g., 'fitness', 'lifestyle', 'fashion')")
     aesthetic_style: str
-    lora_model_id: str = Field(..., description="Pre-trained LoRA model ID (e.g., Replicate model version)")
-    lora_weights_url: str = Field(..., description="URL to LoRA weights file (.safetensors)")
+    lora_model_id: Optional[UUID] = Field(default=None, description="Catalog LoRA model ID")
+    lora_weights_url: Optional[str] = Field(default=None, description="URL to LoRA weights file (.safetensors)")
     base_image_url: Optional[str] = Field(None, description="Optional reference image of the avatar")
     bio: Optional[str] = Field(None, description="Avatar biography/personality description")
 
@@ -162,7 +163,7 @@ class AvatarResponse(BaseModel):
     aesthetic_style: Optional[str]
     created_at: datetime
     updated_at: datetime
-    metadata: dict
+    metadata: dict = Field(default_factory=dict, validation_alias="meta_data")
 
     class Config:
         from_attributes = True
