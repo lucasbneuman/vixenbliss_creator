@@ -38,6 +38,8 @@ Cada tarea debe registrarse en **2 líneas**:
 
 <!-- Las tareas se registran aquí cronológicamente -->
 [SM-001] E01-001 completada: Next.js 14 App Router + shadcn/ui + TailwindCSS configurados (layout.tsx, globals.css, Button component)
+[FE-999] Tema Dark Vixen: añadidos tokens de marca (violeta→bordó), mapeo en Tailwind y refactor inicial en `ui/button`, `top-nav`, `sidebar`
+[FE-999] PR: feat/theme/dark-vixen — tests locales ejecutados; revisar visual S1/S2 y contratos v1 antes de merge
 [SM-002] E01-002 completada: Docker Compose + Coolify config + GitHub Actions CI/CD (6 servicios orquestados)
 [SM-003] E01-003 completada: PostgreSQL schema + SQLAlchemy models + FastAPI main.py (10 tablas, pgvector, health endpoint)
 [SM-004] E01-004 completada: Cloudflare R2 storage service + presigned URLs + S3 backup + API endpoints (upload, delete, list)
