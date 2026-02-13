@@ -18,7 +18,15 @@ const config = {
       },
     },
     extend: {
+      backgroundImage: {
+        'brand-gradient': 'linear-gradient(90deg, hsl(var(--brand-1)), hsl(var(--brand-2)))',
+      },
       colors: {
+        brand: {
+          DEFAULT: 'hsl(var(--brand-1))',
+          2: 'hsl(var(--brand-2))',
+          3: 'hsl(var(--brand-3))',
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
