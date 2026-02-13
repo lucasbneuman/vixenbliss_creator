@@ -6,15 +6,15 @@ import { cn } from "@/lib/utils"
 const buttonVariants = cva(
   "inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
   {
-    variants: {
+      variants: {
       variant: {
-        default: "bg-emerald-600 text-white hover:bg-emerald-500 shadow-[0_10px_30px_rgba(16,185,129,0.2)]",
+        default: "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:brightness-110 shadow-[0_10px_30px_rgba(107,33,168,0.18)]",
         destructive: "bg-red-600 text-white hover:bg-red-700",
         outline: "border border-white/25 bg-slate-900/80 hover:bg-slate-800 text-white shadow-[0_10px_25px_rgba(0,0,0,0.25)]",
         secondary: "bg-slate-800/90 text-white hover:bg-slate-700 border border-white/10",
         ghost: "hover:bg-white/10 hover:text-slate-100",
         link: "text-slate-100 underline-offset-4 hover:underline",
-        success: "bg-emerald-600 text-white hover:bg-emerald-500 shadow-[0_10px_30px_rgba(16,185,129,0.2)]",
+        success: "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:brightness-110 shadow-[0_10px_30px_rgba(107,33,168,0.18)]",
         warning: "bg-amber-600 text-white hover:bg-amber-500",
       },
       size: {
