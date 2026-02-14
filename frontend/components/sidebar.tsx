@@ -51,11 +51,11 @@ export default function Sidebar() {
   const pathname = usePathname()
 
   return (
-    <div className="flex flex-col h-full text-slate-100 bg-slate-950/90">
+    <div className="flex flex-col h-full text-slate-100 bg-background">
       {/* Logo */}
       <div className="p-6 border-b border-white/10">
         <Link href="/" className="flex items-center gap-3 group">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-slate-100 shadow-[0_10px_30px_rgba(16,185,129,0.35)]">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[hsl(var(--primary))] text-slate-100 shadow-[0_10px_30px_rgba(107,33,168,0.35)]">
             <Sparkles className="h-5 w-5" />
           </div>
           <div>
@@ -67,10 +67,10 @@ export default function Sidebar() {
 
       {/* Key Metrics Summary */}
       <div className="px-5 py-5 border-b border-white/10">
-        <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
+        <div className="rounded-2xl border border-white/10 bg-[hsl(var(--card))/0.08] p-4 backdrop-blur">
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-soft uppercase tracking-[0.2em]">MRR</span>
-            <span className="text-sm font-semibold text-emerald-300">$156.8K</span>
+            <span className="text-sm font-semibold text-[hsl(var(--primary))]">$156.8K</span>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
             <div>
@@ -100,13 +100,13 @@ export default function Sidebar() {
                 className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors border border-transparent",
                   isActive
-                    ? "bg-white/15 text-high border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
-                    : "text-soft hover:text-high hover:bg-white/5 hover:border-white/10"
+                    ? "bg-[hsl(var(--card))/0.12] text-high border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
+                    : "text-soft hover:text-high hover:bg-[hsl(var(--card))/0.06] hover:border-white/10"
                 )}
               >
                 <div className={cn(
                   "flex h-9 w-9 items-center justify-center rounded-lg",
-                  isActive ? "bg-emerald-400/20 text-emerald-300" : "bg-white/5 text-soft"
+                  isActive ? "bg-[hsl(var(--primary))/0.2] text-[hsl(var(--primary))]" : "bg-white/5 text-soft"
                 )}>
                   <route.icon className="h-5 w-5 shrink-0" />
                 </div>
@@ -130,16 +130,16 @@ export default function Sidebar() {
         </Link>
 
         {/* System Status */}
-        <div className="mt-3 px-3 py-3 rounded-xl border border-white/10 bg-white/10">
+        <div className="mt-3 px-3 py-3 rounded-xl border border-white/10 bg-[hsl(var(--card))/0.08]">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] text-soft uppercase tracking-[0.2em]">Status</span>
             <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-emerald-400"></div>
-              <span className="text-xs font-semibold text-emerald-300">Live</span>
+              <div className="h-2 w-2 rounded-full bg-[hsl(var(--primary))]"></div>
+              <span className="text-xs font-semibold text-[hsl(var(--primary))]">Live</span>
             </div>
           </div>
           <div className="h-1 bg-white/10 rounded-full overflow-hidden">
-            <div className="h-full bg-emerald-400 rounded-full" style={{ width: '99.9%' }}></div>
+            <div className="h-full bg-[hsl(var(--primary))] rounded-full" style={{ width: '99.9%' }}></div>
           </div>
           <p className="text-xs text-soft mt-1">99.9% uptime</p>
         </div>

@@ -54,7 +54,10 @@ def generate_content_batch(
     tier_distribution: dict = None,
     include_hooks: bool = True,
     safety_check: bool = True,
-    upload_to_storage: bool = True
+    upload_to_storage: bool = True,
+    custom_prompts: list = None,
+    custom_tiers: list = None,
+    generation_config: dict = None
 ):
     """
     Generate batch of content pieces for an avatar (ÉPICA 03 - E03-005).
@@ -80,8 +83,10 @@ def generate_content_batch(
     db = SessionLocal()
 
     try:
-        # Get avatar
-        avatar = db.query(Avatar).filter(Avatar.id == UUID(avatar_id)).first()
+        # Get avatar (SQLAlchemy 2.0 style)
+        from sqlalchemy import select
+        stmt = select(Avatar).where(Avatar.id == UUID(avatar_id))
+        avatar = db.execute(stmt).scalars().first()
         if not avatar:
             raise ValueError(f"Avatar {avatar_id} not found")
 
@@ -98,6 +103,11 @@ def generate_content_batch(
             }
         )
 
+        # Default generation config from avatar metadata if not provided
+        if generation_config is None:
+            avatar_meta = getattr(avatar, "meta_data", None) or getattr(avatar, "metadata", None) or {}
+            generation_config = avatar_meta.get("generation_config")
+
         # Create batch processor config
         config = BatchProcessorConfig(
             num_pieces=num_pieces,
@@ -105,7 +115,8 @@ def generate_content_batch(
             tier_distribution=tier_distribution,
             include_hooks=include_hooks,
             safety_check=safety_check,
-            upload_to_storage=upload_to_storage
+            upload_to_storage=upload_to_storage,
+            generation_config=generation_config
         )
 
         # Update state: template selection
@@ -123,7 +134,9 @@ def generate_content_batch(
             batch_processor.process_batch(
                 db=db,
                 avatar=avatar,
-                config=config
+                config=config,
+                custom_prompts=custom_prompts,
+                custom_tiers=custom_tiers
             )
         )
 

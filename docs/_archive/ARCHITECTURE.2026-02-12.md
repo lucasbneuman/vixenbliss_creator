@@ -1,49 +1,55 @@
+﻿# ARCHIVED
+
+Archivo archivado el 2026-02-12 durante consolidacion de arquitectura/sistema.
+Fuente original: docs/ARCHITECTURE.md
+
+---
 # VixenBliss Creator - Architecture Documentation
 
 ## Overview
-VixenBliss Creator es una plataforma SaaS para generación automatizada de avatares AI y gestión de contenido en redes sociales.
+VixenBliss Creator es una plataforma SaaS para generaciÃ³n automatizada de avatares AI y gestiÃ³n de contenido en redes sociales.
 
 ## Los 5 Sistemas Principales
 
-### Sistema 1: Generación de Identidades (ÉPICA 02)
+### Sistema 1: GeneraciÃ³n de Identidades (Ã‰PICA 02)
 **Objetivo**: Crear avatares AI fotorrealistas con identidad completa.
 
 **Componentes**:
-- **API Generación Facial**: Integración con Replicate para generar rostros
-- **Dataset Builder**: Genera 50 imágenes variadas del avatar
+- **API GeneraciÃ³n Facial**: IntegraciÃ³n con Replicate para generar rostros
+- **Dataset Builder**: Genera 50 imÃ¡genes variadas del avatar
 - **LoRA Training**: Entrena modelo personalizado via Replicate
-- **Auto-Bio Generator**: LLM genera biografía basada en nicho/estilo
+- **Auto-Bio Generator**: LLM genera biografÃ­a basada en nicho/estilo
 - **Location/Interests Engine**: Asigna personalidad y contexto
 - **Cost Tracking**: Monitoreo de costos por avatar
 
 **Stack**:
 - Backend: FastAPI endpoints (`/api/v1/avatars`)
 - LLM: LangChain para bio generation
-- Storage: Cloudflare R2 para imágenes
+- Storage: Cloudflare R2 para imÃ¡genes
 - Database: PostgreSQL (tablas: `avatars`, `identity_components`)
 
 **Flow**:
 ```
-1. Usuario crea avatar → Configura nicho, estilo estético
+1. Usuario crea avatar â†’ Configura nicho, estilo estÃ©tico
 2. Sistema genera rostro base via Replicate
 3. Dataset builder crea 50 variaciones
 4. LoRA training (20-30 min)
 5. LLM genera bio, location, interests
-6. Avatar listo para producción de contenido
+6. Avatar listo para producciÃ³n de contenido
 ```
 
 ---
 
-### Sistema 2: Producción de Contenido (ÉPICA 03 + 08)
-**Objetivo**: Generar 50+ piezas de contenido visual por avatar automáticamente.
+### Sistema 2: ProducciÃ³n de Contenido (Ã‰PICA 03 + 08)
+**Objetivo**: Generar 50+ piezas de contenido visual por avatar automÃ¡ticamente.
 
 **Componentes**:
-- **LoRA Inference Engine**: Usa modelo entrenado para generar imágenes
+- **LoRA Inference Engine**: Usa modelo entrenado para generar imÃ¡genes
 - **Template Library**: 50 poses/escenarios predefinidos
 - **Hook Generator**: LLM crea copy atractivo para cada pieza
-- **Content Safety Layer**: Moderación de contenido
+- **Content Safety Layer**: ModeraciÃ³n de contenido
 - **Batch Processing**: Genera 50 piezas en paralelo
-- **R2 Upload + CDN**: Almacenamiento y distribución
+- **R2 Upload + CDN**: Almacenamiento y distribuciÃ³n
 
 **Stack**:
 - Backend: Celery workers para batch processing
@@ -53,7 +59,7 @@ VixenBliss Creator es una plataforma SaaS para generación automatizada de avata
 
 **Flow**:
 ```
-1. Avatar completo → Sistema inicia batch generation
+1. Avatar completo â†’ Sistema inicia batch generation
 2. Selecciona 50 templates de library
 3. LoRA inference para cada template
 4. LLM genera hook personalizado
@@ -62,18 +68,18 @@ VixenBliss Creator es una plataforma SaaS para generación automatizada de avata
 7. 50 piezas listas para scheduling
 ```
 
-**Futuro (ÉPICA 08)**:
+**Futuro (Ã‰PICA 08)**:
 - Video generation via Replicate
 - Voice synthesis
 - Multi-provider fallback
 
 ---
 
-### Sistema 3: Distribución Automática (ÉPICA 04)
-**Objetivo**: Publicar contenido en TikTok/Instagram automáticamente.
+### Sistema 3: DistribuciÃ³n AutomÃ¡tica (Ã‰PICA 04)
+**Objetivo**: Publicar contenido en TikTok/Instagram automÃ¡ticamente.
 
 **Componentes**:
-- **TikTok API Integration**: Publicación programada
+- **TikTok API Integration**: PublicaciÃ³n programada
 - **Instagram API Integration**: Posts + Stories
 - **Smart Scheduler**: Optimiza por timezone y engagement patterns
 - **Pattern Randomization**: Anti-ban protection
@@ -87,34 +93,34 @@ VixenBliss Creator es una plataforma SaaS para generación automatizada de avata
 
 **Flow**:
 ```
-1. Content piece listo → Entra en scheduling queue
+1. Content piece listo â†’ Entra en scheduling queue
 2. Smart scheduler determina mejor momento
 3. Pattern randomization aplica variaciones
 4. Publica via API (TikTok/Instagram)
 5. Health monitoring verifica success
-6. Si falla → Auto-retry con backoff exponencial
+6. Si falla â†’ Auto-retry con backoff exponencial
 ```
 
 ---
 
-### Sistema 4: Monetización Multi-capa (ÉPICA 05, 07, 09)
-**Objetivo**: Convertir followers en revenue a través de 3 capas.
+### Sistema 4: MonetizaciÃ³n Multi-capa (Ã‰PICA 05, 07, 09)
+**Objetivo**: Convertir followers en revenue a travÃ©s de 3 capas.
 
-**Capa 1: Subscripción Básica** (ÉPICA 05)
+**Capa 1: SubscripciÃ³n BÃ¡sica** (Ã‰PICA 05)
 - **Precio**: $9-19/mes
 - **Acceso**: Contenido exclusivo, DM access
 - **Stripe Integration**: Subscripciones recurrentes
 - **Content Gating**: Paywall para contenido premium
 
-**Capa 2: Premium Packs** (ÉPICA 07)
+**Capa 2: Premium Packs** (Ã‰PICA 07)
 - **Precio**: $20-50 por pack
-- **Contenido**: Sets temáticos, contenido especial
+- **Contenido**: Sets temÃ¡ticos, contenido especial
 - **Upsell Automation**: Chatbot detecta oportunidades
-- **Conversion Tracking**: Funnel Capa 1 → Capa 2
+- **Conversion Tracking**: Funnel Capa 1 â†’ Capa 2
 
-**Capa 3: Custom Content** (ÉPICA 09)
+**Capa 3: Custom Content** (Ã‰PICA 09)
 - **Precio**: $50-200 por request
-- **Custom Requests**: Usuario pide contenido específico
+- **Custom Requests**: Usuario pide contenido especÃ­fico
 - **Chatbot Negotiation**: Automatiza proceso de venta
 - **Auto-Delivery**: Genera y entrega contenido custom
 
@@ -125,21 +131,21 @@ VixenBliss Creator es una plataforma SaaS para generación automatizada de avata
 
 **Flow**:
 ```
-Capa 1: Follower → DM → Chatbot ofrece subscription → Stripe checkout → Subscriber
-Capa 2: Subscriber → Chatbot detecta engagement alto → Ofrece premium pack → Upsell
-Capa 3: Premium user → Solicita custom → Chatbot negocia → Pago → Auto-genera
+Capa 1: Follower â†’ DM â†’ Chatbot ofrece subscription â†’ Stripe checkout â†’ Subscriber
+Capa 2: Subscriber â†’ Chatbot detecta engagement alto â†’ Ofrece premium pack â†’ Upsell
+Capa 3: Premium user â†’ Solicita custom â†’ Chatbot negocia â†’ Pago â†’ Auto-genera
 ```
 
 ---
 
-### Sistema 5: Chatbot Lead Generation (ÉPICA 06)
-**Objetivo**: Automatizar conversión de DMs en subscriptores.
+### Sistema 5: Chatbot Lead Generation (Ã‰PICA 06)
+**Objetivo**: Automatizar conversiÃ³n de DMs en subscriptores.
 
 **Componentes**:
-- **DM Auto-Responder**: Responde DMs en IG/TikTok automáticamente
-- **3-Stage Funnel Engine**: Engagement → Qualification → Conversion
-- **Lead Scoring System**: Clasifica leads por probabilidad de conversión
-- **Conversion Tracking**: Métricas de funnel
+- **DM Auto-Responder**: Responde DMs en IG/TikTok automÃ¡ticamente
+- **3-Stage Funnel Engine**: Engagement â†’ Qualification â†’ Conversion
+- **Lead Scoring System**: Clasifica leads por probabilidad de conversiÃ³n
+- **Conversion Tracking**: MÃ©tricas de funnel
 - **A/B Testing Framework**: Optimiza copy y estrategia
 
 **Stack**:
@@ -150,9 +156,9 @@ Capa 3: Premium user → Solicita custom → Chatbot negocia → Pago → Auto-g
 **3-Stage Funnel**:
 ```
 Stage 1: Engagement
-- Usuario envía DM
+- Usuario envÃ­a DM
 - Bot responde con personalidad del avatar
-- Califica interés (lead scoring)
+- Califica interÃ©s (lead scoring)
 
 Stage 2: Qualification
 - Bot hace preguntas para entender necesidad
@@ -177,7 +183,7 @@ workflow.add_conditional_edges(...)
 
 ---
 
-## Stack Tecnológico Completo
+## Stack TecnolÃ³gico Completo
 
 ### Frontend
 - **Framework**: Next.js 14 (App Router)
@@ -223,12 +229,12 @@ workflow.add_conditional_edges(...)
 ### Core Tables
 ```
 avatars (identidad del avatar)
-├── identity_components (bio, interests, location)
-├── content_pieces (imágenes/videos generados)
-├── scheduled_posts (distribution queue)
-├── subscriptions (Capa 1)
-├── purchases (Capa 2 + 3)
-└── conversations (chatbot interactions)
+â”œâ”€â”€ identity_components (bio, interests, location)
+â”œâ”€â”€ content_pieces (imÃ¡genes/videos generados)
+â”œâ”€â”€ scheduled_posts (distribution queue)
+â”œâ”€â”€ subscriptions (Capa 1)
+â”œâ”€â”€ purchases (Capa 2 + 3)
+â””â”€â”€ conversations (chatbot interactions)
 
 users (propietarios de avatares)
 platform_accounts (IG/TikTok credentials)
@@ -252,8 +258,8 @@ avatar_memories (pgvector for RAG)
 /api/v1/avatars          - CRUD avatares
 /api/v1/content          - Content pieces
 /api/v1/scheduling       - Distribution
-/api/v1/subscriptions    - Monetización
-/api/v1/analytics        - Métricas
+/api/v1/subscriptions    - MonetizaciÃ³n
+/api/v1/analytics        - MÃ©tricas
 /webhooks/stripe         - Stripe events
 /webhooks/instagram      - IG events
 /webhooks/tiktok         - TikTok events
@@ -291,12 +297,12 @@ avatar_memories (pgvector for RAG)
 
 ## Monitoring & Analytics
 
-### Business Metrics (ÉPICA 11)
+### Business Metrics (Ã‰PICA 11)
 - **MRR**: Monthly Recurring Revenue
 - **CAC**: Customer Acquisition Cost
 - **LTV**: Lifetime Value
 - **Churn Rate**: Subscriber cancellations
-- **Conversion Rate**: Follower → Subscriber
+- **Conversion Rate**: Follower â†’ Subscriber
 
 ### Technical Metrics
 - **LLM Cost per Avatar**: Token usage tracking

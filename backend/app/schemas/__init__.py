@@ -10,7 +10,9 @@ from app.schemas.lora import (
     DatasetGenerationResponse,
     LoRATrainingRequest,
     LoRATrainingResponse,
-    LoRATrainingStatus
+    LoRATrainingStatus,
+    LoRAModelCreateRequest,
+    LoRAModelResponse
 )
 
 __all__ = [
@@ -22,5 +24,7 @@ __all__ = [
     "DatasetGenerationResponse",
     "LoRATrainingRequest",
     "LoRATrainingResponse",
-    "LoRATrainingStatus"
+    "LoRATrainingStatus",
+    "LoRAModelCreateRequest",
+    "LoRAModelResponse"
 ]

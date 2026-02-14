@@ -1,3 +1,9 @@
+﻿# ARCHIVED
+
+Archivo archivado el 2026-02-12 durante consolidacion de documentacion API.
+Fuente original: docs/API_DOCUMENTATION.md
+
+---
 # API Documentation - VixenBliss Creator
 
 ## Base URLs
@@ -82,7 +88,7 @@ Content-Type: application/json
   "avatar_name": "Luna",
   "nicho": "fitness",
   "status": "active",
-  "bio": "Fitness enthusiast 💪 | Helping you get fit",
+  "bio": "Fitness enthusiast ðŸ’ª | Helping you get fit",
   "identity_components": [
     {
       "component_type": "interests",
@@ -117,7 +123,7 @@ Content-Type: application/json
       "id": "content-uuid-1",
       "avatar_id": "avatar-uuid",
       "template_name": "workout-pose-1",
-      "hook": "Try this simple morning routine! 🔥",
+      "hook": "Try this simple morning routine! ðŸ”¥",
       "image_url": "https://cdn.vixenbliss.com/avatars/luna/content-1.jpg",
       "status": "ready",
       "engagement_score": 0,
@@ -148,6 +154,24 @@ Content-Type: application/json
 }
 ```
 
+### AI Provider Routing (Backend)
+The backend supports provider-agnostic routing for image generation and LoRA inference.
+
+Runtime configuration (environment variables):
+- `AI_IMAGE_PROVIDER`: primary provider for LoRA/content image inference.
+- `AI_IMAGE_PROVIDER_FALLBACKS`: comma-separated fallback chain.
+- `AI_PROVIDER_ENDPOINT_URL`: generic HTTP serverless endpoint (Modal-compatible).
+- `AI_PROVIDER_API_TOKEN`: token for generic HTTP provider auth.
+- `AI_PROVIDER_AUTH_HEADER`, `AI_PROVIDER_AUTH_SCHEME`: auth header customization.
+- `FACE_PROVIDER_ORDER`: provider order for facial generation in Sistema 1.
+
+Backward compatibility:
+- `LORA_PROVIDER`, `MODAL_ENDPOINT_URL`, `MODAL_API_TOKEN`, `MODAL_API_KEY` are still supported.
+
+Supported provider keys and aliases:
+- LoRA/content inference: `replicate`, `comfyui`, `modal_sdxl_lora`, `serverless_http`
+- Facial generation: `replicate_sdxl` (`replicate`), `leonardo`, `dall_e_3` (`openai`)
+
 ---
 
 ## Scheduling API
@@ -161,7 +185,7 @@ Content-Type: application/json
   "content_id": "content-uuid",
   "platform": "instagram",
   "scheduled_time": "2024-01-16T09:00:00Z",
-  "caption": "Morning vibes! 🌅"
+  "caption": "Morning vibes! ðŸŒ…"
 }
 ```
 

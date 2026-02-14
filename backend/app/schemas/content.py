@@ -6,6 +6,7 @@ Pydantic schemas for content production API
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from uuid import UUID
 
 
 class ContentGenerationRequest(BaseModel):
@@ -26,6 +27,9 @@ class BatchGenerationRequest(BaseModel):
     include_hooks: bool = True
     safety_check: bool = True
     upload_to_storage: bool = True
+    custom_prompts: Optional[List[str]] = None
+    custom_tiers: Optional[List[str]] = None
+    generation_config: Optional[Dict[str, Any]] = None
 
 
 class HookGenerationRequest(BaseModel):
@@ -51,8 +55,8 @@ class TemplateListResponse(BaseModel):
 
 class ContentPieceResponse(BaseModel):
     """Response for single content piece"""
-    id: str
-    avatar_id: str
+    id: UUID
+    avatar_id: UUID
     content_type: str
     access_tier: str
     url: str

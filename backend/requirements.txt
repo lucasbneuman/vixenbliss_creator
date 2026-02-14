@@ -37,6 +37,7 @@ langfuse==2.10.0
 
 # Replicate (LoRA training/inference)
 replicate==0.22.0
+Pillow==10.4.0
 
 # Stripe (payments)
 stripe==7.11.0

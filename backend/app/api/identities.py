@@ -17,6 +17,7 @@ from app.schemas.identity import (
     AvatarResponse
 )
 from app.services.identity_service import identity_service
+from app.api.dependencies import get_user_id
 
 
 router = APIRouter(prefix="/api/v1/identities", tags=["identities"])
@@ -30,6 +31,7 @@ async def generate_facial_components(
     Generate facial image without creating avatar (preview/testing)
 
     Uses multi-provider routing:
+    - Modal SDXL 1.0 (default)
     - Replicate SDXL (fast, cheap)
     - Leonardo.ai (high quality)
     - DALL-E 3 (fallback)
@@ -47,7 +49,7 @@ async def generate_facial_components(
 @router.post("/avatars", response_model=FacialGenerationResponse)
 async def create_avatar(
     request: AvatarCreateRequest,
-    user_id: UUID,  # TODO: Extract from JWT token
+    user_id: UUID = Depends(get_user_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -76,7 +78,7 @@ async def create_avatar(
 @router.post("/avatars/with-lora", response_model=AvatarResponse)
 async def create_avatar_with_pretrained_lora(
     request: AvatarCreateWithLoRARequest,
-    user_id: UUID,  # TODO: Extract from JWT token
+    user_id: UUID = Depends(get_user_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -130,7 +132,7 @@ def get_avatar(
 
 @router.get("/avatars", response_model=List[AvatarResponse])
 def list_user_avatars(
-    user_id: UUID,  # TODO: Extract from JWT token
+    user_id: UUID = Depends(get_user_id),
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db)

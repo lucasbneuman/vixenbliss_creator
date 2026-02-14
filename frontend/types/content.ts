@@ -50,6 +50,9 @@ export interface BatchGenerationRequest {
   include_hooks?: boolean
   safety_check?: boolean
   upload_to_storage?: boolean
+  custom_prompts?: string[]
+  custom_tiers?: Array<"capa1" | "capa2" | "capa3">
+  generation_config?: Record<string, any>
 }
 
 export interface BatchGenerationResponse {

@@ -3,7 +3,7 @@ Social Account Model
 Stores connected social media accounts (Instagram, TikTok)
 """
 
-from sqlalchemy import Column, String, DateTime, JSON, Boolean, Enum as SQLEnum
+from sqlalchemy import Column, String, DateTime, JSON, Boolean, Enum as SQLEnum, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
@@ -91,7 +91,7 @@ class ScheduledPost(Base):
     id = Column(GUID, primary_key=True, default=uuid.uuid4)
 
     # Relations
-    social_account_id = Column(GUID, nullable=False, index=True)
+    social_account_id = Column(GUID, ForeignKey("social_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
     content_piece_id = Column(GUID, nullable=False)
     avatar_id = Column(GUID, nullable=False, index=True)
 

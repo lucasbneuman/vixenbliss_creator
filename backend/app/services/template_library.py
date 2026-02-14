@@ -5,6 +5,11 @@ Pre-designed poses, angles, and prompts for content generation
 
 from typing import List, Dict, Any, Optional
 from enum import Enum
+from functools import lru_cache
+import hashlib
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class TemplateCategory(str, Enum):
@@ -543,27 +548,58 @@ CONTENT_TEMPLATES: List[Dict[str, Any]] = [
 
 
 class TemplateLibrary:
-    """Service for managing and retrieving content templates"""
+    """Service for managing and retrieving content templates with LRU caching"""
 
     def __init__(self):
         self.templates = CONTENT_TEMPLATES
+        self._cache_hits = 0
+        self._cache_misses = 0
+        logger.info(f"TemplateLibrary initialized | Templates loaded: {len(self.templates)}")
 
     def get_all_templates(self) -> List[Dict[str, Any]]:
-        """Get all 50 templates"""
-        return self.templates
+        """Get all 50 templates - cached"""
+        return self._get_all_templates_cached()
+
+    @lru_cache(maxsize=128)
+    def _get_all_templates_cached(self) -> tuple:
+        """Cached version of get_all_templates"""
+        self._cache_misses += 1
+        logger.debug("Template cache miss: _get_all_templates_cached")
+        return tuple(self.templates)
 
     def get_by_category(self, category: TemplateCategory) -> List[Dict[str, Any]]:
-        """Get templates by category"""
-        return [t for t in self.templates if t["category"] == category]
+        """Get templates by category - cached"""
+        return self._get_by_category_cached(category)
+
+    @lru_cache(maxsize=64)
+    def _get_by_category_cached(self, category: TemplateCategory) -> tuple:
+        """Cached version of get_by_category"""
+        self._cache_misses += 1
+        logger.debug(f"Template cache miss: category={category.value}")
+        return tuple(t for t in self.templates if t["category"] == category)
 
     def get_by_tier(self, tier: TemplateTier) -> List[Dict[str, Any]]:
-        """Get templates by access tier"""
-        return [t for t in self.templates if t["tier"] == tier]
+        """Get templates by access tier - cached"""
+        return self._get_by_tier_cached(tier)
+
+    @lru_cache(maxsize=32)
+    def _get_by_tier_cached(self, tier: TemplateTier) -> tuple:
+        """Cached version of get_by_tier"""
+        self._cache_misses += 1
+        logger.debug(f"Template cache miss: tier={tier.value}")
+        return tuple(t for t in self.templates if t["tier"] == tier)
 
     def get_by_id(self, template_id: str) -> Optional[Dict[str, Any]]:
-        """Get specific template by ID"""
+        """Get specific template by ID - cached"""
+        return self._get_by_id_cached(template_id)
+
+    @lru_cache(maxsize=50)
+    def _get_by_id_cached(self, template_id: str) -> Optional[Dict[str, Any]]:
+        """Cached version of get_by_id"""
+        self._cache_misses += 1
         for template in self.templates:
             if template["id"] == template_id:
+                logger.debug(f"Template cache miss: id={template_id}")
                 return template
         return None
 
@@ -597,7 +633,13 @@ class TemplateLibrary:
         if len(filtered) <= count:
             return filtered
 
-        return random.sample(filtered, count)
+        result = random.sample(filtered, count)
+        logger.debug(
+            f"Random template selection | Count: {count} | "
+            f"Category: {category.value if category else 'all'} | "
+            f"Tier: {tier.value if tier else 'all'} | Selected: {len(result)}"
+        )
+        return result
 
     def get_templates_for_avatar(
         self,
@@ -605,7 +647,7 @@ class TemplateLibrary:
         count: int = 50
     ) -> List[Dict[str, Any]]:
         """
-        Get templates optimized for avatar's niche
+        Get templates optimized for avatar's niche - cached by niche
 
         Args:
             avatar_niche: Avatar's primary niche
@@ -614,6 +656,16 @@ class TemplateLibrary:
         Returns:
             Niche-optimized template selection
         """
+        return self._get_templates_for_avatar_cached(avatar_niche, count)
+
+    @lru_cache(maxsize=32)
+    def _get_templates_for_avatar_cached(
+        self,
+        avatar_niche: str,
+        count: int = 50
+    ) -> tuple:
+        """Cached version of get_templates_for_avatar"""
+        self._cache_misses += 1
 
         # Niche to category mapping
         niche_mapping = {
@@ -643,7 +695,13 @@ class TemplateLibrary:
             templates.extend(remaining)
 
         # Return requested count
-        return templates[:count]
+        result = templates[:count]
+        logger.debug(
+            f"Niche-optimized template selection | Niche: {avatar_niche} | "
+            f"Count: {count} | Categories: {[c.value for c in preferred_categories]} | "
+            f"Selected: {len(result)}"
+        )
+        return tuple(result)
 
     def get_tier_distribution(
         self,
@@ -670,9 +728,9 @@ class TemplateLibrary:
         capa2_count = int(count * capa2_ratio)
         capa3_count = int(count * capa3_ratio)
 
-        capa1_templates = self.get_by_tier(TemplateTier.CAPA1)
-        capa2_templates = self.get_by_tier(TemplateTier.CAPA2)
-        capa3_templates = self.get_by_tier(TemplateTier.CAPA3)
+        capa1_templates = list(self.get_by_tier(TemplateTier.CAPA1))
+        capa2_templates = list(self.get_by_tier(TemplateTier.CAPA2))
+        capa3_templates = list(self.get_by_tier(TemplateTier.CAPA3))
 
         selected = []
 
@@ -688,7 +746,37 @@ class TemplateLibrary:
                 break
             selected.append(random.choice(remaining))
 
-        return selected[:count]
+        result = selected[:count]
+        logger.debug(
+            f"Tier distribution | Capa1: {capa1_count} | Capa2: {capa2_count} | "
+            f"Capa3: {capa3_count} | Total: {len(result)}"
+        )
+        return result
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache performance statistics"""
+        total_calls = self._cache_hits + self._cache_misses
+        hit_rate = (self._cache_hits / total_calls * 100) if total_calls > 0 else 0
+
+        return {
+            "total_calls": total_calls,
+            "cache_hits": self._cache_hits,
+            "cache_misses": self._cache_misses,
+            "hit_rate_percent": round(hit_rate, 2)
+        }
+
+    def clear_cache(self) -> None:
+        """Clear LRU cache and reset statistics"""
+        self._get_all_templates_cached.cache_clear()
+        self._get_by_category_cached.cache_clear()
+        self._get_by_tier_cached.cache_clear()
+        self._get_by_id_cached.cache_clear()
+        self._get_templates_for_avatar_cached.cache_clear()
+
+        self._cache_hits = 0
+        self._cache_misses = 0
+
+        logger.info("Template cache cleared")
 
 
 # Singleton instance

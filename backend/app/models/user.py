@@ -5,6 +5,7 @@ import uuid
 
 from app.database import Base, GUID
 
+
 class User(Base):
     __tablename__ = "users"
 
@@ -17,3 +18,4 @@ class User(Base):
 
     # Relationships
     avatars = relationship("Avatar", back_populates="user", cascade="all, delete-orphan")
+    lora_models = relationship("LoRAModel", back_populates="user", cascade="all, delete-orphan")

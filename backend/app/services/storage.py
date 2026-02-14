@@ -77,7 +77,19 @@ class StorageService:
                 **extra_args
             )
 
-            r2_url = f"{os.getenv('R2_PUBLIC_URL')}/{file_path}"
+            public_base = os.getenv('R2_PUBLIC_URL')
+            if public_base:
+                r2_url = f"{public_base.rstrip('/')}/{file_path}"
+            else:
+                # Fallback for local/dev setups without CDN URL configured.
+                r2_url = self.r2_client.generate_presigned_url(
+                    'get_object',
+                    Params={
+                        'Bucket': self.r2_bucket,
+                        'Key': file_path
+                    },
+                    ExpiresIn=3600
+                )
             logger.info(f"Uploaded to R2: {file_path}")
 
             result = {"r2_url": r2_url}
@@ -101,6 +113,76 @@ class StorageService:
         except ClientError as e:
             logger.error(f"Upload failed: {str(e)}")
             raise
+
+    async def upload_file_async(
+        self,
+        file_data: bytes,
+        file_key: str,
+        content_type: str = "application/octet-stream",
+        metadata: Optional[dict] = None
+    ) -> str:
+        """
+        Async wrapper used by services that run in async contexts.
+        """
+        result = self.upload_file(
+            file_content=file_data,
+            file_path=file_key,
+            content_type=content_type,
+            metadata=metadata
+        )
+        return result["r2_url"]
+
+
+    def _normalize_mime_and_ext(self, content_type: str) -> tuple[str, str]:
+        if not content_type:
+            return 'application/octet-stream', 'bin'
+
+        if '/' in content_type:
+            mime = content_type
+        elif content_type == 'image':
+            mime = 'image/jpeg'
+        elif content_type == 'video':
+            mime = 'video/mp4'
+        elif content_type == 'audio':
+            mime = 'audio/mpeg'
+        else:
+            mime = 'application/octet-stream'
+
+        mime_to_ext = {
+            'image/jpeg': 'jpg',
+            'image/png': 'png',
+            'image/webp': 'webp',
+            'video/mp4': 'mp4',
+            'video/webm': 'webm',
+            'video/quicktime': 'mov',
+            'audio/mpeg': 'mp3',
+            'audio/wav': 'wav'
+        }
+        return mime, mime_to_ext.get(mime, 'bin')
+
+    async def upload_content_piece(
+        self,
+        avatar_id,
+        content_data: bytes,
+        content_type: str = 'image',
+        tier: str = 'capa1'
+    ) -> str:
+        import uuid as uuid_pkg
+
+        mime, ext = self._normalize_mime_and_ext(content_type)
+        file_path = f"content/{avatar_id}/{uuid_pkg.uuid4()}.{ext}"
+
+        result = self.upload_file(
+            file_content=content_data,
+            file_path=file_path,
+            content_type=mime,
+            metadata={
+                'avatar_id': str(avatar_id),
+                'tier': tier
+            }
+        )
+
+        return result['r2_url']
 
     def generate_presigned_url(
         self,

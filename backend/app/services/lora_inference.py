@@ -1,6 +1,6 @@
 """
 LoRA Inference Engine
-Generates images using trained LoRA weights via Replicate API
+Generates images using trained LoRA weights via configurable multi-provider routing
 """
 
 import os
@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.models.avatar import Avatar
 from app.models.content_piece import ContentPiece
+from app.services.comfyui_client import comfyui_client
+from app.services.modal_sdxl_lora_client import modal_sdxl_lora_client
 
 
 class LoRAInferenceEngine:
@@ -20,6 +22,39 @@ class LoRAInferenceEngine:
     def __init__(self):
         self.replicate_token = os.getenv("REPLICATE_API_TOKEN")
         self.default_model = "black-forest-labs/flux-1.1-pro"
+        requested_provider = (
+            os.getenv("AI_IMAGE_PROVIDER")
+            or os.getenv("LORA_PROVIDER")
+            or "replicate"
+        ).lower()
+        self.provider_aliases = {
+            "replicate": "replicate",
+            "replicate_flux": "replicate",
+            "comfyui": "comfyui",
+            "modal": "modal_sdxl_lora",
+            "modal_sdxl_lora": "modal_sdxl_lora",
+            "serverless_http": "serverless_http",
+            "http": "serverless_http",
+        }
+        self.provider = self.provider_aliases.get(requested_provider, requested_provider)
+
+    def _provider_chain(self) -> List[str]:
+        fallbacks_raw = os.getenv("AI_IMAGE_PROVIDER_FALLBACKS", "")
+        configured_fallbacks = [
+            self.provider_aliases.get(p.strip().lower(), p.strip().lower())
+            for p in fallbacks_raw.split(",")
+            if p.strip()
+        ]
+
+        # Default fallback strategy keeps backwards compatibility.
+        if not configured_fallbacks:
+            configured_fallbacks = ["replicate"]
+
+        chain: List[str] = []
+        for provider in [self.provider, *configured_fallbacks]:
+            if provider not in chain:
+                chain.append(provider)
+        return chain
 
     async def generate_image_with_lora(
         self,
@@ -68,57 +103,114 @@ class LoRAInferenceEngine:
 
         start_time = time.time()
 
-        try:
-            # Use Flux with custom LoRA weights
-            input_params = {
-                "prompt": enhanced_prompt,
-                "negative_prompt": negative_prompt,
-                "num_inference_steps": num_inference_steps,
-                "guidance_scale": guidance_scale,
-                "width": width,
-                "height": height,
-                "output_format": "jpg",
-                "output_quality": 90,
-                "lora_weights": avatar.lora_weights_url,
-                "lora_scale": 0.8  # LoRA influence (0.0-1.0)
-            }
+        providers_to_try = self._provider_chain()
+        last_error: Optional[Exception] = None
 
-            if seed is not None:
-                input_params["seed"] = seed
+        for provider_name in providers_to_try:
+            try:
+                if provider_name == "comfyui":
+                    return await comfyui_client.generate_image_with_lora(
+                        prompt=enhanced_prompt,
+                        negative_prompt=negative_prompt,
+                        width=width,
+                        height=height,
+                        seed=seed,
+                        lora_url=avatar.lora_weights_url,
+                        lora_scale=0.8
+                    )
 
-            output = await replicate.async_run(
-                self.default_model,
-                input=input_params
-            )
+                if provider_name in ("modal_sdxl_lora", "serverless_http"):
+                    return await modal_sdxl_lora_client.generate_image_with_lora(
+                        prompt=enhanced_prompt,
+                        negative_prompt=negative_prompt,
+                        width=width,
+                        height=height,
+                        seed=seed,
+                        lora_url=avatar.lora_weights_url,
+                        lora_scale=0.8,
+                        steps=num_inference_steps,
+                        cfg=guidance_scale
+                    )
 
-            generation_time = time.time() - start_time
+                if provider_name == "replicate-fallback":
+                    from app.services.lora_inference_fallback import fallback_generate_image
+                    fallback_result = await fallback_generate_image(
+                        prompt=enhanced_prompt,
+                        width=width,
+                        height=height,
+                        seed=seed
+                    )
+                    generation_time = time.time() - start_time
+                    return {
+                        "image_url": fallback_result.get("image_url"),
+                        "image_base64": fallback_result.get("image_base64"),
+                        "generation_time": generation_time,
+                        "parameters": fallback_result.get("parameters", {}),
+                        "model_info": fallback_result.get("model_info", {}),
+                        "cost": fallback_result.get("cost", 0.0)
+                    }
 
-            # Handle output (URL or file)
-            if isinstance(output, list):
-                image_url = output[0]
-            elif hasattr(output, 'url'):
-                image_url = output.url
-            else:
-                image_url = str(output)
+                if provider_name != "replicate":
+                    raise ValueError(f"Unknown LORA provider: {provider_name}")
 
-            return {
-                "image_url": image_url,
-                "generation_time": generation_time,
-                "parameters": {
+                if not self.replicate_token:
+                    raise ValueError("REPLICATE_API_TOKEN not configured")
+
+                input_params = {
                     "prompt": enhanced_prompt,
                     "negative_prompt": negative_prompt,
-                    "steps": num_inference_steps,
+                    "num_inference_steps": num_inference_steps,
                     "guidance_scale": guidance_scale,
-                    "resolution": f"{width}x{height}",
+                    "width": width,
+                    "height": height,
+                    "output_format": "jpg",
+                    "output_quality": 90,
                     "lora_weights": avatar.lora_weights_url,
-                    "lora_scale": 0.8,
-                    "seed": seed
-                },
-                "cost": 0.01  # $0.01 per image
-            }
+                    "lora_scale": 0.8  # LoRA influence (0.0-1.0)
+                }
 
-        except Exception as e:
-            raise Exception(f"LoRA inference failed: {str(e)}")
+                if seed is not None:
+                    input_params["seed"] = seed
+
+                output = await replicate.async_run(
+                    self.default_model,
+                    input=input_params
+                )
+
+                generation_time = time.time() - start_time
+
+                # Handle output (URL or file)
+                if isinstance(output, list):
+                    image_url = output[0]
+                elif hasattr(output, 'url'):
+                    image_url = output.url
+                else:
+                    image_url = str(output)
+
+                return {
+                    "image_url": image_url,
+                    "generation_time": generation_time,
+                    "parameters": {
+                        "prompt": enhanced_prompt,
+                        "negative_prompt": negative_prompt,
+                        "steps": num_inference_steps,
+                        "guidance_scale": guidance_scale,
+                        "resolution": f"{width}x{height}",
+                        "lora_weights": avatar.lora_weights_url,
+                        "lora_scale": 0.8,
+                        "seed": seed,
+                        "provider": provider_name
+                    },
+                    "cost": 0.01  # $0.01 per image
+                }
+
+            except Exception as e:
+                last_error = e
+                continue
+
+        raise Exception(
+            f"LoRA inference failed for providers {providers_to_try}. Last error: {str(last_error)}"
+        )
 
     async def batch_generate_images(
         self,
@@ -219,7 +311,8 @@ class LoRAInferenceEngine:
         """
 
         # Extract avatar personality for prompt enhancement
-        personality = avatar.metadata.get("personality", {})
+        avatar_meta = getattr(avatar, "meta_data", None) or getattr(avatar, "metadata", None) or {}
+        personality = avatar_meta.get("personality", {})
         niche = avatar.niche or "lifestyle"
         aesthetic = avatar.aesthetic_style or "natural"
 
