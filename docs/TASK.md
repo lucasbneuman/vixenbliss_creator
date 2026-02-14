@@ -105,37 +105,5 @@ Cada tarea debe registrarse en **2 líneas**:
 [FE-008] UX improvements implementados - jerarquía visual clara (8 secciones organizadas), mejor legibilidad (tipografía consistente, espaciado grid 8px, contraste adecuado), navegación intuitiva (estados activos claros, hover states sutiles), diseño profesional estilo Linear/Vercel/Notion
 [FE-009] Documentación UX creada - frontend/UX_IMPROVEMENTS.md (análisis detallado cambios, before/after comparison, performance benefits) + CLEAN_UI_SUMMARY.md (resumen ejecutivo, code reduction metrics, philosophy clean design)
 [FE-010] Frontend alineado a API backend - "use client" en ModelTable y ajustes endpoints/content/costs para compatibilidad (avatars, templates, upload-batch, summary)
-
-[BE-040] Integracion Modal Serverless para generacion de imagen (cliente, polling async, parsing output, R2 upload con data URLs/base64)
-[BE-041] Integracion Modal Serverless para video SVD (cliente video, soporte image?video, workflow base en backend/config y manejo MIME en upload)
-[BE-042] Catalogo LoRA implementado: API /api/v1/loras/models (listar, crear, soft-delete) + /models/upload para subir .safetensors a R2 y registrar URL reutilizable por usuario
-[BE-043] Sistema 1 actualizado para seleccionar LoRA en creacion de avatar: AvatarCreateRequest ahora acepta lora_model_id opcional y resuelve lora_weights_url automaticamente desde catalogo
-[FE-011] Frontend de avatares actualizado con selector LoRA y upload directo: alta de LoRA desde UI (.safetensors) + seleccion de LoRA para crear avatar en el flujo de Sistema 1
-[BE-044] Compatibilidad de configuracion de generacion en Sistema 2: content API y Celery batch ahora leen generation_config desde meta_data del avatar cuando no se envia override
-[BE-045] Backend AI provider-agnostic preparado: routing configurable por env (AI_IMAGE_PROVIDER, AI_IMAGE_PROVIDER_FALLBACKS, AI_PROVIDER_*, FACE_PROVIDER_ORDER), compatibilidad retroactiva con vars de Modal/LORA y documentacion API/env actualizada
-[SM-011] Codex Operating System inicializado: .codex/AGENTS.md (governance + 9 roles + non-breaking change rules), .codex/PLANS.md (ExecPlan template), .codex/skills/ structure, docs/SYSTEM_MAP.md (mapeo de 5 sistemas -> modulos reales)
-[SM-012] API contracts congelados: docs/api-contracts/v1_endpoints.md (documentacion exhaustiva endpoints v1), breaking-change-policy.md (versionado), backend/tests/test_api_contracts.py (24 tests anti-regresion)
-[SM-013] Skills v1 creadas: 6 SKILL.md bajo .codex/skills/ (backend-dev, database-migrations, modal-lora-pipeline, security-review, qa-validation, frontend-dev) con checklists, referencias a .ai/context/ y docs/, non-breaking contract rules integradas
-[QA-012] Revision de Skills v1 completada: validacion ejecutada con quick_validate.py, deteccion de fallos de formato y limpieza de corrupcion en docs/TASK.md
-[QA-013] Skills corregidas sin tocar runtime: 6 SKILL.md normalizadas con frontmatter YAML + checklist comun (Do not break API contracts, Run tests) y referencias a .ai/context/* + docs/*
-[SM-014] API Contract Freeze v1 ejecutado sin tocar runtime: `docs/api-contracts/v1_endpoints.md` reescrito desde `backend/app/api/*.py` + `backend/app/main.py` (incluye rutas montadas y no montadas)
-[QA-014] Contratos minimos agregados en `backend/tests/test_api_contracts.py` para health, identities, content/generate y distribution (estado actual 404 por no montaje) + policy `docs/api-contracts/breaking-change-policy.md`
-[QA-015] Limpieza de tests sin tocar runtime: `backend/test_modal_client_local.py` ya no retorna bool en tests pytest (reemplazado por asserts para evitar `PytestReturnNotNoneWarning`).
-[QA-016] Validacion ejecutada con `python -m pytest -q`: 14 passed, 8 warnings restantes deprecados en runtime/dependencias (sin warnings por return en tests).
-[QA-017] Freeze v1 refinado en `docs/api-contracts/v1_endpoints.md`: separacion explicita entre "Mounted today (contracted)" y "Present in code but not mounted (not contracted)".
-[QA-018] `backend/tests/test_api_contracts.py` actualizado para excluir `distribution` no montado del freeze v1; validacion esperada: contratos v1 solo sobre rutas montadas.
-[SM-015] Gobernanza unificada: `/AGENTS.md` definido como entrypoint unico con router S1/S2+, reglas non-breaking/seguridad/tests y enlaces a `docs/SYSTEM_MAP.md`, `docs/api-contracts/*`, `docs/context/*`
-[SM-016] AGENTS duplicados consolidados sin tocar runtime: archivos previos archivados en `docs/_archive/`, `.codex/AGENTS.md` reducido a stub de compatibilidad y creados `backend/AGENTS.md` + `frontend/AGENTS.md`
-[SM-017] Documentacion consolidada sin tocar runtime: Modal unificado en `docs/external-systems/modal-sdxl-lora.md`, archivados `MODAL_SDXL_LORA_INTEGRATION.md` + `MODAL_SUMMARY.md` en `docs/_archive/`
-[SM-018] Duplicados de arquitectura/API simplificados: `docs/SYSTEM_MAP.md` queda como fuente unica de arquitectura+mapa y `docs/api-contracts/v1_endpoints.md` como fuente unica de contrato API, con complementos y archivos previos archivados
-[SM-019] Doc Integrity Guard v1 implementado: creados `docs/DOCS_POLICY.md` (fuentes unicas, ubicacion por tipo, antiduplicacion, archivado) y `docs/DOCS_INDEX.md` (indice humano de entrypoints)
-[SM-020] AGENTS actualizado para enforcement documental: `docs/DOCS_POLICY.md` declarado obligatorio y requisito de linkeo de docs nuevas en `docs/DOCS_INDEX.md` o router correspondiente
-
-[BE-050] M1: Implemented `get_user_id` dependency (USE_JWT_AUTH feature-flag, fallback to `user_id` query param) to secure identities endpoints
-[QA-050] Added tests `backend/tests/test_dependencies_userid.py` (4 tests) validating query-param fallback and JWT handling (reload on env change)
-
-[BE-051] M2: Implemented Modal resilience + fallback system - modal_sdxl_lora_client.py with retries (exponential backoff), TTL checks, error handling + fallback_generate_image() in lora_inference_fallback.py (1x1 PNG fallback for testing)
-[BE-052] M2 integration: Added fallback handler in lora_inference.py for "replicate-fallback" provider, integrated into generate_image_with_lora() and content.py batch pipeline with automatic fallback on Modal failure
-[QA-051] M2 Tests: test_modal_retries.py (retry logic), test_content_generate_fallback.py (fallback usage), test_lora_inference_fallback.py (Modal→fallback chain); all 15 backend tests passing (100% green)
-[BE-053] Hardening v1 auth/contracts: /api/v1/loras/models* ahora valida coherencia entre user_id solicitado y usuario resuelto (query/JWT), eliminando bypass por suplantacion sin romper paths o payloads.
-[QA-052] Contract guards S1/S2: AvatarResponse restituye clave `metadata` (mapeada desde `meta_data`) y content API responde 503 controlado cuando hooks/safety no estan disponibles; tests de contrato actualizados y en verde.
+[FE-011] Dark Vixen base UI S1/S2: shell global implementado con sidebar fija, topbar con breadcrumb/busqueda y drawer movil, manteniendo contratos API v1 sin cambios.
+[FE-012] Validacion frontend completada para este alcance: lint + tests ejecutados, ajuste de test home y compatibilidad de payloads S1 (/avatars) y S2 (/factory) preservada.

@@ -1,16 +1,14 @@
-import { render, screen } from '@testing-library/react'
-import Home from '@/app/page'
+import { render, screen } from "@testing-library/react"
+import Home from "@/app/page"
 
-describe('Home Page', () => {
-  it('renders the title', () => {
+describe("Home Page", () => {
+  it("renders the main heading", () => {
     render(<Home />)
-    const heading = screen.getByRole('heading', { level: 1 })
-    expect(heading).toHaveTextContent('Dashboard')
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Panel")
   })
 
-  it('renders the description', () => {
+  it("renders the systems description", () => {
     render(<Home />)
-    const description = screen.getByText(/see money coming in/i)
-    expect(description).toBeInTheDocument()
+    expect(screen.getByText(/Sistemas 1 y 2/i)).toBeInTheDocument()
   })
 })

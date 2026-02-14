@@ -140,12 +140,92 @@ export default function ContentFactoryPage() {
     }
   }
 
+  const getMockTemplates = (): Template[] => [
+    {
+      id: "t1",
+      name: "Fitness - Gym Workout",
+      category: "fitness",
+      tier: "capa1",
+      prompt_template: "fitness workout at gym",
+      negative_prompt: "",
+      style_modifiers: []
+    },
+    {
+      id: "t2",
+      name: "Lifestyle - Morning Routine",
+      category: "lifestyle",
+      tier: "capa1",
+      prompt_template: "morning routine lifestyle",
+      negative_prompt: "",
+      style_modifiers: []
+    },
+  ]
+
+  const getMockCostSummary = (): CostSummary => ({
+    total_cost: 1035.40,
+    by_operation: {
+      lora_inference: 892.40,
+      hook_generation: 124.80,
+      storage: 18.20
+    },
+    by_provider: {
+      replicate: 892.40,
+      openai: 124.80,
+      cloudflare_r2: 18.20
+    },
+    count: 847
+  })
+
+  const totalProducedToday = batches.reduce((sum, b) => sum + b.completed, 0)
+
+  const getStatusIcon = (status: ContentBatch["status"]) => {
+    switch (status) {
+      case "completed":
+        return <CheckCircle2 className="h-4 w-4 text-brand-100" />
+      case "processing":
+        return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+      case "queued":
+        return <Clock className="h-4 w-4 text-yellow-500" />
+      case "failed":
+        return <AlertCircle className="h-4 w-4 text-red-500" />
+    }
+  }
+
+  const getStatusBadge = (status: ContentBatch["status"]) => {
+    const configs = {
+      completed: { variant: "default" as const, className: "bg-[hsl(var(--brand-1))]/85 text-slate-100" },
+      processing: { variant: "default" as const, className: "bg-sky-600/80 text-slate-100" },
+      queued: { variant: "default" as const, className: "bg-yellow-600 text-slate-100" },
+      failed: { variant: "destructive" as const, className: "" }
+    }
+
+    const config = configs[status]
+
+    return (
+      <Badge variant={config.variant} className={config.className}>
+        {status}
+      </Badge>
+    )
+  }
+
+  if (loading && !costSummary) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <h1 className="text-3xl font-semibold text-high">Sistema 2: Fabrica de Contenido</h1>
+          <p className="text-soft mt-1">Cargando datos...</p>
+        </div>
+        <LoadingSpinner />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-8">
       <div className="space-y-2">
-        <h1 className="text-3xl font-semibold text-high">Crear Contenido</h1>
+        <h1 className="text-3xl font-semibold text-high">Sistema 2: Fabrica de Contenido</h1>
         <p className="text-soft max-w-2xl">
-          Sistema 2. Produccion masiva: prompt base + hooks + microvariaciones. El algoritmo decide que funciona.
+          Selecciona un avatar, define prompts y produce lotes sin romper contratos API v1.
         </p>
       </div>
 
@@ -347,6 +427,166 @@ export default function ContentFactoryPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="panel">
+        <CardHeader>
+          <CardTitle>Lotes recientes</CardTitle>
+          <CardDescription>Estado de producción</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {batches.map((batch) => {
+              const progress = (batch.completed / batch.total_pieces) * 100
+
+              return (
+                <div
+                  key={batch.id}
+                  className="border border-white/10 rounded-xl p-4 hover:bg-white/5 transition-colors"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-1">
+                        {getStatusIcon(batch.status)}
+                        <h3 className="font-semibold">{batch.model_name}</h3>
+                        {getStatusBadge(batch.status)}
+                      </div>
+                      <p className="text-sm text-soft">{batch.template}</p>
+                      <p className="text-xs text-soft mt-1">
+                        Lote: {batch.id} · Inicio: {new Date(batch.created_at).toLocaleTimeString()}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-2xl font-bold">
+                        {batch.completed}/{batch.total_pieces}
+                      </div>
+                      <div className="text-xs text-soft">
+                        {batch.failed > 0 && (
+                          <span className="text-red-500">{batch.failed} fallidos</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <Progress value={progress} className="h-2 mb-2" />
+
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-soft">
+                      {progress.toFixed(1)}% completado
+                    </span>
+                    <span className="text-soft">
+                      Costo estimado: ${batch.estimated_cost.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="panel">
+        <CardHeader>
+          <CardTitle>Costos (últimos 30 días)</CardTitle>
+          <CardDescription>Resumen simple de gastos</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Generación de imágenes</p>
+                <p className="text-sm text-soft">Replicate</p>
+              </div>
+              <div className="text-right">
+                <div className="font-semibold">
+                  ${costSummary?.by_provider?.replicate?.toFixed(2) || "0.00"}
+                </div>
+                <div className="text-xs text-soft">este mes</div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Texto y hooks</p>
+                <p className="text-sm text-soft">OpenAI</p>
+              </div>
+              <div className="text-right">
+                <div className="font-semibold">
+                  ${costSummary?.by_provider?.openai?.toFixed(2) || "0.00"}
+                </div>
+                <div className="text-xs text-soft">este mes</div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Storage</p>
+                <p className="text-sm text-soft">Cloudflare R2</p>
+              </div>
+              <div className="text-right">
+                <div className="font-semibold">
+                  ${costSummary?.by_provider?.cloudflare_r2?.toFixed(2) || "0.00"}
+                </div>
+                <div className="text-xs text-soft">este mes</div>
+              </div>
+            </div>
+
+            <div className="border-t border-white/10 pt-4 mt-4">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-lg">Total</p>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-brand-100">
+                    ${costSummary?.total_cost?.toFixed(2) || "0.00"}
+                  </div>
+                  <div className="text-xs text-soft">últimos 30 días</div>
+                </div>
+              </div>
+              <div className="mt-2 text-sm text-soft">
+                Costo promedio por pieza: ${costSummary?.total_cost && costSummary.count ? (costSummary.total_cost / costSummary.count).toFixed(2) : "0.00"}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="panel">
+        <CardHeader>
+          <CardTitle>Plantillas disponibles</CardTitle>
+          <CardDescription>
+            {templates.length > 0 ? `${templates.length} plantillas disponibles` : "Aún no hay plantillas"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {templates.length === 0 ? (
+            <div className="text-sm text-soft">Crea o carga una plantilla para empezar.</div>
+          ) : (
+            <div className="space-y-3">
+              {templates.map((template) => (
+                <div
+                  key={template.id}
+                  className="flex items-center justify-between p-3 border border-white/10 rounded-xl"
+                >
+                  <div className="flex-1">
+                    <p className="font-medium">{template.name}</p>
+                    <p className="text-sm text-soft">{template.category}</p>
+                  </div>
+                  <Badge variant="secondary">{template.tier}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <BatchGenerationDialog
+        open={showBatchDialog}
+        onOpenChange={setShowBatchDialog}
+        avatars={avatars}
+        templates={templates}
+        onSuccess={() => {
+          loadData()
+        }}
+      />
     </div>
   )
 }
+
