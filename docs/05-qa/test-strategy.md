@@ -23,7 +23,7 @@ Para cambios Python, el baseline operativo del repo es:
 - instalar dependencias con `python -m pip install -r requirements-dev.txt`
 - ejecutar validaciones con `python -m pytest -q`
 
-`requirements.txt` y `requirements-dev.txt` son la referencia operativa para instalar dependencias del proyecto.
+`requirements.txt` y `requirements-dev.txt` son la unica fuente de verdad para instalar dependencias del proyecto.
 
 ## Capas de validacion esperadas
 

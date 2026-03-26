@@ -100,7 +100,7 @@ Flujo operativo recomendado para este repo:
 4. Instalar dependencias de desarrollo: `python -m pip install -r requirements-dev.txt`
 5. Ejecutar validacion base: `python -m pytest -q`
 
-`pyproject.toml` se conserva para metadata y configuracion del paquete. La instalacion local de dependencias se hace desde `requirements*.txt`.
+`requirements.txt` y `requirements-dev.txt` son la unica fuente de verdad para dependencias. `pyproject.toml` se conserva solo para metadata y configuracion de herramientas.
 
 ## Estado actual
 

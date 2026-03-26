@@ -7,14 +7,6 @@ name = "vixenbliss-creator"
 version = "0.1.0"
 description = "Canonical contracts and documentation for VixenBliss Creator."
 requires-python = ">=3.11"
-dependencies = [
-  "pydantic>=2.7,<3",
-]
-
-[project.optional-dependencies]
-dev = [
-  "pytest>=8.0,<9",
-]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

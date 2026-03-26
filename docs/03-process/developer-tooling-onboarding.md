@@ -46,7 +46,8 @@ python -m pytest -q
 
 - `requirements.txt`: dependencias runtime
 - `requirements-dev.txt`: dependencias de desarrollo y validacion
-- `pyproject.toml`: metadata del paquete y configuracion de herramientas, no bootstrap operativo
+- `requirements*.txt` es la unica fuente de verdad de dependencias
+- `pyproject.toml`: metadata del paquete y configuracion de herramientas, sin declarar dependencias operativas
 
 ## Donde vive cada cosa
 
