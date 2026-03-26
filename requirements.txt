@@ -1,2 +1,11 @@
-pydantic>=2.7,<3
-pytest>=8.0,<9
+annotated-types==0.7.0
+colorama==0.4.6
+iniconfig==2.3.0
+packaging==26.0
+pluggy==1.6.0
+pydantic==2.12.5
+pydantic_core==2.41.5
+Pygments==2.19.2
+pytest==8.4.2
+typing-inspection==0.4.2
+typing_extensions==4.15.0
