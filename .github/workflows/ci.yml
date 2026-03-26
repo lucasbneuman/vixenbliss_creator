@@ -1,0 +1,79 @@
+name: Repo CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  repo-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify required repository structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            "AGENTS.md"
+            "README.md"
+            ".env.example"
+            "docs/00-product/vision.md"
+            "docs/01-architecture/technical-base.md"
+            "docs/01-architecture/operational-architecture.md"
+            "docs/02-roadmap/roadmap-master.md"
+            "docs/02-roadmap/epic-01.md"
+            "docs/02-roadmap/epic-02.md"
+            "docs/02-roadmap/epic-03.md"
+            "docs/03-process/working-agreement.md"
+            "docs/03-process/task-lifecycle.md"
+            "docs/03-process/branching-and-commits.md"
+            "docs/03-process/agent-ops-contract.md"
+            "docs/03-process/developer-tooling-onboarding.md"
+            "docs/03-process/secrets-and-access.md"
+            "docs/03-process/agent-ready-task-checklist.md"
+            "docs/05-qa/test-strategy.md"
+            "templates/agent-tooling/mcp.servers.example.json"
+            "templates/agent-tooling/skills.manifest.example.yaml"
+          )
+          for path in "${required[@]}"; do
+            test -f "$path" || { echo "Missing required file: $path"; exit 1; }
+          done
+
+      - name: Verify shared tooling placeholders
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "CHANGEME" .env.example || { echo ".env.example must contain CHANGEME placeholders"; exit 1; }
+          grep -q '"mcpServers"' templates/agent-tooling/mcp.servers.example.json || { echo "Missing mcpServers key"; exit 1; }
+          grep -q 'skills:' templates/agent-tooling/skills.manifest.example.yaml || { echo "Missing skills manifest"; exit 1; }
+
+      - name: Verify critical docs are linked
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "agent-ops-contract.md" README.md || { echo "README must link agent-ops-contract.md"; exit 1; }
+          grep -q "developer-tooling-onboarding.md" README.md || { echo "README must link developer-tooling-onboarding.md"; exit 1; }
+          grep -q "secrets-and-access.md" README.md || { echo "README must link secrets-and-access.md"; exit 1; }
+          grep -q "agent-ready-task-checklist.md" README.md || { echo "README must link agent-ready-task-checklist.md"; exit 1; }
+          grep -q "agent-ops-contract.md" AGENTS.md || { echo "AGENTS.md must link agent-ops-contract.md"; exit 1; }
+          grep -q "developer-tooling-onboarding.md" AGENTS.md || { echo "AGENTS.md must link developer-tooling-onboarding.md"; exit 1; }
+          grep -q "secrets-and-access.md" AGENTS.md || { echo "AGENTS.md must link secrets-and-access.md"; exit 1; }
+          grep -q "agent-ready-task-checklist.md" AGENTS.md || { echo "AGENTS.md must link agent-ready-task-checklist.md"; exit 1; }
+
+  branch-name:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch naming
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="${{ github.head_ref }}"
+          if [[ ! "$branch" =~ ^(feature|fix|docs|chore|codex)/[A-Za-z0-9._-]+$ ]]; then
+            echo "Invalid branch name: $branch"
+            echo "Expected: <type>/<tracker-id>-<slug>"
+            exit 1
+          fi

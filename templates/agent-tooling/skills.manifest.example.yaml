@@ -1,0 +1,19 @@
+version: 1
+workspace: vixenbliss_creator
+
+skills:
+  required:
+    - name: repo-process
+      source: CHANGEME_LOCAL_OR_REMOTE_PATH
+      purpose: Reglas operativas del repositorio
+    - name: roadmap-context
+      source: CHANGEME_LOCAL_OR_REMOTE_PATH
+      purpose: Contexto minimo para tareas del MVP
+  optional:
+    - name: infra-bootstrap
+      source: CHANGEME_LOCAL_OR_REMOTE_PATH
+      purpose: Setup repetible de proveedores e integraciones
+  future:
+    - name: system-5-orchestration
+      source: CHANGEME_LOCAL_OR_REMOTE_PATH
+      purpose: Evolucion futura para workflows conversacionales

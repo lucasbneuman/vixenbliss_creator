@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "youtrack": {
+      "transport": "stdio",
+      "command": "CHANGEME_MCP_COMMAND",
+      "args": [
+        "CHANGEME_ARG_1"
+      ],
+      "env": {
+        "YOUTRACK_BASE_URL": "${YOUTRACK_BASE_URL}",
+        "YOUTRACK_API_TOKEN": "${YOUTRACK_API_TOKEN}"
+      }
+    },
+    "github": {
+      "transport": "stdio",
+      "command": "CHANGEME_MCP_COMMAND",
+      "args": [
+        "CHANGEME_ARG_1"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}

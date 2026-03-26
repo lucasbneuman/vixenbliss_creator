@@ -1,0 +1,38 @@
+name: Task
+description: Create an implementation task aligned with the roadmap and workflow.
+title: "[Task] "
+labels:
+  - task
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: State the concrete task in one short paragraph.
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What outcome should this task deliver?
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of Done
+      description: How will we know this task is complete?
+    validations:
+      required: true
+  - type: input
+    id: tracker
+    attributes:
+      label: External Tracker ID
+      description: YouTrack issue or other source of truth ID.
+      placeholder: DEV-123
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Link docs, ADRs, roadmap sections or related PRs.
