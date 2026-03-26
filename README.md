@@ -83,8 +83,7 @@ No duplicar el estado de tareas y bugs dentro del repo.
 El repositorio versiona contrato y plantillas compartibles para trabajo con multiples desarrolladores y multiples tipos de agentes.
 
 - Entorno local base: `.env.example`
-- Dependencias Python runtime: `requirements.txt`
-- Dependencias Python desarrollo: `requirements-dev.txt`
+- Dependencias Python: `requirements.txt`
 - MCPs versionables: `templates/agent-tooling/mcp.servers.example.json`
 - Skills por workspace: `templates/agent-tooling/skills.manifest.example.yaml`
 
@@ -97,10 +96,10 @@ Flujo operativo recomendado para este repo:
 1. Crear entorno virtual: `python -m venv .venv`
 2. Activarlo en PowerShell: `.\.venv\Scripts\Activate.ps1`
 3. Actualizar `pip`: `python -m pip install --upgrade pip`
-4. Instalar dependencias de desarrollo: `python -m pip install -r requirements-dev.txt`
+4. Instalar dependencias: `python -m pip install -r requirements.txt`
 5. Ejecutar validacion base: `python -m pytest -q`
 
-`requirements.txt` y `requirements-dev.txt` son la unica fuente de verdad para dependencias. `pyproject.toml` se conserva solo para metadata y configuracion de herramientas.
+`requirements.txt` es la unica fuente de verdad para dependencias de Python en este repo.
 
 ## Estado actual
 

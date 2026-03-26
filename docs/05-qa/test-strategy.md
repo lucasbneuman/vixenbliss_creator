@@ -20,10 +20,10 @@ Para cambios Python, el baseline operativo del repo es:
 
 - crear `.venv` con `python -m venv .venv`
 - activar el entorno virtual local
-- instalar dependencias con `python -m pip install -r requirements-dev.txt`
+- instalar dependencias con `python -m pip install -r requirements.txt`
 - ejecutar validaciones con `python -m pytest -q`
 
-`requirements.txt` y `requirements-dev.txt` son la unica fuente de verdad para instalar dependencias del proyecto.
+`requirements.txt` es la unica fuente de verdad para instalar dependencias del proyecto.
 
 ## Capas de validacion esperadas
 

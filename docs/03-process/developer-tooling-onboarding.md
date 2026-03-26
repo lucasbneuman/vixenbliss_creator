@@ -22,7 +22,7 @@ Permitir que cualquier desarrollador configure el mismo baseline de herramientas
 4. Crear entorno virtual local con `python -m venv .venv`.
 5. Activar `.venv` en el shell local.
 6. Ejecutar `python -m pip install --upgrade pip`.
-7. Instalar dependencias con `python -m pip install -r requirements-dev.txt`.
+7. Instalar dependencias con `python -m pip install -r requirements.txt`.
 8. Copiar `.env.example` a `.env` y completar solo las variables necesarias para la tarea activa.
 9. Configurar MCPs locales usando `templates/agent-tooling/mcp.servers.example.json` como base.
 10. Instalar o declarar las skills locales usando `templates/agent-tooling/skills.manifest.example.yaml` como referencia.
@@ -38,16 +38,13 @@ Permitir que cualquier desarrollador configure el mismo baseline de herramientas
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -r requirements-dev.txt
+python -m pip install -r requirements.txt
 python -m pytest -q
 ```
 
 ### Fuente de verdad para dependencias
 
-- `requirements.txt`: dependencias runtime
-- `requirements-dev.txt`: dependencias de desarrollo y validacion
-- `requirements*.txt` es la unica fuente de verdad de dependencias
-- `pyproject.toml`: metadata del paquete y configuracion de herramientas, sin declarar dependencias operativas
+- `requirements.txt`: unica fuente de verdad de dependencias de Python
 
 ## Donde vive cada cosa
 
@@ -56,7 +53,7 @@ python -m pytest -q
 - contratos operativos
 - roadmap y arquitectura
 - plantillas de entorno
-- requirements de Python
+- `requirements.txt`
 - ejemplos de MCP
 - manifiesto de skills compartidas
 
