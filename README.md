@@ -50,11 +50,18 @@ No duplicar el estado de tareas y bugs dentro del repo.
 1. Seleccionar tarea en `YouTrack`.
 2. Pedir plan a Codex.
 3. Aprobar con `PLAN OK`.
-4. Implementar en rama dedicada.
+4. Implementar sobre `staging`, salvo pedido explicito de crear una rama nueva.
 5. Ejecutar validaciones.
 6. Abrir PR con evidencia.
 7. Revisar y aprobar con `MERGE OK`.
 8. Hacer merge y cerrar tarea.
+
+## Politica actual de ramas
+
+- `staging` es la rama de trabajo diaria.
+- `main` es la rama estable de integracion.
+- No se crean ramas nuevas salvo pedido explicito.
+- Si se pide una rama nueva de forma excepcional, debe quedar asociada a una tarea concreta.
 
 ## Documentos clave
 
@@ -76,10 +83,24 @@ No duplicar el estado de tareas y bugs dentro del repo.
 El repositorio versiona contrato y plantillas compartibles para trabajo con multiples desarrolladores y multiples tipos de agentes.
 
 - Entorno local base: `.env.example`
+- Dependencias Python runtime: `requirements.txt`
+- Dependencias Python desarrollo: `requirements-dev.txt`
 - MCPs versionables: `templates/agent-tooling/mcp.servers.example.json`
 - Skills por workspace: `templates/agent-tooling/skills.manifest.example.yaml`
 
 Los secretos reales y configuraciones personales no se versionan. Cada desarrollador conecta sus propias credenciales siguiendo `docs/03-process/developer-tooling-onboarding.md`.
+
+## Bootstrap local de Python
+
+Flujo operativo recomendado para este repo:
+
+1. Crear entorno virtual: `python -m venv .venv`
+2. Activarlo en PowerShell: `.\.venv\Scripts\Activate.ps1`
+3. Actualizar `pip`: `python -m pip install --upgrade pip`
+4. Instalar dependencias de desarrollo: `python -m pip install -r requirements-dev.txt`
+5. Ejecutar validacion base: `python -m pytest -q`
+
+`pyproject.toml` se conserva para metadata y configuracion del paquete. La instalacion local de dependencias se hace desde `requirements*.txt`.
 
 ## Estado actual
 

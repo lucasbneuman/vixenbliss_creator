@@ -14,9 +14,10 @@ No usar `tasks.md` o `bugs.md` como registro principal.
 
 ## Reglas de colaboracion
 
-- una tarea activa por rama
-- una rama por issue
-- no compartir rama
+- trabajo diario sobre `staging`
+- `main` reservado para integracion estable
+- no crear ramas nuevas salvo pedido explicito
+- si excepcionalmente se pide una rama nueva, debe estar ligada a una tarea concreta
 - no mezclar refactor y feature en la misma PR
 - no mezclar multiples tareas no relacionadas en el mismo cambio
 - cada PR debe referenciar una tarea

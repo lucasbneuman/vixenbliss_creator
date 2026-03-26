@@ -1,0 +1,11 @@
+README.md
+pyproject.toml
+src/vixenbliss_creator/__init__.py
+src/vixenbliss_creator.egg-info/PKG-INFO
+src/vixenbliss_creator.egg-info/SOURCES.txt
+src/vixenbliss_creator.egg-info/dependency_links.txt
+src/vixenbliss_creator.egg-info/requires.txt
+src/vixenbliss_creator.egg-info/top_level.txt
+src/vixenbliss_creator/contracts/__init__.py
+src/vixenbliss_creator/contracts/identity.py
+tests/test_identity_contract.py

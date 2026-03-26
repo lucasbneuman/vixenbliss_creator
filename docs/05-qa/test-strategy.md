@@ -14,6 +14,17 @@ Toda tarea debe verificar, segun corresponda:
 - que la documentacion impactada fue actualizada
 - que la PR o evidencia deja claro que se verifico
 
+## Entorno base para validacion Python
+
+Para cambios Python, el baseline operativo del repo es:
+
+- crear `.venv` con `python -m venv .venv`
+- activar el entorno virtual local
+- instalar dependencias con `python -m pip install -r requirements-dev.txt`
+- ejecutar validaciones con `python -m pytest -q`
+
+`requirements.txt` y `requirements-dev.txt` son la referencia operativa para instalar dependencias del proyecto.
+
 ## Capas de validacion esperadas
 
 - `Smoke checks`: arranque basico, imports, wiring principal
@@ -26,7 +37,7 @@ Toda tarea debe verificar, segun corresponda:
 
 - creacion de tarea desde roadmap
 - generacion y aprobacion de plan
-- implementacion en rama dedicada
+- implementacion sobre `staging`, salvo pedido explicito de rama nueva
 - apertura de PR con checklist
 - ejecucion de checks automaticos
 - merge con aprobacion

@@ -7,6 +7,7 @@ Permitir que cualquier desarrollador configure el mismo baseline de herramientas
 ## Prerequisitos locales
 
 - `Git`
+- `Python 3.11+`
 - shell local
 - editor compatible con el workflow del equipo
 - acceso a este repositorio
@@ -18,11 +19,34 @@ Permitir que cualquier desarrollador configure el mismo baseline de herramientas
 1. Clonar el repositorio.
 2. Leer `AGENTS.md`.
 3. Leer `docs/03-process/working-agreement.md` y `docs/03-process/task-lifecycle.md`.
-4. Copiar `.env.example` a `.env` y completar solo las variables necesarias para la tarea activa.
-5. Configurar MCPs locales usando `templates/agent-tooling/mcp.servers.example.json` como base.
-6. Instalar o declarar las skills locales usando `templates/agent-tooling/skills.manifest.example.yaml` como referencia.
-7. Validar accesos a `GitHub`, `YouTrack` y proveedores requeridos.
-8. Confirmar estado `ready to work`.
+4. Crear entorno virtual local con `python -m venv .venv`.
+5. Activar `.venv` en el shell local.
+6. Ejecutar `python -m pip install --upgrade pip`.
+7. Instalar dependencias con `python -m pip install -r requirements-dev.txt`.
+8. Copiar `.env.example` a `.env` y completar solo las variables necesarias para la tarea activa.
+9. Configurar MCPs locales usando `templates/agent-tooling/mcp.servers.example.json` como base.
+10. Instalar o declarar las skills locales usando `templates/agent-tooling/skills.manifest.example.yaml` como referencia.
+11. Validar accesos a `GitHub`, `YouTrack` y proveedores requeridos.
+12. Ejecutar `python -m pytest -q` como smoke check base.
+13. Confirmar estado `ready to work`.
+
+## Bootstrap Python
+
+### Comandos recomendados en PowerShell
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+### Fuente de verdad para dependencias
+
+- `requirements.txt`: dependencias runtime
+- `requirements-dev.txt`: dependencias de desarrollo y validacion
+- `pyproject.toml`: metadata del paquete y configuracion de herramientas, no bootstrap operativo
 
 ## Donde vive cada cosa
 
@@ -31,12 +55,14 @@ Permitir que cualquier desarrollador configure el mismo baseline de herramientas
 - contratos operativos
 - roadmap y arquitectura
 - plantillas de entorno
+- requirements de Python
 - ejemplos de MCP
 - manifiesto de skills compartidas
 
 ### Configuracion local
 
 - `.env`
+- `.venv`
 - archivos locales reales de MCP
 - instalacion local de skills
 - rutas locales
@@ -88,7 +114,9 @@ Un agente esta listo si puede:
 
 - `git status` funciona
 - el repo contiene los documentos criticos
+- `.venv` existe localmente y no se versiona
 - `.env` existe localmente y no se versiona
+- `python -m pytest -q` pasa dentro del entorno virtual
 
 ### Integraciones base
 

@@ -11,7 +11,7 @@
 4. `Aprobacion`
    Solo se avanza con `PLAN OK`.
 5. `Implementacion`
-   Se trabaja en rama dedicada.
+   Se trabaja sobre `staging`, salvo pedido explicito de crear una rama nueva.
 6. `Verificacion`
    Se ejecutan checks, tests y revision de impacto.
 7. `Pull Request`
