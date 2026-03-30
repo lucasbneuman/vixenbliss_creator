@@ -50,7 +50,7 @@ No introducir nuevas dependencias, servicios o patrones de arquitectura sin tare
 1. Tomar una tarea desde `YouTrack`.
 2. Pedir plan en modo plan usando el contexto de este repo.
 3. Esperar aprobacion explicita con `PLAN OK`.
-4. Implementar sobre `staging`, salvo pedido explicito de crear una rama nueva.
+4. Implementar sobre `develop`, salvo pedido explicito de crear una rama nueva.
 5. Ejecutar validaciones minimas.
 6. Actualizar documentacion impactada.
 7. Abrir PR con evidencia y checklist.
@@ -77,7 +77,7 @@ No interpretar palabras ambiguas como aprobacion implicita.
 
 ## Politica de ramas y commits
 
-- Trabajo diario por defecto en `staging`.
+- Trabajo diario por defecto en `develop`.
 - `main` queda reservado para integracion estable.
 - No crear ramas nuevas salvo pedido explicito.
 - Si excepcionalmente se pide una rama nueva, debe estar ligada a una tarea concreta.

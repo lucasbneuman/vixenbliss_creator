@@ -14,7 +14,7 @@ No usar `tasks.md` o `bugs.md` como registro principal.
 
 ## Reglas de colaboracion
 
-- trabajo diario sobre `staging`
+- trabajo diario sobre `develop`
 - `main` reservado para integracion estable
 - no crear ramas nuevas salvo pedido explicito
 - si excepcionalmente se pide una rama nueva, debe estar ligada a una tarea concreta

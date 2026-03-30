@@ -6,7 +6,7 @@ Reducir conflictos entre dos desarrolladores y mantener trazabilidad entre tarea
 
 ## Politica actual de ramas
 
-- `staging` es la rama de trabajo diaria.
+- `develop` es la rama de trabajo diaria.
 - `main` es la rama estable de integracion.
 - No crear ramas nuevas salvo pedido explicito.
 - Si se autoriza una rama excepcional, debe estar asociada a una tarea concreta y usarse solo para ese objetivo.

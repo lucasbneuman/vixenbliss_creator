@@ -8,6 +8,9 @@ Construir el pipeline que crea identidades digitales persistentes, tecnicamente 
 
 ### TAREA 1.1 - Definir el modelo de datos maestro de Identidad y Ficha Tecnica
 
+**Issue fuente**  
+`DEV-6`
+
 **Objetivo**  
 Definir el contrato canonico de `Identity` y de `technical_sheet_json` para que toda identidad pueda persistirse, validarse y reutilizarse en Sistema 2 y futuro Sistema 5.
 
@@ -72,6 +75,9 @@ Codex.
 ---
 
 ### TAREA 1.2 - Definir modelos de datos para Jobs, Artefactos y Catalogo de Modelos
+
+**Issue fuente**  
+`DEV-35`
 
 **Objetivo**  
 Agregar la capa de trazabilidad para jobs, artefactos y versiones de modelo.

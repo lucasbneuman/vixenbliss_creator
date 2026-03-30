@@ -72,6 +72,8 @@ python -m pytest -q
 - reemplazar placeholders por valores locales
 - no commitear archivos reales con secretos
 - nombrar servidores segun proveedor y entorno cuando aplique
+- para MCPs remotos, usar `url` con el endpoint documentado en vez de `command` y `args`
+- baseline actual: `supabase` se configura como MCP remoto por `http` usando `SUPABASE_MCP_URL`
 
 ## Skills por workspace
 
@@ -122,6 +124,12 @@ Un agente esta listo si puede:
 - `YouTrack`: lectura de tareas y campos esperados
 - `MCPs`: cada servidor configurado responde a una lectura o listado simple
 - `skills`: cada skill declarada puede localizarse o instalarse segun su mecanismo
+
+### Smoke check sugerido para `Supabase MCP`
+
+- confirmar que `SUPABASE_MCP_URL` apunta al endpoint `/mcp` esperado
+- validar que el cliente MCP pueda conectarse y listar herramientas o recursos
+- si el endpoint requiere autenticacion adicional o whitelist de red, resolverlo fuera del repo y dejar evidencia en la tarea
 
 ## Si algo falla
 

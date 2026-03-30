@@ -37,7 +37,7 @@ Para cambios Python, el baseline operativo del repo es:
 
 - creacion de tarea desde roadmap
 - generacion y aprobacion de plan
-- implementacion sobre `staging`, salvo pedido explicito de rama nueva
+- implementacion sobre `develop`, salvo pedido explicito de rama nueva
 - apertura de PR con checklist
 - ejecucion de checks automaticos
 - merge con aprobacion

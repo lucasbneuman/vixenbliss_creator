@@ -59,6 +59,7 @@ Ejemplos:
 | `GitHub` | `GITHUB_TOKEN` | personal o CI | developer / admin | local o CI |
 | `YouTrack` | `YOUTRACK_BASE_URL`, `YOUTRACK_API_TOKEN` | personal | developer | local |
 | `Supabase` | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL` | proyecto | backend / admin | local o secret manager |
+| `Supabase MCP` | `SUPABASE_MCP_URL` | endpoint compartido no sensible | backend / admin | repo y local |
 | `Supabase Storage` | buckets `SUPABASE_STORAGE_BUCKET_*` | proyecto | backend / admin | local o CI |
 | `S3-compatible` | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_BUCKET_*` | proyecto o despliegue | infra | local o secret manager |
 | `Modal` | `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET` | personal o proyecto | ML / infra | local o secret manager |

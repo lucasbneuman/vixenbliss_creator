@@ -50,7 +50,7 @@ No duplicar el estado de tareas y bugs dentro del repo.
 1. Seleccionar tarea en `YouTrack`.
 2. Pedir plan a Codex.
 3. Aprobar con `PLAN OK`.
-4. Implementar sobre `staging`, salvo pedido explicito de crear una rama nueva.
+4. Implementar sobre `develop`, salvo pedido explicito de crear una rama nueva.
 5. Ejecutar validaciones.
 6. Abrir PR con evidencia.
 7. Revisar y aprobar con `MERGE OK`.
@@ -58,7 +58,7 @@ No duplicar el estado de tareas y bugs dentro del repo.
 
 ## Politica actual de ramas
 
-- `staging` es la rama de trabajo diaria.
+- `develop` es la rama de trabajo diaria.
 - `main` es la rama estable de integracion.
 - No se crean ramas nuevas salvo pedido explicito.
 - Si se pide una rama nueva de forma excepcional, debe quedar asociada a una tarea concreta.
@@ -86,6 +86,8 @@ El repositorio versiona contrato y plantillas compartibles para trabajo con mult
 - Dependencias Python: `requirements.txt`
 - MCPs versionables: `templates/agent-tooling/mcp.servers.example.json`
 - Skills por workspace: `templates/agent-tooling/skills.manifest.example.yaml`
+
+La plantilla de MCPs ya incluye baseline para `youtrack`, `github` y `supabase`. Los secretos reales y overrides locales siguen fuera del repo.
 
 Los secretos reales y configuraciones personales no se versionan. Cada desarrollador conecta sus propias credenciales siguiendo `docs/03-process/developer-tooling-onboarding.md`.
 

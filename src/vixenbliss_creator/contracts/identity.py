@@ -1,19 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+from pydantic import Field, HttpUrl, model_validator
 
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def is_utc_datetime(value: datetime) -> bool:
-    return value.tzinfo is not None and value.utcoffset() == timezone.utc.utcoffset(value)
+from .common import ContractBaseModel, is_utc_datetime, utc_now
 
 
 class IdentitySchemaVersion(str, Enum):
@@ -96,8 +90,8 @@ class IntensityLevel(str, Enum):
     HIGH = "high"
 
 
-class TechnicalSheetBaseModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, use_enum_values=True)
+class TechnicalSheetBaseModel(ContractBaseModel):
+    pass
 
 
 class IdentityCore(TechnicalSheetBaseModel):

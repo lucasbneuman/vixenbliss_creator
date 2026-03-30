@@ -11,6 +11,10 @@
         "YOUTRACK_API_TOKEN": "${YOUTRACK_API_TOKEN}"
       }
     },
+    "supabase": {
+      "transport": "http",
+      "url": "${SUPABASE_MCP_URL}"
+    },
     "github": {
       "transport": "stdio",
       "command": "CHANGEME_MCP_COMMAND",
