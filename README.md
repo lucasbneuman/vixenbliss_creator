@@ -74,6 +74,7 @@ El roadmap del repo existe como vision flexible y contexto tecnico, no como agen
 - Vision: `docs/00-product/vision.md`
 - Base tecnica: `docs/01-architecture/technical-base.md`
 - Arquitectura operativa: `docs/01-architecture/operational-architecture.md`
+- Motor visual: `docs/01-architecture/visual-generation-engine.md`
 - Roadmap maestro flexible: `docs/02-roadmap/roadmap-master.md`
 - Reglas de trabajo: `docs/03-process/working-agreement.md`
 - Ciclo de tarea: `docs/03-process/task-lifecycle.md`
@@ -131,3 +132,14 @@ python -m vixenbliss_creator.agentic.runner --idea "performer glam nocturna con 
 ```
 
 Detalle tecnico y contrato de variables en `docs/01-architecture/agentic-brain.md`.
+
+## Motor visual
+
+`DEV-8` agrega una primera capa de motor visual real en `src/vixenbliss_creator/visual_pipeline/`.
+
+- contrato estable de request/response para generacion sobre `ComfyUI`
+- rama opcional de `IP Adapter Plus` para consistencia facial
+- disparo de `Impact Pack FaceDetailer` cuando la confianza facial cae por debajo del umbral configurado
+- checkpoint serializable para retomar desde el ultimo nodo exitoso
+
+El detalle tecnico y las variables nuevas viven en `docs/01-architecture/visual-generation-engine.md`.

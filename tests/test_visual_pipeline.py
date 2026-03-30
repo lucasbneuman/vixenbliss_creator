@@ -1,0 +1,185 @@
+from __future__ import annotations
+
+import pytest
+
+from vixenbliss_creator.visual_pipeline import (
+    ErrorCode,
+    FakeVisualExecutionClient,
+    Provider,
+    ResumeCheckpoint,
+    ResumePolicy,
+    ResumeStage,
+    VisualArtifact,
+    VisualArtifactRole,
+    VisualGenerationOrchestrator,
+    VisualGenerationRequest,
+    VisualPipelineSettings,
+)
+from vixenbliss_creator.visual_pipeline.models import StepExecutionResult
+
+
+def build_request(**overrides: object) -> VisualGenerationRequest:
+    payload = {
+        "workflow_id": "base-portrait-v1",
+        "workflow_version": "2026-03-30",
+        "base_model_id": "flux-schnell-v1",
+        "prompt": "editorial portrait of a synthetic performer with premium soft lighting",
+        "negative_prompt": "low quality, anatomy drift, extra limbs, text, watermark",
+        "seed": 42,
+        "width": 1024,
+        "height": 1024,
+        "provider": Provider.COMFYUI,
+        "reference_face_image_url": "https://example.com/reference-face.png",
+        "ip_adapter": {"enabled": True, "model_name": "plus_face", "weight": 0.9},
+        "face_detailer": {"enabled": True, "confidence_threshold": 0.8, "inpaint_strength": 0.4},
+    }
+    payload.update(overrides)
+    return VisualGenerationRequest.model_validate(payload)
+
+
+def build_artifact(role: VisualArtifactRole, uri: str) -> VisualArtifact:
+    return VisualArtifact(role=role, uri=uri, content_type="image/png", metadata_json={})
+
+
+def test_request_requires_reference_when_ip_adapter_is_enabled() -> None:
+    with pytest.raises(ValueError, match="reference_face_image_url"):
+        build_request(reference_face_image_url=None)
+
+
+def test_resume_checkpoint_rejects_incomplete_base_render_state() -> None:
+    with pytest.raises(ValueError, match="base_render checkpoints require a base_image artifact"):
+        ResumeCheckpoint(
+            workflow_id="base-portrait-v1",
+            workflow_version="2026-03-30",
+            base_model_id="flux-schnell-v1",
+            seed=42,
+            stage=ResumeStage.BASE_RENDER,
+            provider=Provider.COMFYUI,
+            provider_job_id="prompt-1",
+            successful_node_ids=["ksampler"],
+            intermediate_artifacts=[],
+            metadata_json={},
+        )
+
+
+def test_orchestrator_returns_base_image_when_confidence_is_high() -> None:
+    client = FakeVisualExecutionClient(
+        base_result=StepExecutionResult(
+            stage=ResumeStage.BASE_RENDER,
+            artifacts=[build_artifact(VisualArtifactRole.BASE_IMAGE, "memory://base.png")],
+            provider=Provider.COMFYUI,
+            provider_job_id="prompt-1",
+            successful_node_ids=["ksampler", "decode"],
+            face_detection_confidence=0.92,
+            metadata_json={},
+        )
+    )
+    result = VisualGenerationOrchestrator(client).generate(build_request())
+
+    assert result.error_code is None
+    assert result.regional_inpaint_triggered is False
+    assert result.face_detection_confidence == pytest.approx(0.92)
+    assert result.ip_adapter_used is True
+    assert result.artifacts[0].role == VisualArtifactRole.FINAL_IMAGE
+    assert client.calls == ["base_render"]
+
+
+def test_orchestrator_triggers_face_detail_when_confidence_is_low() -> None:
+    client = FakeVisualExecutionClient(
+        base_result=StepExecutionResult(
+            stage=ResumeStage.BASE_RENDER,
+            artifacts=[build_artifact(VisualArtifactRole.BASE_IMAGE, "memory://base.png")],
+            provider=Provider.COMFYUI,
+            provider_job_id="prompt-1",
+            successful_node_ids=["ksampler", "decode"],
+            face_detection_confidence=0.61,
+            metadata_json={},
+        ),
+        face_detail_result=StepExecutionResult(
+            stage=ResumeStage.FACE_DETAIL,
+            artifacts=[build_artifact(VisualArtifactRole.FINAL_IMAGE, "memory://final.png")],
+            provider=Provider.COMFYUI,
+            provider_job_id="prompt-2",
+            successful_node_ids=["face_detailer"],
+            face_detection_confidence=None,
+            metadata_json={},
+        ),
+    )
+    result = VisualGenerationOrchestrator(client).generate(build_request())
+
+    assert result.error_code is None
+    assert result.regional_inpaint_triggered is True
+    assert result.artifacts[0].uri == "memory://final.png"
+    assert client.calls == ["base_render", "face_detail"]
+
+
+def test_orchestrator_fails_when_face_detector_returns_no_confidence() -> None:
+    client = FakeVisualExecutionClient(
+        base_result=StepExecutionResult(
+            stage=ResumeStage.BASE_RENDER,
+            artifacts=[build_artifact(VisualArtifactRole.BASE_IMAGE, "memory://base.png")],
+            provider=Provider.COMFYUI,
+            provider_job_id="prompt-1",
+            successful_node_ids=["ksampler"],
+            face_detection_confidence=None,
+            metadata_json={},
+        )
+    )
+    result = VisualGenerationOrchestrator(client).generate(build_request())
+
+    assert result.error_code == ErrorCode.FACE_CONFIDENCE_UNAVAILABLE
+    assert result.artifacts == []
+    assert client.calls == ["base_render"]
+
+
+def test_orchestrator_resumes_without_repeating_base_render() -> None:
+    checkpoint = ResumeCheckpoint(
+        workflow_id="base-portrait-v1",
+        workflow_version="2026-03-30",
+        base_model_id="flux-schnell-v1",
+        seed=42,
+        stage=ResumeStage.BASE_RENDER,
+        provider=Provider.COMFYUI,
+        provider_job_id="prompt-1",
+        successful_node_ids=["ksampler", "decode"],
+        intermediate_artifacts=[build_artifact(VisualArtifactRole.BASE_IMAGE, "memory://base.png")],
+        metadata_json={"face_detection_confidence": 0.54},
+    )
+    client = FakeVisualExecutionClient(
+        face_detail_result=StepExecutionResult(
+            stage=ResumeStage.FACE_DETAIL,
+            artifacts=[build_artifact(VisualArtifactRole.FINAL_IMAGE, "memory://final.png")],
+            provider=Provider.COMFYUI,
+            provider_job_id="prompt-2",
+            successful_node_ids=["face_detailer"],
+            face_detection_confidence=None,
+            metadata_json={},
+        )
+    )
+    result = VisualGenerationOrchestrator(client).generate(
+        build_request(resume_policy=ResumePolicy.FROM_CHECKPOINT, resume_checkpoint=checkpoint)
+    )
+
+    assert result.error_code is None
+    assert result.regional_inpaint_triggered is True
+    assert client.calls == ["face_detail"]
+
+
+def test_settings_from_env_reads_visual_pipeline_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COMFYUI_BASE_URL", "https://comfy.example.com")
+    monkeypatch.setenv("COMFYUI_WORKFLOW_IMAGE_ID", "base-portrait-v1")
+    monkeypatch.setenv("COMFYUI_WORKFLOW_IMAGE_VERSION", "2026-03-30")
+    monkeypatch.setenv("COMFYUI_IP_ADAPTER_MODEL", "plus_face")
+    monkeypatch.setenv("COMFYUI_FACE_CONFIDENCE_THRESHOLD", "0.85")
+    monkeypatch.setenv("COMFYUI_RESUME_CACHE_MODE", "checkpoint")
+    monkeypatch.setenv("COMFYUI_HTTP_TIMEOUT_SECONDS", "45")
+
+    settings = VisualPipelineSettings.from_env()
+
+    assert settings.comfyui_base_url == "https://comfy.example.com"
+    assert settings.comfyui_workflow_image_id == "base-portrait-v1"
+    assert settings.comfyui_workflow_image_version == "2026-03-30"
+    assert settings.comfyui_ip_adapter_model == "plus_face"
+    assert settings.comfyui_face_confidence_threshold == pytest.approx(0.85)
+    assert settings.comfyui_resume_cache_mode == "checkpoint"
+    assert settings.comfyui_http_timeout_seconds == 45
