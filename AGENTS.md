@@ -21,12 +21,9 @@ No es un tablero de tareas manual. El estado transaccional de trabajo vive fuera
 5. `docs/03-process/secrets-and-access.md`
 6. `docs/01-architecture/technical-base.md`
 7. `docs/01-architecture/operational-architecture.md`
-8. `docs/02-roadmap/roadmap-master.md`
-9. `docs/02-roadmap/epic-01.md`
-10. `docs/02-roadmap/epic-02.md`
-11. `docs/02-roadmap/epic-03.md`
-12. `docs/03-process/youtrack-structure.md`
-13. `README.md`
+8. `docs/03-process/youtrack-structure.md`
+9. `docs/02-roadmap/roadmap-master.md`
+10. `README.md`
 
 Si hay contradicciones, prevalece el documento de mayor prioridad o la ADR mas reciente.
 
