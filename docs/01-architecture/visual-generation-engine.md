@@ -51,6 +51,20 @@ Si el despliegue real corre en `Modal`, la configuracion manual esperada es:
 4. mapear `COMFYUI_IP_ADAPTER_NODE_ID`, `COMFYUI_FACE_DETECTOR_NODE_ID` y `COMFYUI_FACE_DETAILER_NODE_ID` a nodos reales del workflow
 5. garantizar acceso del runtime a la imagen de referencia facial o resolverla antes de inyectarla al workflow
 
+## Runtime deployable recomendado
+
+El runtime productivo inicial para imagen puede versionarse en el repo bajo `infra/runpod-comfyui/`.
+
+Ese paquete debe cubrir:
+
+- imagen `Docker` reproducible
+- bootstrap de `ComfyUI`
+- instalacion de `IPAdapter Plus` e `Impact Pack`
+- workflow base versionado en repo
+- scripts de arranque y healthcheck
+
+El backend del proyecto sigue hablando con `ComfyUI` por HTTP; la carpeta deployable solo materializa el entorno de ejecucion.
+
 ## Variables de entorno
 
 - `COMFYUI_BASE_URL`

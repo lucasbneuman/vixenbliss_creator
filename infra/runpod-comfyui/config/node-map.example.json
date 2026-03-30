@@ -1,0 +1,25 @@
+{
+  "workflow_id": "base-image-ipadapter-impact",
+  "workflow_version": "2026-03-30",
+  "logical_nodes": {
+    "ip_adapter": {
+      "expected_node_id": "ip_adapter_apply",
+      "env_var": "COMFYUI_IP_ADAPTER_NODE_ID",
+      "required": true
+    },
+    "face_detector": {
+      "expected_node_id": "face_detector",
+      "env_var": "COMFYUI_FACE_DETECTOR_NODE_ID",
+      "required": true
+    },
+    "face_detailer": {
+      "expected_node_id": "face_detailer",
+      "env_var": "COMFYUI_FACE_DETAILER_NODE_ID",
+      "required": true
+    }
+  },
+  "artifacts": {
+    "base_image_role": "base_image",
+    "final_image_role": "final_image"
+  }
+}

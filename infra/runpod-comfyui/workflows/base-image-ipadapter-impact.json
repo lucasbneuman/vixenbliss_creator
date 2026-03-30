@@ -1,0 +1,190 @@
+{
+  "workflow_id": "base-image-ipadapter-impact",
+  "workflow_version": "2026-03-30",
+  "description": "Base image workflow with IPAdapter Plus and Impact Pack FaceDetailer hooks.",
+  "vb_meta": {
+    "workflow_id": "base-image-ipadapter-impact",
+    "workflow_version": "2026-03-30",
+    "logical_nodes": {
+      "ip_adapter": "ip_adapter_apply",
+      "face_detector": "face_detector",
+      "face_detailer": "face_detailer"
+    }
+  },
+  "checkpoint_loader": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "CHANGEME_BASE_CHECKPOINT.safetensors"
+    }
+  },
+  "positive_prompt": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "checkpoint_loader",
+        1
+      ],
+      "text": "CHANGEME_POSITIVE_PROMPT"
+    }
+  },
+  "negative_prompt": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "checkpoint_loader",
+        1
+      ],
+      "text": "CHANGEME_NEGATIVE_PROMPT"
+    }
+  },
+  "empty_latent": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    }
+  },
+  "load_ip_adapter_model": {
+    "class_type": "IPAdapterModelLoader",
+    "inputs": {
+      "ipadapter_file": "plus_face.safetensors"
+    }
+  },
+  "load_reference_image": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "CHANGEME_REFERENCE_IMAGE.png"
+    }
+  },
+  "ip_adapter_apply": {
+    "class_type": "IPAdapterAdvanced",
+    "inputs": {
+      "model": [
+        "checkpoint_loader",
+        0
+      ],
+      "ipadapter": [
+        "load_ip_adapter_model",
+        0
+      ],
+      "image": [
+        "load_reference_image",
+        0
+      ],
+      "weight": 1.0
+    }
+  },
+  "ksampler": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "ip_adapter_apply",
+        0
+      ],
+      "positive": [
+        "positive_prompt",
+        0
+      ],
+      "negative": [
+        "negative_prompt",
+        0
+      ],
+      "latent_image": [
+        "empty_latent",
+        0
+      ],
+      "seed": 42,
+      "steps": 28,
+      "cfg": 7.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1.0
+    }
+  },
+  "vae_decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "ksampler",
+        0
+      ],
+      "vae": [
+        "checkpoint_loader",
+        2
+      ]
+    }
+  },
+  "face_detector": {
+    "class_type": "UltralyticsDetectorProvider",
+    "inputs": {
+      "model_name": "bbox/face_yolov8m.pt"
+    }
+  },
+  "face_detailer": {
+    "class_type": "FaceDetailer",
+    "inputs": {
+      "image": [
+        "vae_decode",
+        0
+      ],
+      "model": [
+        "ip_adapter_apply",
+        0
+      ],
+      "clip": [
+        "checkpoint_loader",
+        1
+      ],
+      "vae": [
+        "checkpoint_loader",
+        2
+      ],
+      "positive": [
+        "positive_prompt",
+        0
+      ],
+      "negative": [
+        "negative_prompt",
+        0
+      ],
+      "bbox_detector": [
+        "face_detector",
+        0
+      ],
+      "guide_size": 1024,
+      "guide_size_for": true,
+      "max_size": 1024,
+      "seed": 42,
+      "steps": 18,
+      "cfg": 6.5,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 0.35,
+      "feather": 12,
+      "noise_mask": true,
+      "force_inpaint": true,
+      "bbox_threshold": 0.8
+    }
+  },
+  "save_base_image": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "vae_decode",
+        0
+      ],
+      "filename_prefix": "vb/base"
+    }
+  },
+  "save_final_image": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "face_detailer",
+        0
+      ],
+      "filename_prefix": "vb/final"
+    }
+  }
+}

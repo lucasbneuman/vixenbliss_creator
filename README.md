@@ -143,3 +143,14 @@ Detalle tecnico y contrato de variables en `docs/01-architecture/agentic-brain.m
 - checkpoint serializable para retomar desde el ultimo nodo exitoso
 
 El detalle tecnico y las variables nuevas viven en `docs/01-architecture/visual-generation-engine.md`.
+
+## Runtime deployable de ComfyUI
+
+El repo incluye una unidad deployable para `Runpod` en `infra/runpod-comfyui/`.
+
+- imagen productiva basada en `Docker`
+- bootstrap de `ComfyUI` con `IPAdapter Plus` e `Impact Pack`
+- workflow base versionado para imagen
+- scripts de arranque y healthcheck
+
+La carpeta esta pensada para publicarse en `GitHub` y usarse como base reproducible del runtime de imagen.
