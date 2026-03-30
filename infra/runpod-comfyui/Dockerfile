@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -31,10 +31,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     tini \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python-is-python3 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /tmp/runpod-comfyui-requirements.txt
 RUN python -m pip install --upgrade pip && \
+    python -m pip install --index-url https://download.pytorch.org/whl/cu121 \
+      torch==2.4.1 \
+      torchvision==0.19.1 \
+      torchaudio==2.4.1 && \
     python -m pip install -r /tmp/runpod-comfyui-requirements.txt
 
 RUN git clone --depth 1 --branch "${COMFYUI_REF}" "${COMFYUI_REPO}" "${COMFYUI_HOME}" && \
