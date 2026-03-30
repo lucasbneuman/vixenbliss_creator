@@ -6,11 +6,12 @@ Definir reglas simples y estables para que dos desarrolladores y uno o mas agent
 
 ## Fuente de verdad
 
-- `YouTrack` es la fuente de verdad de backlog, estado, prioridad, asignacion y bugs.
+- `YouTrack` es la fuente de verdad operativa y evolutiva de backlog, prioridad, alcance, asignacion, estado y bugs.
 - `GitHub` es la fuente de verdad del codigo, las PRs, los checks y los releases.
-- El repositorio guarda documentacion viva, decisiones y evidencia reusable.
+- El repositorio guarda proceso, arquitectura, contratos, decisiones, prompts y documentacion tecnica reusable.
 
 No usar `tasks.md` o `bugs.md` como registro principal.
+El roadmap del repo funciona como vision flexible y contexto, no como orden rigido de ejecucion.
 
 ## Reglas de colaboracion
 
@@ -21,13 +22,16 @@ No usar `tasks.md` o `bugs.md` como registro principal.
 - no mezclar refactor y feature en la misma PR
 - no mezclar multiples tareas no relacionadas en el mismo cambio
 - cada PR debe referenciar una tarea
+- cada tarea o cambio cerrado debe dejar al menos un commit trazable
 - cada cambio que afecte contratos o arquitectura debe actualizar docs
+- pueden existir mejoras o revisiones ad hoc fuera de una tarea explicita, siempre que no contradigan `YouTrack` y dejen evidencia trazable
 
 ## Politica de aprobacion
 
 Usar solo estos gatillos:
 
-- `PLAN OK`: habilita implementacion
+- `IMPLEMENTAR PLAN`: habilita implementacion
+- `PLAN OK`: tambien habilita implementacion
 - `MERGE OK`: habilita merge despues de validaciones
 - `CLOSE OK`: habilita cierre administrativo o de release
 
@@ -70,3 +74,4 @@ Una tarea solo se considera cerrada cuando:
 - las validaciones minimas estan ejecutadas
 - la documentacion impactada esta actualizada
 - la evidencia esta enlazada en la tarea o PR
+- existe al menos un commit trazable por ese cambio cerrado

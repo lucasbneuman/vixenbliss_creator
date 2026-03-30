@@ -12,4 +12,4 @@ Documento opcional para capturar el foco actual del sprint o del bootstrap.
 
 - bootstrap del repositorio
 - definicion de workflow operativo
-- preparacion de roadmap ejecutable
+- alineacion documental para ejecutar mejor lo que vive en `YouTrack`

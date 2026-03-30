@@ -16,7 +16,7 @@ Se adopta este modelo:
 - `GitHub` como fuente de verdad del codigo y de integracion
 - `AGENTS.md` como router principal para agentes
 - `docs/` como arquitectura documental viva por dominio
-- flujo obligatorio `brief -> plan -> PLAN OK -> implementacion -> verificacion -> PR -> MERGE OK -> cierre`
+- flujo obligatorio `brief -> plan -> IMPLEMENTAR PLAN o PLAN OK -> implementacion -> verificacion -> PR -> MERGE OK -> cierre`
 
 ## Consecuencias
 

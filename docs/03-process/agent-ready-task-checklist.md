@@ -44,7 +44,7 @@ Tambien debe indicar:
 
 ## Checklist para implementacion
 
-- ya tiene `PLAN OK`
+- ya tiene `IMPLEMENTAR PLAN` o `PLAN OK`
 - la superficie de cambio es acotada
 - las validaciones minimas son conocidas
 - la documentacion impactada es identificable
@@ -58,6 +58,8 @@ Ademas de la evidencia normal de PR o tarea, un agente debe dejar:
 - que supuestos tomo
 - que validaciones corrio o no pudo correr
 - que limites de tooling o credenciales encontro
+- que commit dejo por el cambio cerrado
+- que rutas criticas toco si aplica
 
 ## Senales de que la tarea no esta agent-ready
 

@@ -93,7 +93,7 @@ Toda skill compartida debe indicar:
 | --- | --- | --- | --- |
 | Backlog, estado, prioridad | `YouTrack` | humano, agentes via MCP | humano y agentes autorizados |
 | Codigo, PRs, CI | `GitHub` | humano, agentes | humano y agentes autorizados |
-| Arquitectura, proceso y roadmap | repo `docs/` | humano, agentes | cambios via tarea aprobada |
+| Arquitectura, proceso, contratos y documentacion tecnica | repo `docs/` | humano, agentes | cambios via tarea aprobada |
 | Credenciales reales | entorno local o gestor externo | solo owner de la credencial | solo owner o admin |
 | Plantillas de tooling | repo | humano, agentes | cambios via tarea aprobada |
 
@@ -142,7 +142,7 @@ Todo handoff debe dejar:
 ## Regla de no duplicacion de contexto
 
 - `YouTrack` guarda backlog, estado, owner y evidencia enlazada
-- el repo guarda contratos, decisiones, onboarding y plantillas compartidas
+- el repo guarda proceso, contratos, decisiones, onboarding, prompts y documentacion tecnica
 - la configuracion local guarda rutas, secretos y tokens personales
 - no mover secretos al repo
 - no mover tracking transaccional a archivos `.md`

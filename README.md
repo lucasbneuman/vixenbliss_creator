@@ -5,7 +5,7 @@ Base documental y operativa para construir `VixenBliss Creator` desde cero con u
 ## Que contiene este repositorio
 
 - arquitectura y base tecnica del sistema
-- roadmap maestro y epicas ejecutables
+- contexto estrategico, arquitectura y proceso operativo
 - reglas operativas de trabajo
 - contrato operativo para agentes, MCPs, skills y credenciales
 - onboarding reproducible para desarrolladores y agentes
@@ -40,21 +40,24 @@ Base documental y operativa para construir `VixenBliss Creator` desde cero con u
 
 ## Fuente de verdad recomendada
 
-- Trabajo operativo: `YouTrack`
+- Trabajo operativo, backlog, prioridades y evolucion de tareas: `YouTrack`
 - Codigo, PRs y releases: `GitHub`
+- Proceso, arquitectura, contratos, decisiones y documentacion tecnica: repo `docs/`
 
 No duplicar el estado de tareas y bugs dentro del repo.
+El roadmap del repo existe como vision flexible y contexto tecnico, no como agenda rigida de ejecucion.
 
 ## Flujo recomendado por tarea
 
 1. Seleccionar tarea en `YouTrack`.
 2. Pedir plan a Codex.
-3. Aprobar con `PLAN OK`.
+3. Aprobar con `IMPLEMENTAR PLAN` o `PLAN OK`.
 4. Implementar sobre `develop`, salvo pedido explicito de crear una rama nueva.
 5. Ejecutar validaciones.
-6. Abrir PR con evidencia.
-7. Revisar y aprobar con `MERGE OK`.
-8. Hacer merge y cerrar tarea.
+6. Dejar al menos un commit trazable por tarea o cambio cerrado.
+7. Abrir PR con evidencia.
+8. Revisar y aprobar con `MERGE OK`.
+9. Hacer merge y cerrar tarea.
 
 ## Politica actual de ramas
 
@@ -68,7 +71,7 @@ No duplicar el estado de tareas y bugs dentro del repo.
 - Vision: `docs/00-product/vision.md`
 - Base tecnica: `docs/01-architecture/technical-base.md`
 - Arquitectura operativa: `docs/01-architecture/operational-architecture.md`
-- Roadmap maestro: `docs/02-roadmap/roadmap-master.md`
+- Roadmap maestro flexible: `docs/02-roadmap/roadmap-master.md`
 - Reglas de trabajo: `docs/03-process/working-agreement.md`
 - Ciclo de tarea: `docs/03-process/task-lifecycle.md`
 - Ramas y commits: `docs/03-process/branching-and-commits.md`
@@ -76,6 +79,7 @@ No duplicar el estado de tareas y bugs dentro del repo.
 - Onboarding de tooling: `docs/03-process/developer-tooling-onboarding.md`
 - Secretos y accesos: `docs/03-process/secrets-and-access.md`
 - Checklist agent-ready: `docs/03-process/agent-ready-task-checklist.md`
+- Politica de documentacion tecnica: `docs/03-process/technical-documentation-policy.md`
 - QA: `docs/05-qa/test-strategy.md`
 
 ## Baseline compartido de tooling

@@ -44,4 +44,5 @@ El sistema debe permitir:
 
 - base tecnica: `docs/01-architecture/technical-base.md`
 - arquitectura operativa: `docs/01-architecture/operational-architecture.md`
-- roadmap maestro: `docs/02-roadmap/roadmap-master.md`
+- roadmap maestro flexible: `docs/02-roadmap/roadmap-master.md`
+- ejecucion operativa y backlog vivo: `YouTrack`

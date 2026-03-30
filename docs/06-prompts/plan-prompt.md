@@ -16,5 +16,5 @@ Instrucciones:
 - propone un plan decision-complete
 - si la tarea es demasiado grande, dividila
 - identifica riesgos, dependencias y validaciones
-- no implementes nada hasta recibir PLAN OK
+- no implementes nada hasta recibir `IMPLEMENTAR PLAN` o `PLAN OK`
 ```

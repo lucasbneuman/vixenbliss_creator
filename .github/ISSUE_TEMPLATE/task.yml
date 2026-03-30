@@ -1,5 +1,5 @@
 name: Task
-description: Create an implementation task aligned with the roadmap and workflow.
+description: Create an implementation task aligned with YouTrack workflow and repo documentation.
 title: "[Task] "
 labels:
   - task
@@ -35,4 +35,4 @@ body:
     id: context
     attributes:
       label: Context
-      description: Link docs, ADRs, roadmap sections or related PRs.
+      description: Link docs, ADRs, YouTrack context, roadmap notes or related PRs.

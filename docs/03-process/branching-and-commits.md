@@ -54,6 +54,12 @@ docs(process): DEV-305 define task lifecycle
 chore(ci): DEV-410 add repo structure checks
 ```
 
+## Regla minima de commit
+
+- toda tarea o cambio cerrado debe dejar al menos un commit trazable
+- cuando exista tarea o issue, el commit debe referenciarlo
+- no cerrar una implementacion solo con respuesta en chat sin dejar evidencia en git
+
 ## Pull Requests
 
 Toda PR debe:

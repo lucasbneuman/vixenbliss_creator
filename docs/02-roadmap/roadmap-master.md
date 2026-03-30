@@ -3,14 +3,15 @@
 ## Proposito
 
 Este roadmap maestro consolida el brief ejecutivo, los contratos tecnicos minimos, las reglas operativas transversales y la estructura general del MVP reforzado de VixenBliss Creator.
+Funciona como vision flexible y contexto tecnico del proyecto, no como orden rigido de ejecucion.
 
-Por tamano y mantenibilidad, el detalle operativo ejecutable de cada epica vive en archivos separados:
+Por tamano y mantenibilidad, el detalle contextual de cada epica vive en archivos separados:
 
 - `roadmap_epica_1_identidades_datasets_modelos.md`
 - `roadmap_epica_2_produccion_contenido.md`
 - `roadmap_epica_3_integracion_operacion.md`
 
-Cada tarea de esos archivos esta redactada para copiarse a YouTrack sin perder contexto.
+Cada tarea de esos archivos esta redactada para alimentar o enriquecer `YouTrack` sin perder contexto.
 
 ## BRIEF
 
@@ -30,7 +31,7 @@ Este roadmap cubre el MVP reforzado de los Sistemas 1 y 2. No implementa aun los
 
 ### 2. Problema que resuelve este roadmap
 
-El roadmap anterior absorbia gran parte de la vision tecnica, pero varias tareas seguian demasiado generales para ejecutarse sin reinterpretacion. Este documento y sus archivos de epicas convierten la base tecnica en trabajo operativo y asignable, con:
+El roadmap anterior absorbia gran parte de la vision tecnica, pero varias tareas seguian demasiado generales para ejecutarse sin reinterpretacion. Este documento y sus archivos de epicas convierten la base tecnica en contexto operativo reusable, con:
 
 - resultado esperado verificable
 - implementacion paso a paso
@@ -283,7 +284,7 @@ El MVP reforzado debe permitir:
 
 ## Convencion operativa transversal para todas las tareas
 
-Toda tarea del roadmap debe poder copiarse a YouTrack sin perder contexto. Toda tarea debe dejar explicito:
+Toda tarea del roadmap debe poder traducirse o actualizarse en `YouTrack` sin perder contexto. Toda tarea debe dejar explicito:
 
 - que estado consume
 - que estado produce
@@ -331,14 +332,15 @@ Cada tarea en los archivos de epica usa el mismo formato:
 - [`roadmap_epica_2_produccion_contenido.md`](C:\Users\AVALITH\Desktop\Proyectos\youtrack-agent\roadmap_epica_2_produccion_contenido.md)
 - [`roadmap_epica_3_integracion_operacion.md`](C:\Users\AVALITH\Desktop\Proyectos\youtrack-agent\roadmap_epica_3_integracion_operacion.md)
 
-## Reglas de ejecucion del roadmap
+## Rol operativo del roadmap
 
-### 1. Como descomponer este documento en YouTrack
+### 1. Como usar este documento junto con YouTrack
 
 - El `BRIEF` de YouTrack debe representar el contenido ejecutivo de este documento.
 - Cada `EPICA` debe convertirse en una `Epica` real.
 - Cada `TAREA` de los archivos de epica debe convertirse en una `Tarea` individual.
-- Si una tarea requiere implementacion extensa, se permiten subtareas, pero sin perder el texto operativo como referencia.
+- Si una tarea cambia de alcance, orden o prioridad, `YouTrack` prevalece y el roadmap se actualiza despues para reflejar el aprendizaje.
+- Si una tarea requiere implementacion extensa, se permiten subtareas, pero sin perder el texto contextual como referencia.
 
 ### 2. Que tareas no puede ejecutar Codex por si solo
 

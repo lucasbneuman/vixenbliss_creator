@@ -15,5 +15,6 @@ Instrucciones:
 - manten el cambio acotado y trazable
 - actualiza documentacion si el cambio la afecta
 - verifica el resultado con checks relevantes
-- resume al final que cambiaste, como lo validaste y que riesgo queda abierto
+- deja al menos un commit trazable por tarea o cambio cerrado
+- resume al final que cambiaste, que tareas hiciste, como lo validaste, que commit dejaste, que rutas criticas tocaste si aplica y que riesgo queda abierto
 ```

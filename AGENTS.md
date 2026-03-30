@@ -6,7 +6,7 @@ Este repositorio es la base operativa de `VixenBliss Creator`. Su funcion es con
 
 - contexto minimo para agentes y desarrolladores
 - documentacion viva del producto y la arquitectura
-- roadmap ejecutable
+- contexto estrategico y operativo reusable
 - reglas operativas de trabajo
 - evidencia reusable de decisiones y validaciones
 
@@ -49,19 +49,21 @@ No introducir nuevas dependencias, servicios o patrones de arquitectura sin tare
 
 1. Tomar una tarea desde `YouTrack`.
 2. Pedir plan en modo plan usando el contexto de este repo.
-3. Esperar aprobacion explicita con `PLAN OK`.
+3. Esperar aprobacion explicita con `IMPLEMENTAR PLAN` o `PLAN OK`.
 4. Implementar sobre `develop`, salvo pedido explicito de crear una rama nueva.
 5. Ejecutar validaciones minimas.
 6. Actualizar documentacion impactada.
-7. Abrir PR con evidencia y checklist.
-8. Esperar aprobacion explicita con `MERGE OK`.
-9. Hacer merge y cerrar la tarea con evidencia enlazada.
+7. Hacer al menos un commit trazable por tarea o cambio cerrado.
+8. Abrir PR con evidencia y checklist.
+9. Esperar aprobacion explicita con `MERGE OK`.
+10. Hacer merge y cerrar la tarea con evidencia enlazada.
 
 No avanzar a una nueva tarea mientras la actual no tenga cierre operativo claro o handoff explicito.
 
 ## Politica de aprobacion
 
-- `PLAN OK`: habilita implementacion de la tarea.
+- `IMPLEMENTAR PLAN`: habilita implementacion de la tarea.
+- `PLAN OK`: tambien habilita implementacion de la tarea.
 - `MERGE OK`: habilita merge luego de checks y revision.
 - `CLOSE OK`: habilita cierre administrativo cuando haga falta validacion externa.
 
@@ -74,6 +76,7 @@ No interpretar palabras ambiguas como aprobacion implicita.
 - No reescribir decisiones ya tomadas sin ADR o issue asociada.
 - No convertir este repo en un registro manual de bugs o tareas.
 - No duplicar el tracking entre `YouTrack` y archivos `.md`.
+- Permitir trabajo ad hoc o mejoras extraoficiales solo si no contradicen el faro operativo de `YouTrack` y dejan evidencia trazable.
 
 ## Politica de ramas y commits
 
@@ -81,7 +84,8 @@ No interpretar palabras ambiguas como aprobacion implicita.
 - `main` queda reservado para integracion estable.
 - No crear ramas nuevas salvo pedido explicito.
 - Si excepcionalmente se pide una rama nueva, debe estar ligada a una tarea concreta.
-- Cada commit debe referenciar la tarea o issue.
+- Cada tarea o cambio cerrado debe dejar al menos un commit actualizado y trazable.
+- Cada commit debe referenciar la tarea o issue cuando exista.
 - Cada PR debe enlazar una tarea o issue.
 
 Ver detalle en `docs/03-process/branching-and-commits.md`.
@@ -100,7 +104,7 @@ Ver detalle en `docs/05-qa/test-strategy.md`.
 
 ## Politica de documentacion
 
-- `docs/02-roadmap/` define el que y el orden.
+- `docs/02-roadmap/` aporta vision flexible, contexto estrategico y contratos de alto nivel.
 - `docs/01-architecture/` define el como.
 - `docs/03-process/` define el modo de trabajo.
 - `docs/04-decisions/` registra decisiones estables.
@@ -108,6 +112,7 @@ Ver detalle en `docs/05-qa/test-strategy.md`.
 - `docs/06-prompts/` estandariza pedidos a agentes.
 
 Si una tarea cambia contratos, interfaces o decisiones de arquitectura, actualizar la documentacion correspondiente en el mismo cambio.
+La documentacion tecnica debe registrar tanto el objetivo futuro como el camino recorrido: que se hizo, como quedo y que aprendizaje o decision lo explica.
 
 El baseline de tooling compartido para developers y agentes vive en:
 
@@ -118,6 +123,7 @@ El baseline de tooling compartido para developers y agentes vive en:
 - `docs/03-process/developer-tooling-onboarding.md`
 - `docs/03-process/secrets-and-access.md`
 - `docs/03-process/agent-ready-task-checklist.md`
+- `docs/03-process/technical-documentation-policy.md`
 
 ## Instrucciones para agentes
 
