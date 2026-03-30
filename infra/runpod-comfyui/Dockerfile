@@ -6,13 +6,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
     COMFYUI_HOME=/opt/comfyui \
     COMFYUI_PORT=8188 \
     COMFYUI_LISTEN=0.0.0.0 \
+    COMFYUI_BASE_URL=http://127.0.0.1:8188 \
     COMFYUI_WORKFLOW_IMAGE_ID=base-image-ipadapter-impact \
     COMFYUI_WORKFLOW_IMAGE_VERSION=2026-03-30 \
+    COMFYUI_BASE_CHECKPOINT_NAME=base-image-model.safetensors \
     COMFYUI_IP_ADAPTER_MODEL=plus_face \
     COMFYUI_FACE_CONFIDENCE_THRESHOLD=0.8 \
     COMFYUI_CUSTOM_NODES_DIR=/opt/comfyui/custom_nodes \
     COMFYUI_MODELS_DIR=/opt/comfyui/models \
-    COMFYUI_USER_DIR=/opt/comfyui/user/default
+    COMFYUI_USER_DIR=/opt/comfyui/user/default \
+    COMFYUI_INPUT_DIR=/opt/comfyui/input
 
 ARG COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git
 ARG COMFYUI_REF=master
@@ -45,7 +48,8 @@ RUN python -m pip install -r "${COMFYUI_HOME}/requirements.txt" && \
 COPY scripts /opt/runpod-comfyui/scripts
 COPY workflows /opt/runpod-comfyui/workflows
 COPY config /opt/runpod-comfyui/config
+COPY handler.py /opt/runpod-comfyui/handler.py
 
 RUN chmod +x /opt/runpod-comfyui/scripts/*.sh
 
-ENTRYPOINT ["/usr/bin/tini", "--", "/opt/runpod-comfyui/scripts/entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "python", "/opt/runpod-comfyui/handler.py"]
