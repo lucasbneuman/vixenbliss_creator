@@ -12,6 +12,7 @@ def test_runpod_comfyui_bundle_contains_expected_files() -> None:
     expected = [
         BUNDLE / "Dockerfile",
         BUNDLE / ".env.example",
+        BUNDLE / "handler.py",
         BUNDLE / "README.md",
         BUNDLE / "requirements.txt",
         BUNDLE / "config" / "node-map.example.json",
@@ -49,7 +50,10 @@ def test_bundle_runtime_scripts_do_not_clone_repositories_at_startup() -> None:
     bootstrap = (BUNDLE / "scripts" / "bootstrap.sh").read_text(encoding="utf-8")
     entrypoint = (BUNDLE / "scripts" / "entrypoint.sh").read_text(encoding="utf-8")
     dockerfile = (BUNDLE / "Dockerfile").read_text(encoding="utf-8")
+    handler = (BUNDLE / "handler.py").read_text(encoding="utf-8")
 
     assert "git clone" not in bootstrap
     assert "git clone" not in entrypoint
     assert "git clone" in dockerfile
+    assert "runpod.serverless.start" in handler
+    assert 'ENTRYPOINT ["/usr/bin/tini", "--", "python", "/opt/runpod-comfyui/handler.py"]' in dockerfile
