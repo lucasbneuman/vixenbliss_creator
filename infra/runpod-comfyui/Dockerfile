@@ -14,6 +14,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     COMFYUI_MODELS_DIR=/opt/comfyui/models \
     COMFYUI_USER_DIR=/opt/comfyui/user/default
 
+ARG COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git
+ARG COMFYUI_REF=master
+ARG COMFYUI_IPADAPTER_REPO=https://github.com/cubiq/ComfyUI_IPAdapter_plus.git
+ARG COMFYUI_IPADAPTER_REF=main
+ARG COMFYUI_IMPACT_REPO=https://github.com/ltdrdata/ComfyUI-Impact-Pack.git
+ARG COMFYUI_IMPACT_REF=Main
+
 WORKDIR /opt
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,6 +33,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt /tmp/runpod-comfyui-requirements.txt
 RUN python -m pip install --upgrade pip && \
     python -m pip install -r /tmp/runpod-comfyui-requirements.txt
+
+RUN git clone --depth 1 --branch "${COMFYUI_REF}" "${COMFYUI_REPO}" "${COMFYUI_HOME}" && \
+    git clone --depth 1 --branch "${COMFYUI_IPADAPTER_REF}" "${COMFYUI_IPADAPTER_REPO}" "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI_IPAdapter_plus" && \
+    git clone --depth 1 --branch "${COMFYUI_IMPACT_REF}" "${COMFYUI_IMPACT_REPO}" "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack"
+
+RUN python -m pip install -r "${COMFYUI_HOME}/requirements.txt" && \
+    if [ -f "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI_IPAdapter_plus/requirements.txt" ]; then python -m pip install -r "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI_IPAdapter_plus/requirements.txt"; fi && \
+    if [ -f "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack/requirements.txt" ]; then python -m pip install -r "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack/requirements.txt"; fi
 
 COPY scripts /opt/runpod-comfyui/scripts
 COPY workflows /opt/runpod-comfyui/workflows

@@ -4,28 +4,26 @@ set -euo pipefail
 COMFYUI_HOME="${COMFYUI_HOME:-/opt/comfyui}"
 COMFYUI_CUSTOM_NODES_DIR="${COMFYUI_CUSTOM_NODES_DIR:-${COMFYUI_HOME}/custom_nodes}"
 COMFYUI_USER_DIR="${COMFYUI_USER_DIR:-${COMFYUI_HOME}/user/default}"
+COMFYUI_WORKFLOW_IMAGE_ID="${COMFYUI_WORKFLOW_IMAGE_ID:-base-image-ipadapter-impact}"
 
 mkdir -p "${COMFYUI_CUSTOM_NODES_DIR}" "${COMFYUI_USER_DIR}/workflows"
 
-if [ ! -d "${COMFYUI_HOME}/.git" ]; then
-  git clone https://github.com/comfyanonymous/ComfyUI.git "${COMFYUI_HOME}"
+if [ ! -f "${COMFYUI_HOME}/main.py" ]; then
+  echo "ComfyUI runtime is incomplete: ${COMFYUI_HOME}/main.py was not baked into the image" >&2
+  exit 1
 fi
 
-python -m pip install --upgrade pip
-python -m pip install -r "${COMFYUI_HOME}/requirements.txt"
-
 if [ ! -d "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI_IPAdapter_plus" ]; then
-  git clone https://github.com/cubiq/ComfyUI_IPAdapter_plus.git "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI_IPAdapter_plus"
+  echo "ComfyUI runtime is incomplete: IPAdapter Plus was not baked into the image" >&2
+  exit 1
 fi
 
 if [ ! -d "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack" ]; then
-  git clone https://github.com/ltdrdata/ComfyUI-Impact-Pack.git "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack"
+  echo "ComfyUI runtime is incomplete: Impact Pack was not baked into the image" >&2
+  exit 1
 fi
 
-if [ -f "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI_IPAdapter_plus/requirements.txt" ]; then
-  python -m pip install -r "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI_IPAdapter_plus/requirements.txt"
-fi
-
-if [ -f "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack/requirements.txt" ]; then
-  python -m pip install -r "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack/requirements.txt"
+if [ ! -f "/opt/runpod-comfyui/workflows/${COMFYUI_WORKFLOW_IMAGE_ID}.json" ]; then
+  echo "ComfyUI runtime is incomplete: expected workflow ${COMFYUI_WORKFLOW_IMAGE_ID}.json was not found" >&2
+  exit 1
 fi
