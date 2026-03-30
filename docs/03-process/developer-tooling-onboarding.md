@@ -30,6 +30,21 @@ Permitir que cualquier desarrollador configure el mismo baseline de herramientas
 12. Ejecutar `python -m pytest -q` como smoke check base.
 13. Confirmar estado `ready to work`.
 
+Para tareas del cerebro agentico (`DEV-7` o derivadas), completar tambien solo si aplica:
+
+- `LLM_SERVERLESS_BASE_URL`
+- `LLM_SERVERLESS_API_KEY`
+- `LLM_SERVERLESS_MODEL`
+- `COMFYUI_COPILOT_BASE_URL`
+- `COMFYUI_COPILOT_API_KEY`
+- `COMFYUI_COPILOT_PATH`
+
+Si ejecutas modulos del repo fuera de `pytest`, exporta tambien `PYTHONPATH` apuntando a `src` porque este workspace usa layout `src/`:
+
+```powershell
+$env:PYTHONPATH = (Resolve-Path .\src)
+```
+
 ## Bootstrap Python
 
 ### Comandos recomendados en PowerShell

@@ -110,3 +110,21 @@ Flujo operativo recomendado para este repo:
 ## Estado actual
 
 Este repositorio hoy esta preparado como base de proyecto y como baseline operativo compartido para onboarding de developers y agentes. La implementacion tecnica de aplicacion y la CI productiva pueden crecer sobre este contrato comun.
+
+## Cerebro agentico
+
+`DEV-7` incorpora un modulo inicial de orquestacion agentica en `LangGraph` bajo `src/vixenbliss_creator/agentic/`.
+
+- entrada: idea en lenguaje natural
+- salida: `GraphState` final con `TechnicalSheet` validado y recomendacion tecnica de `Copilot`
+- integraciones: adapter `LLM serverless` compatible con OpenAI y adapter HTTP para `ComfyUI Copilot`
+- soporte local: fakes deterministas para tests y smoke
+
+Smoke demo:
+
+```powershell
+$env:PYTHONPATH = (Resolve-Path .\src)
+python -m vixenbliss_creator.agentic.runner --idea "performer glam nocturna con tono seguro y premium"
+```
+
+Detalle tecnico y contrato de variables en `docs/01-architecture/agentic-brain.md`.

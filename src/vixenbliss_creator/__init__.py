@@ -1,1 +1,1 @@
-"""VixenBliss Creator shared contracts package."""
+"""VixenBliss Creator shared contracts and orchestration package."""

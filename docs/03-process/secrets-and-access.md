@@ -65,6 +65,8 @@ Ejemplos:
 | `Modal` | `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET` | personal o proyecto | ML / infra | local o secret manager |
 | `Runpod` | `RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_*` | personal o proyecto | ML / infra | local or secret manager |
 | `ComfyUI` | `COMFYUI_BASE_URL`, `COMFYUI_WORKFLOW_*` | endpoint + ids de proyecto | pipeline visual | local o despliegue |
+| `LLM Serverless` | `LLM_SERVERLESS_BASE_URL`, `LLM_SERVERLESS_API_KEY`, `LLM_SERVERLESS_MODEL` | personal o proyecto | LLM / platform | local o secret manager |
+| `ComfyUI Copilot` | `COMFYUI_COPILOT_BASE_URL`, `COMFYUI_COPILOT_API_KEY`, `COMFYUI_COPILOT_PATH` | endpoint + token | pipeline visual | local o despliegue |
 | `FluxSchnell` | `FLUXSCHNELL_ENDPOINT`, `LORA_TRAINER_PROVIDER` | proyecto | ML | local o despliegue |
 | `Langfuse` | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | proyecto | observabilidad | local o secret manager |
 | `Llama.cpp` | `LLAMA_CPP_BASE_URL` | endpoint local o compartido | platform | local o despliegue |
