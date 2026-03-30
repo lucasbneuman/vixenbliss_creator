@@ -48,15 +48,18 @@ No introducir nuevas dependencias, servicios o patrones de arquitectura sin tare
 ## Regla de trabajo obligatoria por tarea
 
 1. Tomar una tarea desde `YouTrack`.
-2. Pedir plan en modo plan usando el contexto de este repo.
-3. Esperar aprobacion explicita con `IMPLEMENTAR PLAN` o `PLAN OK`.
-4. Implementar sobre `develop`, salvo pedido explicito de crear una rama nueva.
-5. Ejecutar validaciones minimas.
-6. Actualizar documentacion impactada.
-7. Hacer al menos un commit trazable por tarea o cambio cerrado.
-8. Abrir PR con evidencia y checklist.
-9. Esperar aprobacion explicita con `MERGE OK`.
-10. Hacer merge y cerrar la tarea con evidencia enlazada.
+2. Pasarla a estado `In Progress`.
+3. Pedir plan en modo plan usando el contexto de este repo.
+4. Esperar aprobacion explicita con `IMPLEMENTAR PLAN` o `PLAN OK`.
+5. Implementar sobre `develop`, salvo pedido explicito de crear una rama nueva.
+6. Ejecutar validaciones minimas.
+7. Actualizar documentacion impactada.
+8. Dejar comentario en la tarea con evidencia, bloqueos, dependencias externas, errores o inquietudes si aplica.
+9. Cerrar la tarea cuando el trabajo este efectivamente terminado.
+10. Hacer al menos un commit trazable por tarea o cambio cerrado.
+11. Abrir PR con evidencia y checklist si corresponde.
+12. Esperar aprobacion explicita con `MERGE OK`.
+13. Hacer merge y dejar la evidencia enlazada.
 
 No avanzar a una nueva tarea mientras la actual no tenga cierre operativo claro o handoff explicito.
 

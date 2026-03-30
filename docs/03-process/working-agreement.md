@@ -25,6 +25,9 @@ El roadmap del repo funciona como vision flexible y contexto, no como orden rigi
 - cada tarea o cambio cerrado debe dejar al menos un commit trazable
 - cada cambio que afecte contratos o arquitectura debe actualizar docs
 - pueden existir mejoras o revisiones ad hoc fuera de una tarea explicita, siempre que no contradigan `YouTrack` y dejen evidencia trazable
+- al tomar una tarea en `YouTrack`, pasarla primero a `In Progress`
+- si aparece dependencia externa, error, bloqueo o inquietud, dejar comentario dentro de la misma tarea
+- antes del commit final, dejar comentario de cierre en la tarea con evidencia resumida
 
 ## Politica de aprobacion
 

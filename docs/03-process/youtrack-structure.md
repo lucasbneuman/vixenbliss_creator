@@ -344,4 +344,17 @@ debe usar Ideas para backlog
 
 Este documento define el contexto actual de YouTrack en VixenBliss.
 
+6. Flujo operativo minimo por tarea
+
+Cuando una tarea se ejecuta en `YouTrack`, el flujo minimo esperado es:
+
+1. tomar la tarea
+2. moverla a `In Progress`
+3. ejecutar el trabajo
+4. dejar comentario con evidencia resumida
+5. cerrar la tarea
+6. realizar el commit trazable del cambio cerrado
+
+Si durante la ejecucion aparece una dependencia externa, un error, un bloqueo o una inquietud, debe dejarse comentario dentro de la misma tarea para que el contexto operativo no se pierda.
+
 Debe usarse como referencia para automatizaciones, scripts, MCP, Codex y herramientas internas.

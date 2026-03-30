@@ -5,24 +5,30 @@
 1. `Seleccion`
    La tarea se crea o se toma desde `YouTrack`.
    Tambien puede existir un pedido ad hoc o mejora puntual, pero `YouTrack` sigue siendo el faro operativo y la evidencia debe quedar trazable.
-2. `Brief`
+2. `In Progress`
+   La tarea tomada se mueve a `In Progress` antes de empezar la ejecucion.
+3. `Brief`
    Se define objetivo, alcance, restricciones y criterio de done.
-3. `Plan`
+4. `Plan`
    Se pide a Codex un plan concreto para esa tarea.
-4. `Aprobacion`
+5. `Aprobacion`
    Solo se avanza con `IMPLEMENTAR PLAN` o `PLAN OK`.
-5. `Implementacion`
+6. `Implementacion`
    Se trabaja sobre `develop`, salvo pedido explicito de crear una rama nueva.
-6. `Verificacion`
+7. `Verificacion`
    Se ejecutan checks, tests y revision de impacto.
-7. `Commit`
+8. `Comentario`
+   Se deja comentario en la tarea con evidencia resumida. Si hay dependencia externa, error, bloqueo o inquietud, tambien se documenta ahi.
+9. `Cierre`
+   La tarea se cierra en `YouTrack` cuando el trabajo termina.
+10. `Commit`
    Toda tarea o cambio cerrado deja al menos un commit trazable.
-8. `Pull Request`
-   Se abre PR con checklist y evidencia.
-9. `Merge`
+11. `Pull Request`
+   Se abre PR con checklist y evidencia si corresponde.
+12. `Merge`
    Solo se integra con `MERGE OK`.
-10. `Cierre`
-   Se enlaza evidencia y se cierra administrativamente con `CLOSE OK` si aplica.
+13. `Cierre administrativo`
+   Se enlaza evidencia adicional y se usa `CLOSE OK` solo si hace falta validacion administrativa externa.
 
 ## Estados recomendados
 
@@ -64,6 +70,7 @@ Segun el caso, la evidencia puede ser:
 - captura o log funcional
 - ADR asociada
 - resumen final de implementacion con tareas hechas, validaciones y rutas criticas tocadas si aplica
+- comentario en `YouTrack` con bloqueos, dependencias o inquietudes si aparecieron durante la ejecucion
 
 ## Anti-patrones
 

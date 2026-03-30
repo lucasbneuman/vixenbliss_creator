@@ -50,14 +50,17 @@ El roadmap del repo existe como vision flexible y contexto tecnico, no como agen
 ## Flujo recomendado por tarea
 
 1. Seleccionar tarea en `YouTrack`.
-2. Pedir plan a Codex.
-3. Aprobar con `IMPLEMENTAR PLAN` o `PLAN OK`.
-4. Implementar sobre `develop`, salvo pedido explicito de crear una rama nueva.
-5. Ejecutar validaciones.
-6. Dejar al menos un commit trazable por tarea o cambio cerrado.
-7. Abrir PR con evidencia.
-8. Revisar y aprobar con `MERGE OK`.
-9. Hacer merge y cerrar tarea.
+2. Pasarla a `In Progress`.
+3. Pedir plan a Codex.
+4. Aprobar con `IMPLEMENTAR PLAN` o `PLAN OK`.
+5. Implementar sobre `develop`, salvo pedido explicito de crear una rama nueva.
+6. Ejecutar validaciones.
+7. Dejar comentario en la tarea con evidencia, dependencias, errores o inquietudes si aplica.
+8. Cerrar la tarea.
+9. Dejar al menos un commit trazable por tarea o cambio cerrado.
+10. Abrir PR con evidencia si corresponde.
+11. Revisar y aprobar con `MERGE OK`.
+12. Hacer merge.
 
 ## Politica actual de ramas
 
