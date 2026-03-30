@@ -43,3 +43,13 @@ def test_workflow_json_exposes_expected_node_ids() -> None:
     assert workflow["vb_meta"]["logical_nodes"]["face_detailer"] == "face_detailer"
     assert "save_base_image" in workflow
     assert "save_final_image" in workflow
+
+
+def test_bundle_runtime_scripts_do_not_clone_repositories_at_startup() -> None:
+    bootstrap = (BUNDLE / "scripts" / "bootstrap.sh").read_text(encoding="utf-8")
+    entrypoint = (BUNDLE / "scripts" / "entrypoint.sh").read_text(encoding="utf-8")
+    dockerfile = (BUNDLE / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "git clone" not in bootstrap
+    assert "git clone" not in entrypoint
+    assert "git clone" in dockerfile

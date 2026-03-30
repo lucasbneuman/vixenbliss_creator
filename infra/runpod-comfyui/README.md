@@ -10,6 +10,7 @@ La imagen esta preparada para:
 - instalar `IPAdapter Plus` e `Impact Pack`
 - versionar un workflow base de imagen dentro del repo
 - alinear el runtime con el contrato actual del backend visual
+- hornear `ComfyUI` y custom nodes dentro de la imagen para evitar cold starts fragiles
 
 No cubre aun:
 
@@ -23,7 +24,7 @@ No cubre aun:
 - `Dockerfile`: imagen productiva del runtime
 - `requirements.txt`: dependencias del bootstrap
 - `.env.example`: variables requeridas por este deploy
-- `scripts/bootstrap.sh`: clona `ComfyUI`, instala custom nodes y prepara directorios
+- `scripts/bootstrap.sh`: valida que `ComfyUI`, custom nodes y workflow esten horneados en la imagen
 - `scripts/entrypoint.sh`: arranca el runtime y copia el workflow versionado
 - `scripts/healthcheck.sh`: smoke check HTTP del runtime
 - `scripts/download_models.sh`: descarga opcional de modelos desde URLs declaradas
@@ -42,6 +43,16 @@ La imagen debe dejar operativo un `ComfyUI` que soporte como minimo:
   - `COMFYUI_IP_ADAPTER_NODE_ID`
   - `COMFYUI_FACE_DETECTOR_NODE_ID`
   - `COMFYUI_FACE_DETAILER_NODE_ID`
+
+## Estrategia de build y runtime
+
+Para reducir fallos en `Runpod Serverless`, el diseño actual no clona repositorios al arrancar el worker.
+
+- durante el build de la imagen se clonan `ComfyUI`, `ComfyUI_IPAdapter_plus` y `ComfyUI-Impact-Pack`
+- durante el build tambien se instalan sus dependencias Python
+- durante el arranque solo se validan artefactos horneados, se descargan modelos opcionales y se inicia `ComfyUI`
+
+Esto evita fallos tipicos de cold start por `git clone` y reduce el costo de workers que reinician.
 
 ## Variables importantes
 
@@ -84,6 +95,7 @@ La imagen debe dejar operativo un `ComfyUI` que soporte como minimo:
 4. asegurar que `IPADAPTER_PLUS_FACE_URL` y `CHECKPOINT_MODEL_URL` apunten a artefactos reales si queres bootstrap automatico de modelos
 5. desplegar el serverless o endpoint contenedorizado
 6. verificar que `COMFYUI_BASE_URL` responde y que el workflow base fue copiado a `COMFYUI_USER_DIR/workflows`
+7. revisar logs de startup y confirmar que no hubo re-bootstrap de repositorios ni fallos de `git clone`
 
 ## Validacion operativa minima
 
