@@ -53,6 +53,14 @@ RUN python -m pip install -r "${COMFYUI_HOME}/requirements.txt" && \
     if [ -f "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI_IPAdapter_plus/requirements.txt" ]; then python -m pip install -r "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI_IPAdapter_plus/requirements.txt"; fi && \
     if [ -f "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack/requirements.txt" ]; then python -m pip install -r "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack/requirements.txt"; fi
 
+# Re-apply the pinned CUDA 11.8 torch stack after ComfyUI/plugin requirements so
+# later installs cannot silently upgrade torch to a less compatible build.
+RUN python -m pip install --index-url https://download.pytorch.org/whl/cu118 \
+      --upgrade --force-reinstall \
+      torch==2.3.1 \
+      torchvision==0.18.1 \
+      torchaudio==2.3.1
+
 COPY scripts /opt/runpod-comfyui/scripts
 COPY workflows /opt/runpod-comfyui/workflows
 COPY config /opt/runpod-comfyui/config
