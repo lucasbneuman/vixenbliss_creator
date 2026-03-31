@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -39,10 +39,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt /tmp/runpod-comfyui-requirements.txt
 RUN python -m pip install --upgrade pip && \
-    python -m pip install --index-url https://download.pytorch.org/whl/cu121 \
-      torch==2.4.1 \
-      torchvision==0.19.1 \
-      torchaudio==2.4.1 && \
+    python -m pip install --index-url https://download.pytorch.org/whl/cu118 \
+      torch==2.3.1 \
+      torchvision==0.18.1 \
+      torchaudio==2.3.1 && \
     python -m pip install -r /tmp/runpod-comfyui-requirements.txt
 
 RUN git clone --depth 1 --branch "${COMFYUI_REF}" "${COMFYUI_REPO}" "${COMFYUI_HOME}" && \
