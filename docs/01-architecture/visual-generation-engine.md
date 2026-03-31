@@ -39,17 +39,35 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
 - el checkpoint completado debe incluir al menos un artefacto `final_image`
 - la implementacion actual serializa metadata y rutas de artefactos intermedios; no almacena tensores crudos en el repo
 
-## Integracion con Modal
+## Modos de ejecucion
 
-`Modal` no forma parte del contrato superior del motor visual. Se usa solo como entorno de ejecucion para exponer un endpoint `ComfyUI` accesible via `COMFYUI_BASE_URL`.
+El contrato del motor visual admite dos despliegues validos.
 
-Si el despliegue real corre en `Modal`, la configuracion manual esperada es:
+### `ComfyUI` HTTP directo
+
+Se usa cuando el backend habla contra un runtime que expone `ComfyUI` por HTTP via `COMFYUI_BASE_URL`.
+
+Configuracion manual esperada:
 
 1. desplegar una imagen con `ComfyUI`, `IPAdapter Plus` y `Impact Pack` instalados
 2. publicar un endpoint HTTP estable para `COMFYUI_BASE_URL`
 3. cargar un workflow JSON compatible con `COMFYUI_WORKFLOW_IMAGE_ID`
 4. mapear `COMFYUI_IP_ADAPTER_NODE_ID`, `COMFYUI_FACE_DETECTOR_NODE_ID` y `COMFYUI_FACE_DETAILER_NODE_ID` a nodos reales del workflow
 5. garantizar acceso del runtime a la imagen de referencia facial o resolverla antes de inyectarla al workflow
+
+### `Runpod Serverless`
+
+Se usa cuando el backend habla contra `RUNPOD_ENDPOINT_IMAGE_GEN` y el worker encapsula a `ComfyUI` como motor interno.
+
+Configuracion manual esperada:
+
+1. publicar la imagen del worker de `infra/runpod-comfyui/` en un registry publico
+2. crear un template `serverless` en `Runpod` apuntando a esa imagen
+3. configurar en el template las variables `COMFYUI_*` necesarias para el runtime interno
+4. configurar `IPADAPTER_PLUS_FACE_URL`, `CHECKPOINT_MODEL_URL` y `VAE_MODEL_URL` si el worker debe bootstrapear modelos al arrancar
+5. crear el endpoint queue-based desde ese template con workers min/max explicitos
+6. consumir el endpoint desde el backend via `VISUAL_EXECUTION_PROVIDER=runpod`, `RUNPOD_API_KEY` y `RUNPOD_ENDPOINT_IMAGE_GEN`
+7. mantener `COMFYUI_BASE_URL` como detalle interno del worker, no como contrato de consumo externo
 
 ## Runtime deployable recomendado
 
@@ -62,11 +80,21 @@ Ese paquete debe cubrir:
 - instalacion de `IPAdapter Plus` e `Impact Pack`
 - workflow base versionado en repo
 - scripts de arranque y healthcheck
+- handler `Runpod Serverless` compatible con jobs `base_render`, `face_detail` y `healthcheck`
 
-El backend del proyecto sigue hablando con `ComfyUI` por HTTP; la carpeta deployable solo materializa el entorno de ejecucion.
+El backend puede consumir ese runtime de dos maneras:
+
+- via `ComfyUIExecutionHTTPClient` cuando el proveedor real es `comfyui`
+- via `RunpodServerlessExecutionClient` cuando el proveedor real es `runpod`
 
 ## Variables de entorno
 
+- `VISUAL_EXECUTION_PROVIDER`
+- `RUNPOD_API_KEY`
+- `RUNPOD_ENDPOINT_IMAGE_GEN`
+- `RUNPOD_POLL_INTERVAL_SECONDS`
+- `RUNPOD_JOB_TIMEOUT_SECONDS`
+- `RUNPOD_USE_RUNSYNC`
 - `COMFYUI_BASE_URL`
 - `COMFYUI_WORKFLOW_IMAGE_ID`
 - `COMFYUI_WORKFLOW_IMAGE_VERSION`

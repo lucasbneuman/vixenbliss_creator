@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Callable
 from urllib import error, parse, request
@@ -9,6 +10,7 @@ from urllib import error, parse, request
 from .config import VisualPipelineSettings
 from .models import (
     ErrorCode,
+    Provider,
     ResumeCheckpoint,
     ResumeStage,
     StepExecutionResult,
@@ -43,8 +45,8 @@ def _json_post(url: str, payload: dict, timeout_seconds: int, headers: dict[str,
     return json.loads(raw)
 
 
-def _json_get(url: str, timeout_seconds: int) -> dict:
-    req = request.Request(url=url, headers={"Content-Type": "application/json"}, method="GET")
+def _json_get(url: str, timeout_seconds: int, headers: dict[str, str] | None = None) -> dict:
+    req = request.Request(url=url, headers={"Content-Type": "application/json", **(headers or {})}, method="GET")
     try:
         with request.urlopen(req, timeout=timeout_seconds) as response:
             raw = response.read().decode("utf-8")
@@ -54,6 +56,19 @@ def _json_get(url: str, timeout_seconds: int) -> dict:
     except error.URLError as exc:
         raise RuntimeError(f"Network error calling {url}: {exc.reason}") from exc
     return json.loads(raw)
+
+
+def build_visual_execution_client(settings: VisualPipelineSettings):
+    if settings.visual_execution_provider == Provider.RUNPOD:
+        return RunpodServerlessExecutionClient(settings)
+    return ComfyUIExecutionHTTPClient(settings)
+
+
+def _raise_pipeline_error(payload: dict) -> None:
+    code = payload.get("error_code")
+    message = payload.get("error_message")
+    if code and message:
+        raise VisualPipelineError(ErrorCode(code), str(message))
 
 
 @dataclass
@@ -189,13 +204,15 @@ class ComfyUIExecutionHTTPClient:
             inputs.update(updates)
 
     def _parse_step_result(self, payload: dict, *, expected_stage: ResumeStage) -> StepExecutionResult:
+        _raise_pipeline_error(payload)
         face_detection_confidence = self._extract_face_confidence(payload)
         artifacts = self._extract_artifacts(payload, stage=expected_stage)
-        provider_job_id = payload.get("prompt_id") or payload.get("id")
+        provider_job_id = payload.get("provider_job_id") or payload.get("prompt_id") or payload.get("id")
         successful_node_ids = payload.get("successful_node_ids") or list(payload.get("outputs", {}).keys())
         return StepExecutionResult(
             stage=expected_stage,
             artifacts=artifacts,
+            provider=Provider(payload.get("provider", Provider.COMFYUI.value)),
             provider_job_id=provider_job_id,
             successful_node_ids=successful_node_ids,
             face_detection_confidence=face_detection_confidence,
@@ -247,6 +264,124 @@ class ComfyUIExecutionHTTPClient:
         if artifacts:
             return artifacts
         raise RuntimeError("ComfyUI execution did not expose any artifacts")
+
+
+@dataclass
+class RunpodServerlessExecutionClient:
+    settings: VisualPipelineSettings
+
+    def render_base_image(self, request: VisualGenerationRequest) -> StepExecutionResult:
+        payload = self._submit(request=request, mode=ResumeStage.BASE_RENDER, checkpoint=None)
+        return self._parse_step_result(payload, expected_stage=ResumeStage.BASE_RENDER)
+
+    def run_face_detail(
+        self,
+        request: VisualGenerationRequest,
+        checkpoint: ResumeCheckpoint,
+    ) -> StepExecutionResult:
+        payload = self._submit(request=request, mode=ResumeStage.FACE_DETAIL, checkpoint=checkpoint)
+        return self._parse_step_result(payload, expected_stage=ResumeStage.FACE_DETAIL)
+
+    def _submit(
+        self,
+        *,
+        request: VisualGenerationRequest,
+        mode: ResumeStage,
+        checkpoint: ResumeCheckpoint | None,
+    ) -> dict:
+        endpoint = (self.settings.runpod_endpoint_image_gen or "").rstrip("/")
+        if not endpoint:
+            raise RuntimeError("RUNPOD_ENDPOINT_IMAGE_GEN is required for Runpod visual execution")
+        if not self.settings.runpod_api_key:
+            raise RuntimeError("RUNPOD_API_KEY is required for Runpod visual execution")
+
+        headers = {"Authorization": f"Bearer {self.settings.runpod_api_key}"}
+        job_input = self._build_job_input(request=request, mode=mode, checkpoint=checkpoint)
+        route = "runsync" if self.settings.runpod_use_runsync else "run"
+        payload = _json_post(
+            f"{endpoint}/{route}",
+            {"input": job_input},
+            timeout_seconds=self.settings.comfyui_http_timeout_seconds,
+            headers=headers,
+        )
+        if self.settings.runpod_use_runsync:
+            return self._extract_sync_output(payload)
+
+        job_id = payload.get("id")
+        if not job_id:
+            raise RuntimeError(f"Runpod did not return a job id: {payload}")
+        return self._poll_job(job_id, endpoint=endpoint, headers=headers)
+
+    def _build_job_input(
+        self,
+        *,
+        request: VisualGenerationRequest,
+        mode: ResumeStage,
+        checkpoint: ResumeCheckpoint | None,
+    ) -> dict:
+        job_input = {
+            "action": "generate",
+            "mode": mode.value,
+            "workflow_id": request.workflow_id,
+            "workflow_version": request.workflow_version,
+            "base_model_id": request.base_model_id,
+            "prompt": request.prompt,
+            "negative_prompt": request.negative_prompt,
+            "seed": request.seed,
+            "width": request.width,
+            "height": request.height,
+            "reference_face_image_url": request.reference_face_image_url,
+            "face_confidence_threshold": request.face_detailer.confidence_threshold,
+            "inpaint_strength": request.face_detailer.inpaint_strength,
+            "ip_adapter": request.ip_adapter.model_dump(mode="json"),
+            "face_detailer": request.face_detailer.model_dump(mode="json"),
+            "metadata": request.metadata_json,
+        }
+        base_checkpoint_name = request.metadata_json.get("base_checkpoint_name")
+        if isinstance(base_checkpoint_name, str) and base_checkpoint_name:
+            job_input["base_checkpoint_name"] = base_checkpoint_name
+        if checkpoint is not None:
+            job_input["resume_checkpoint"] = checkpoint.model_dump(mode="json")
+        return job_input
+
+    def _extract_sync_output(self, payload: dict) -> dict:
+        output = payload.get("output")
+        if isinstance(output, dict):
+            return output
+        raise RuntimeError(f"Runpod runsync response did not include output: {payload}")
+
+    def _poll_job(self, job_id: str, *, endpoint: str, headers: dict[str, str]) -> dict:
+        deadline = time.time() + self.settings.runpod_job_timeout_seconds
+        status_url = f"{endpoint}/status/{job_id}"
+        while time.time() < deadline:
+            payload = _json_get(status_url, timeout_seconds=self.settings.comfyui_http_timeout_seconds, headers=headers)
+            status = payload.get("status")
+            if status == "COMPLETED":
+                output = payload.get("output")
+                if isinstance(output, dict):
+                    output.setdefault("provider_job_id", job_id)
+                    return output
+                raise RuntimeError(f"Runpod completed job without structured output: {payload}")
+            if status in {"FAILED", "CANCELLED", "TIMED_OUT"}:
+                error_detail = payload.get("error") or payload.get("output") or payload
+                raise RuntimeError(f"Runpod job {job_id} failed with status {status}: {error_detail}")
+            time.sleep(self.settings.runpod_poll_interval_seconds)
+        raise RuntimeError(f"Runpod job {job_id} did not complete within {self.settings.runpod_job_timeout_seconds} seconds")
+
+    def _parse_step_result(self, payload: dict, *, expected_stage: ResumeStage) -> StepExecutionResult:
+        _raise_pipeline_error(payload)
+        artifacts = [VisualArtifact.model_validate(item) for item in payload.get("artifacts", [])]
+        if not artifacts:
+            raise RuntimeError("Runpod execution did not expose any artifacts")
+        return StepExecutionResult(
+            stage=expected_stage,
+            artifacts=artifacts,
+            provider=Provider.RUNPOD,
+            provider_job_id=payload.get("provider_job_id") or payload.get("prompt_id"),
+            successful_node_ids=payload.get("successful_node_ids", []),
+            face_detection_confidence=payload.get("face_detection_confidence"),
+            metadata_json=payload.get("metadata", {}),
+        )
 
 
 @dataclass

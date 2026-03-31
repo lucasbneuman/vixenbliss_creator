@@ -14,7 +14,9 @@ from vixenbliss_creator.visual_pipeline import (
     VisualGenerationOrchestrator,
     VisualGenerationRequest,
     VisualPipelineSettings,
+    build_visual_execution_client,
 )
+from vixenbliss_creator.visual_pipeline.adapters import RunpodServerlessExecutionClient
 from vixenbliss_creator.visual_pipeline.models import StepExecutionResult
 
 
@@ -166,6 +168,7 @@ def test_orchestrator_resumes_without_repeating_base_render() -> None:
 
 
 def test_settings_from_env_reads_visual_pipeline_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VISUAL_EXECUTION_PROVIDER", "runpod")
     monkeypatch.setenv("COMFYUI_BASE_URL", "https://comfy.example.com")
     monkeypatch.setenv("COMFYUI_WORKFLOW_IMAGE_ID", "base-portrait-v1")
     monkeypatch.setenv("COMFYUI_WORKFLOW_IMAGE_VERSION", "2026-03-30")
@@ -173,9 +176,15 @@ def test_settings_from_env_reads_visual_pipeline_defaults(monkeypatch: pytest.Mo
     monkeypatch.setenv("COMFYUI_FACE_CONFIDENCE_THRESHOLD", "0.85")
     monkeypatch.setenv("COMFYUI_RESUME_CACHE_MODE", "checkpoint")
     monkeypatch.setenv("COMFYUI_HTTP_TIMEOUT_SECONDS", "45")
+    monkeypatch.setenv("RUNPOD_API_KEY", "secret")
+    monkeypatch.setenv("RUNPOD_ENDPOINT_IMAGE_GEN", "https://api.runpod.ai/v2/endpoint")
+    monkeypatch.setenv("RUNPOD_POLL_INTERVAL_SECONDS", "2")
+    monkeypatch.setenv("RUNPOD_JOB_TIMEOUT_SECONDS", "120")
+    monkeypatch.setenv("RUNPOD_USE_RUNSYNC", "true")
 
     settings = VisualPipelineSettings.from_env()
 
+    assert settings.visual_execution_provider == Provider.RUNPOD
     assert settings.comfyui_base_url == "https://comfy.example.com"
     assert settings.comfyui_workflow_image_id == "base-portrait-v1"
     assert settings.comfyui_workflow_image_version == "2026-03-30"
@@ -183,3 +192,20 @@ def test_settings_from_env_reads_visual_pipeline_defaults(monkeypatch: pytest.Mo
     assert settings.comfyui_face_confidence_threshold == pytest.approx(0.85)
     assert settings.comfyui_resume_cache_mode == "checkpoint"
     assert settings.comfyui_http_timeout_seconds == 45
+    assert settings.runpod_api_key == "secret"
+    assert settings.runpod_endpoint_image_gen == "https://api.runpod.ai/v2/endpoint"
+    assert settings.runpod_poll_interval_seconds == 2
+    assert settings.runpod_job_timeout_seconds == 120
+    assert settings.runpod_use_runsync is True
+
+
+def test_build_visual_execution_client_selects_runpod() -> None:
+    client = build_visual_execution_client(
+        VisualPipelineSettings(
+            visual_execution_provider=Provider.RUNPOD,
+            runpod_api_key="secret",
+            runpod_endpoint_image_gen="https://api.runpod.ai/v2/endpoint",
+        )
+    )
+
+    assert isinstance(client, RunpodServerlessExecutionClient)

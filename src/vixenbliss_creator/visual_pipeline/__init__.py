@@ -1,6 +1,11 @@
-"""Visual generation engine contracts and orchestration for ComfyUI workflows."""
+"""Visual generation engine contracts and orchestration for visual workflows."""
 
-from .adapters import ComfyUIExecutionHTTPClient, FakeVisualExecutionClient
+from .adapters import (
+    ComfyUIExecutionHTTPClient,
+    FakeVisualExecutionClient,
+    RunpodServerlessExecutionClient,
+    build_visual_execution_client,
+)
 from .config import VisualPipelineSettings
 from .models import (
     ErrorCode,
@@ -27,10 +32,12 @@ __all__ = [
     "ResumeCheckpoint",
     "ResumePolicy",
     "ResumeStage",
+    "RunpodServerlessExecutionClient",
     "VisualArtifact",
     "VisualArtifactRole",
     "VisualGenerationOrchestrator",
     "VisualGenerationRequest",
     "VisualGenerationResult",
     "VisualPipelineSettings",
+    "build_visual_execution_client",
 ]
