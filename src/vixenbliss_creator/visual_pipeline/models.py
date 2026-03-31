@@ -12,6 +12,16 @@ class Provider(str, Enum):
     RUNPOD = "runpod"
 
 
+class RuntimeStage(str, Enum):
+    IDENTITY_IMAGE = "identity_image"
+    CONTENT_IMAGE = "content_image"
+    VIDEO = "video"
+
+
+class ModelFamily(str, Enum):
+    FLUX = "flux"
+
+
 class ResumePolicy(str, Enum):
     NEVER = "never"
     FROM_CHECKPOINT = "from_checkpoint"
@@ -86,6 +96,8 @@ class VisualGenerationRequest(ContractBaseModel):
     workflow_id: str = Field(min_length=3, max_length=120)
     workflow_version: str = Field(min_length=1, max_length=64)
     base_model_id: str = Field(min_length=3, max_length=120)
+    model_family: ModelFamily = ModelFamily.FLUX
+    runtime_stage: RuntimeStage = RuntimeStage.CONTENT_IMAGE
     prompt: str = Field(min_length=12, max_length=1200)
     negative_prompt: str = Field(min_length=12, max_length=1200)
     seed: int = Field(ge=0, le=2**32 - 1)
@@ -98,12 +110,20 @@ class VisualGenerationRequest(ContractBaseModel):
     face_detailer: FaceDetailerConfig = Field(default_factory=FaceDetailerConfig)
     resume_policy: ResumePolicy = ResumePolicy.NEVER
     resume_checkpoint: ResumeCheckpoint | None = None
+    lora_version: str | None = Field(default=None, min_length=1, max_length=64)
+    lora_validated: bool = False
     metadata_json: JsonObject = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_consistency(self) -> "VisualGenerationRequest":
         if self.ip_adapter.enabled and not self.reference_face_image_url:
             raise ValueError("reference_face_image_url is required when ip_adapter is enabled")
+        if self.model_family != ModelFamily.FLUX:
+            raise ValueError("only Flux model_family is supported for S1 and S2 image generation")
+        if self.runtime_stage == RuntimeStage.IDENTITY_IMAGE and self.lora_version is not None:
+            raise ValueError("identity_image runtime must not consume a LoRA version")
+        if self.runtime_stage == RuntimeStage.CONTENT_IMAGE and self.lora_version is not None and not self.lora_validated:
+            raise ValueError("content_image runtime requires explicit lora_validated=true when lora_version is provided")
         if self.resume_policy == ResumePolicy.FROM_CHECKPOINT and self.resume_checkpoint is None:
             raise ValueError("resume_checkpoint is required when resume_policy is from_checkpoint")
         if self.resume_checkpoint is not None:
@@ -133,6 +153,8 @@ class VisualGenerationResult(ContractBaseModel):
     workflow_id: str = Field(min_length=3, max_length=120)
     workflow_version: str = Field(min_length=1, max_length=64)
     base_model_id: str = Field(min_length=3, max_length=120)
+    model_family: ModelFamily = ModelFamily.FLUX
+    runtime_stage: RuntimeStage = RuntimeStage.CONTENT_IMAGE
     seed: int = Field(ge=0, le=2**32 - 1)
     artifacts: list[VisualArtifact] = Field(default_factory=list, max_length=12)
     intermediate_state: ResumeCheckpoint | None = None

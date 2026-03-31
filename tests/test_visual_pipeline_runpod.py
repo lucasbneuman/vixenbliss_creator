@@ -13,6 +13,8 @@ def build_request(**overrides: object) -> VisualGenerationRequest:
         "workflow_id": "base-image-ipadapter-impact",
         "workflow_version": "2026-03-30",
         "base_model_id": "base-image-model.safetensors",
+        "model_family": "flux",
+        "runtime_stage": "content_image",
         "prompt": "editorial portrait of a synthetic performer with premium soft lighting",
         "negative_prompt": "low quality, anatomy drift, extra limbs, text, watermark",
         "seed": 42,
@@ -53,7 +55,9 @@ def build_settings(**overrides: object) -> VisualPipelineSettings:
     payload = {
         "visual_execution_provider": Provider.RUNPOD,
         "runpod_api_key": "secret",
-        "runpod_endpoint_image_gen": "https://api.runpod.ai/v2/endpoint",
+        "runpod_endpoint_image_identity": "https://api.runpod.ai/v2/identity",
+        "runpod_endpoint_image_content": "https://api.runpod.ai/v2/content",
+        "runpod_endpoint_video_gen": "https://api.runpod.ai/v2/video",
         "runpod_poll_interval_seconds": 0,
         "runpod_job_timeout_seconds": 5,
         "comfyui_http_timeout_seconds": 5,
@@ -100,9 +104,27 @@ def test_runpod_client_completes_base_render_job(monkeypatch: pytest.MonkeyPatch
     assert result.provider == Provider.RUNPOD
     assert result.provider_job_id == "job-123"
     assert result.face_detection_confidence == pytest.approx(0.91)
-    assert posts[0][0] == "https://api.runpod.ai/v2/endpoint/run"
+    assert posts[0][0] == "https://api.runpod.ai/v2/content/run"
     assert posts[0][2] == {"Authorization": "Bearer secret"}
     assert posts[0][1]["input"]["mode"] == "base_render"
+    assert posts[0][1]["input"]["runtime_stage"] == "content_image"
+
+
+def test_runpod_client_routes_identity_jobs_to_identity_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    posts: list[str] = []
+
+    def fake_post(url: str, payload: dict, timeout_seconds: int, headers: dict[str, str] | None = None) -> dict:
+        posts.append(url)
+        return {"output": {"provider_job_id": "job-identity", "artifacts": [{"role": "base_image", "uri": "https://example.com/base.png", "content_type": "image/png", "metadata_json": {}}], "metadata": {"mode": "base_render"}}}
+
+    monkeypatch.setattr("vixenbliss_creator.visual_pipeline.adapters._json_post", fake_post)
+
+    result = RunpodServerlessExecutionClient(build_settings(runpod_use_runsync=True)).render_base_image(
+        build_request(runtime_stage="identity_image", workflow_id="identity-workflow-v1", workflow_version="2026-03-31")
+    )
+
+    assert result.provider == Provider.RUNPOD
+    assert posts[0] == "https://api.runpod.ai/v2/identity/runsync"
 
 
 def test_runpod_client_completes_face_detail_job(monkeypatch: pytest.MonkeyPatch) -> None:

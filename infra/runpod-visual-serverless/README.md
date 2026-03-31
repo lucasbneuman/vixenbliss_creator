@@ -2,73 +2,53 @@
 
 ## Objetivo
 
-Esta carpeta define una unidad deployable para `GitHub` y `Runpod Serverless` que levanta un worker propio para generacion de imagen usando `ComfyUI` como motor interno.
+Esta carpeta define el worker serverless para generacion visual con `ComfyUI` encapsulado dentro de `Runpod`.
 
-La imagen esta preparada para:
+El runtime ahora esta alineado con `FLUX.1-schnell` y deja de asumir el contrato viejo de `checkpoint + VAE` tipico de SD.
 
-- ejecutar jobs compatibles con `Runpod Serverless`
-- encapsular `ComfyUI` como motor interno del worker
-- instalar `IPAdapter Plus` e `Impact Pack`
-- versionar un workflow base de imagen dentro del repo
-- alinear el runtime con el contrato actual del backend visual
-- hornear `ComfyUI` y custom nodes dentro de la imagen para evitar cold starts fragiles
+## Que incluye
 
-No cubre aun:
+- imagen `Docker` reproducible para `Runpod Serverless`
+- `ComfyUI` horneado en la imagen
+- `ComfyUI-IPAdapter-Flux` horneado en la imagen
+- `ComfyUI-Impact-Pack` horneado en la imagen
+- workflow versionado en repo para `base_render` y `face_detail`
+- handler serverless que devuelve `artifacts`, `face_detection_confidence`, `ip_adapter_used`, `regional_inpaint_triggered`, `provider_job_id` y `metadata`
 
-- entrenamiento `FluxSchnell`
-- runtime de video
-- descarga garantizada de modelos pesados sin credenciales o URLs reales
-- generacion automatica de workflows desde lenguaje natural
+## Contrato FLUX del runtime
 
-## Estructura
+El bootstrap del worker requiere estos assets reales en storage accesible por el contenedor:
 
-- `Dockerfile`: imagen productiva del runtime
-- `requirements.txt`: dependencias del bootstrap
-- `.env.example`: variables requeridas por este deploy
-- `handler.py`: handler serverless compatible con `Runpod`
-- `scripts/bootstrap.sh`: valida que `ComfyUI`, custom nodes y workflow esten horneados en la imagen
-- `scripts/entrypoint.sh`: arranca `ComfyUI` localmente cuando el handler lo necesita
-- `scripts/healthcheck.sh`: smoke check HTTP del runtime
-- `scripts/download_models.sh`: descarga opcional de modelos desde URLs declaradas
-- `workflows/base-image-ipadapter-impact.json`: workflow base versionado
-- `config/node-map.example.json`: mapa logico de nodos esperados por el backend
+- `FLUX_DIFFUSION_MODEL_URL` -> `models/diffusion_models/flux1-schnell.safetensors`
+- `FLUX_AE_URL` -> `models/vae/ae.safetensors`
+- `FLUX_CLIP_L_URL` -> `models/text_encoders/clip_l.safetensors`
+- `FLUX_T5XXL_URL` -> `models/text_encoders/t5xxl_fp8_e4m3fn.safetensors`
+- `IPADAPTER_FLUX_URL` -> `models/ipadapter-flux/flux-ipadapter-face.safetensors`
 
-## Contrato minimo del runtime
+`Supabase` no es requisito para levantar este worker. Cualquier storage accesible sirve mientras entregue URLs directas al archivo. Para los assets gated de `FLUX.1-schnell`, la expectativa operativa es espejarlos primero a storage propio y no descargar desde Hugging Face en runtime.
 
-La imagen debe dejar operativo un worker que soporte como minimo:
+## Estructura relevante de modelos en ComfyUI
 
-- jobs queue-based en `Runpod Serverless`
-- `ComfyUI` local accesible en `COMFYUI_BASE_URL` dentro del contenedor
-- workflow `COMFYUI_WORKFLOW_IMAGE_ID` disponible en el runtime
-- custom nodes `IPAdapter Plus` e `Impact Pack` instalados
-- modelo `COMFYUI_IP_ADAPTER_MODEL` disponible o error fail-fast si no existe
-- respuesta serverless estable con `artifacts`, `face_detection_confidence`, `ip_adapter_used`, `regional_inpaint_triggered`, `provider_job_id` y `metadata`
-- nodos mapeables a:
-  - `COMFYUI_IP_ADAPTER_NODE_ID`
-  - `COMFYUI_FACE_DETECTOR_NODE_ID`
-  - `COMFYUI_FACE_DETAILER_NODE_ID`
-
-## Estrategia de build y runtime
-
-Para reducir fallos en `Runpod Serverless`, el diseño actual no clona repositorios al arrancar el worker.
-
-- durante el build de la imagen se clonan `ComfyUI`, `ComfyUI_IPAdapter_plus` y `ComfyUI-Impact-Pack`
-- durante el build tambien se instalan sus dependencias Python
-- durante el arranque del job el handler valida artefactos horneados, descarga modelos opcionales y arranca `ComfyUI` localmente si todavia no esta arriba
-
-Esto evita fallos tipicos de cold start por `git clone` y reduce el costo de workers que reinician.
+- `models/diffusion_models/`
+- `models/text_encoders/`
+- `models/vae/`
+- `models/ipadapter-flux/`
 
 ## Variables importantes
 
 ### Runpod
 
 - `RUNPOD_API_KEY`
-- `RUNPOD_ENDPOINT_IMAGE_GEN`
+- `RUNPOD_ENDPOINT_IMAGE_IDENTITY`
+- `RUNPOD_ENDPOINT_IMAGE_CONTENT`
+- `RUNPOD_ENDPOINT_IMAGE_GEN` como fallback legado
+- `RUNPOD_ENDPOINT_LORA_TRAIN`
+- `RUNPOD_ENDPOINT_VIDEO_GEN`
 - `RUNPOD_POLL_INTERVAL_SECONDS`
 - `RUNPOD_JOB_TIMEOUT_SECONDS`
 - `RUNPOD_USE_RUNSYNC`
 
-### Runtime ComfyUI
+### Runtime interno
 
 - `COMFYUI_BASE_URL`
 - `COMFYUI_PORT`
@@ -77,87 +57,125 @@ Esto evita fallos tipicos de cold start por `git clone` y reduce el costo de wor
 - `COMFYUI_CUSTOM_NODES_DIR`
 - `COMFYUI_MODELS_DIR`
 - `COMFYUI_USER_DIR`
+- `COMFYUI_INPUT_DIR`
 
-### Contrato visual
+### Contrato FLUX
 
 - `COMFYUI_WORKFLOW_IMAGE_ID`
 - `COMFYUI_WORKFLOW_IMAGE_VERSION`
+- `COMFYUI_WORKFLOW_IDENTITY_ID`
+- `COMFYUI_WORKFLOW_IDENTITY_VERSION`
+- `COMFYUI_WORKFLOW_CONTENT_ID`
+- `COMFYUI_WORKFLOW_CONTENT_VERSION`
+- `COMFYUI_WORKFLOW_VIDEO_ID`
+- `COMFYUI_WORKFLOW_VIDEO_VERSION`
+- `COMFYUI_FLUX_DIFFUSION_MODEL_NAME`
+- `COMFYUI_FLUX_AE_NAME`
+- `COMFYUI_FLUX_CLIP_L_NAME`
+- `COMFYUI_FLUX_T5XXL_NAME`
+- `COMFYUI_FLUX_UNET_WEIGHT_DTYPE`
 - `COMFYUI_IP_ADAPTER_MODEL`
+- `COMFYUI_IP_ADAPTER_CLIP_VISION_MODEL`
 - `COMFYUI_IP_ADAPTER_NODE_ID`
 - `COMFYUI_FACE_DETECTOR_NODE_ID`
 - `COMFYUI_FACE_DETAILER_NODE_ID`
 - `COMFYUI_FACE_CONFIDENCE_THRESHOLD`
 
-### Provision opcional de modelos
+## Build y push de imagen publica
 
-- `IPADAPTER_PLUS_FACE_URL`
-- `CHECKPOINT_MODEL_URL`
-- `VAE_MODEL_URL`
+1. Publicar el repo en `GitHub`.
+2. Ejecutar [runpod-visual-serverless-image.yml](/C:/Users/AVALITH/Desktop/Proyectos/vixenbliss_creator/.github/workflows/runpod-visual-serverless-image.yml).
+3. Verificar que la imagen quede publicada en `ghcr.io/<owner>/vixenbliss-runpod-visual-serverless:<tag>`.
+4. Usar un tag trazable por commit, preferentemente `sha-<commit>`.
 
-## Como levantarlo en GitHub + Runpod Serverless
+## Template serverless en Runpod
 
-### Build y push de imagen publica
+### Path del repo
 
-1. publicar el repo en `GitHub`
-2. ejecutar el workflow [runpod-visual-serverless-image.yml](/C:/Users/AVALITH/Desktop/Proyectos/vixenbliss_creator/.github/workflows/runpod-visual-serverless-image.yml)
-3. verificar que la imagen quede publicada en `ghcr.io/<owner>/vixenbliss-runpod-visual-serverless:<tag>`
-4. usar un tag trazable por commit, preferentemente `sha-<commit>`
+- `path`: `infra/runpod-visual-serverless`
+- `dockerfile path`: `infra/runpod-visual-serverless/Dockerfile`
 
-### Template serverless
+Si el formulario de Runpod toma el `Dockerfile` relativo al `path`, usar simplemente `Dockerfile`.
 
-1. crear un `template` serverless nuevo en `Runpod`
-2. usar como imagen `ghcr.io/<owner>/vixenbliss-runpod-visual-serverless:<tag>`
-3. configurar en el template las variables de [infra/runpod-visual-serverless/.env.example](/C:/Users/AVALITH/Desktop/Proyectos/vixenbliss_creator/infra/runpod-visual-serverless/.env.example)
-4. completar `IPADAPTER_PLUS_FACE_URL` y `CHECKPOINT_MODEL_URL` con artefactos reales
-5. definir `workersMin` y `workersMax` explicitos para evitar jobs eternamente en `IN_QUEUE`
+### Env minimo sugerido
 
-### Endpoint serverless
+```env
+COMFYUI_BASE_URL=http://127.0.0.1:8188
+COMFYUI_PORT=8188
+COMFYUI_LISTEN=0.0.0.0
+COMFYUI_HOME=/opt/comfyui
+COMFYUI_CUSTOM_NODES_DIR=/opt/comfyui/custom_nodes
+COMFYUI_MODELS_DIR=/opt/comfyui/models
+COMFYUI_USER_DIR=/opt/comfyui/user/default
+COMFYUI_INPUT_DIR=/opt/comfyui/input
 
-1. crear un endpoint `Queue based Serverless` desde ese template
-2. registrar la URL real en `RUNPOD_ENDPOINT_IMAGE_GEN`
-3. validar que el worker arranca por `handler.py` y no por `main.py`
-4. revisar logs y confirmar que no hubo `git clone` en startup
+COMFYUI_WORKFLOW_IMAGE_ID=base-image-ipadapter-impact
+COMFYUI_WORKFLOW_IMAGE_VERSION=2026-03-31
+COMFYUI_WORKFLOW_IDENTITY_ID=identity-image-flux
+COMFYUI_WORKFLOW_IDENTITY_VERSION=2026-03-31
+COMFYUI_WORKFLOW_CONTENT_ID=content-image-flux
+COMFYUI_WORKFLOW_CONTENT_VERSION=2026-03-31
+COMFYUI_WORKFLOW_VIDEO_ID=video-image-placeholder
+COMFYUI_WORKFLOW_VIDEO_VERSION=2026-03-31
+COMFYUI_FLUX_DIFFUSION_MODEL_NAME=flux1-schnell.safetensors
+COMFYUI_FLUX_AE_NAME=ae.safetensors
+COMFYUI_FLUX_CLIP_L_NAME=clip_l.safetensors
+COMFYUI_FLUX_T5XXL_NAME=t5xxl_fp8_e4m3fn.safetensors
+COMFYUI_FLUX_UNET_WEIGHT_DTYPE=default
+COMFYUI_IP_ADAPTER_MODEL=flux-ipadapter-face.safetensors
+COMFYUI_IP_ADAPTER_CLIP_VISION_MODEL=google/siglip-so400m-patch14-384
+COMFYUI_FACE_CONFIDENCE_THRESHOLD=0.8
 
-### Smoke test
+FLUX_DIFFUSION_MODEL_URL=<url real espejada>
+FLUX_AE_URL=<url real espejada>
+FLUX_CLIP_L_URL=<url real espejada>
+FLUX_T5XXL_URL=<url real espejada>
+IPADAPTER_FLUX_URL=<url real espejada>
+```
 
-1. enviar `{\"input\":{\"action\":\"healthcheck\"}}`
-2. confirmar `ok=true`
-3. confirmar `runtime_checks.checkpoint_present=true`
-4. confirmar `runtime_checks.ip_adapter_present=true`
-5. confirmar `workflow_id=base-image-ipadapter-impact`
+### Consideraciones
 
-### Prueba funcional
+- `AE` no es un VAE clasico opcional. En FLUX es parte requerida del runtime.
+- La imagen de referencia facial sigue entrando por `reference_face_image_url`.
+- El worker levanta `ComfyUI` internamente; la app no consume ese HTTP de forma publica cuando el proveedor es `runpod`.
 
-1. correr `base_render` con prompt real y `reference_face_image_url`
-2. confirmar que devuelve `artifacts`, `face_detection_confidence` y `regional_inpaint_triggered=false`
-3. si `face_detection_confidence < 0.8`, correr `face_detail` con el `resume_checkpoint` devuelto por backend
-4. confirmar que devuelve `artifacts` finales y `regional_inpaint_triggered=true`
-5. guardar `provider_job_id`, logs y evidencia de artifacts recuperables
+## Endpoint serverless
 
-## Validacion operativa minima
+1. Crear endpoints `Queue based Serverless` separados para `identity image`, `content image`, `lora training` y `video` desde la misma familia de template o desde templates especializados.
+2. Definir `workersMin` y `workersMax` explicitos para evitar jobs eternamente en `IN_QUEUE`.
+3. Registrar las URLs reales en `RUNPOD_ENDPOINT_IMAGE_IDENTITY`, `RUNPOD_ENDPOINT_IMAGE_CONTENT`, `RUNPOD_ENDPOINT_LORA_TRAIN` y `RUNPOD_ENDPOINT_VIDEO_GEN`.
+4. Mantener `RUNPOD_ENDPOINT_IMAGE_GEN` solo como fallback temporal si todavia no existe segmentacion completa.
+5. Validar por logs que el worker arranca via `handler.py` y no via `main.py`.
 
-### Smoke checks del runtime
+## Smoke test
 
-- un job `healthcheck` devuelve `ok=true`
-- `ComfyUI` responde en `/system_stats` dentro del contenedor
-- el workflow base existe en el runtime
-- `IPAdapter Plus` e `Impact Pack` aparecen instalados en `custom_nodes`
+Request:
 
-### Validacion funcional manual
+```json
+{"input":{"action":"healthcheck"}}
+```
 
-1. correr un job con `action=healthcheck`
-2. verificar que el workflow `base-image-ipadapter-impact` se usa en el handler
-3. verificar que el nodo `ip_adapter_apply` existe y usa el modelo `plus_face`
-4. verificar que el nodo `face_detector` y el nodo `face_detailer` existen
-5. correr un job de generacion con prompt real
-6. guardar `prompt_id`, logs y artifacts recuperables
+Esperado:
 
-## Evidencia recomendada para conectar con el backend
+- `ok=true`
+- `runtime_checks.flux_diffusion_model_present=true`
+- `runtime_checks.flux_ae_present=true`
+- `runtime_checks.flux_clip_l_present=true`
+- `runtime_checks.flux_t5xxl_present=true`
+- `runtime_checks.ip_adapter_present=true`
+- `runtime_contract.model_family=flux`
 
-- URL real del runtime
-- nombre/version del workflow base cargado
-- ids reales de `ip_adapter`, `face_detector` y `face_detailer`
-- evidencia de que el modelo `plus_face` esta disponible
-- evidencia de que `base_render` devuelve `face_detection_confidence`
-- una corrida exitosa con `regional_inpaint_triggered=false`
-- una corrida exitosa con `regional_inpaint_triggered=true`
+## Prueba funcional
+
+1. Correr `base_render` con prompt real y `reference_face_image_url`.
+2. Confirmar que devuelve `artifacts`, `face_detection_confidence` y `regional_inpaint_triggered=false`.
+3. Si `face_detection_confidence < 0.8`, correr `face_detail` con el `resume_checkpoint` devuelto por backend.
+4. Confirmar que devuelve `artifacts` finales y `regional_inpaint_triggered=true`.
+5. Guardar `provider_job_id`, logs y evidencia de artifacts recuperables.
+
+## Notas operativas
+
+- `FLUX.1-schnell` en Hugging Face es gated, por eso el deploy debe usar URLs propias para los archivos pesados.
+- `google/siglip-so400m-patch14-384` se mantiene como identificador del encoder visual requerido por `ComfyUI-IPAdapter-Flux`.
+- Si el worker no tiene cache local del encoder visual, el plugin puede resolverlo por `from_pretrained`; si se quiere runtime totalmente aislado, hay que espejar tambien ese asset como snapshot compatible de `transformers`.
+- La arquitectura objetivo del producto usa runtimes separados por etapa: `S1 image`, `S2 image`, `lora training` y `video`.

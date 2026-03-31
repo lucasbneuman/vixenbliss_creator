@@ -7,8 +7,13 @@ import pytest
 from pydantic import ValidationError
 
 from vixenbliss_creator.contracts.artifact import Artifact
+from vixenbliss_creator.contracts.identity import Identity
 from vixenbliss_creator.contracts.job import Job, is_valid_job_transition
 from vixenbliss_creator.contracts.model_registry import ModelRegistry
+from vixenbliss_creator.contracts.pipeline_guards import (
+    assert_content_generation_allowed,
+    assert_lora_training_allowed,
+)
 
 
 def build_job_payload() -> dict:
@@ -16,7 +21,7 @@ def build_job_payload() -> dict:
     return {
         "id": str(uuid4()),
         "identity_id": str(uuid4()),
-        "job_type": "generate_base_images",
+        "job_type": "identity_image_generation",
         "status": "succeeded",
         "timeout_seconds": 1800,
         "attempt_count": 1,
@@ -70,9 +75,11 @@ def build_model_registry_payload() -> dict:
         "provider": "internal",
         "version_name": "amber-v1",
         "display_name": "Amber Vault LoRA v1",
+        "base_model_id": "flux-schnell-v1",
         "storage_path": "models/amber_vault/lora/v1/amber-v1.safetensors",
         "parent_model_id": str(uuid4()),
         "compatibility_notes": "Compatible con Flux Schnell para identidades del MVP.",
+        "quantization": "fp8",
         "is_active": True,
         "metadata_json": {
             "base_model": "flux-schnell-v1",
@@ -84,11 +91,119 @@ def build_model_registry_payload() -> dict:
     }
 
 
+def build_identity_payload() -> dict:
+    timestamp = datetime(2026, 3, 30, 15, 0, tzinfo=timezone.utc).isoformat()
+    return {
+        "id": str(uuid4()),
+        "alias": "amber_vault",
+        "status": "draft",
+        "pipeline_state": "lora_validated",
+        "vertical": "adult_entertainment",
+        "allowed_content_modes": ["sfw", "sensual", "nsfw"],
+        "reference_face_image_url": "https://example.com/reference-face.png",
+        "base_image_urls": ["https://example.com/base-01.png"],
+        "dataset_storage_path": "datasets/amber_vault/v1",
+        "dataset_status": "ready",
+        "base_model_id": "flux-schnell-v1",
+        "lora_model_path": "models/amber_vault/lora/v1/amber-v1.safetensors",
+        "lora_version": "amber-v1",
+        "technical_sheet_json": {
+            "identity_core": {
+                "display_name": "Amber Vault",
+                "fictional_age_years": 24,
+                "locale": "es-AR",
+                "primary_language": "spanish",
+                "secondary_languages": ["english"],
+                "tagline": "Performer elegante con tono seguro y cercano.",
+            },
+            "visual_profile": {
+                "archetype": "glam urbana",
+                "body_type": "athletic",
+                "skin_tone": "olive",
+                "eye_color": "hazel",
+                "hair_color": "dark_brown",
+                "hair_style": "long_soft_waves",
+                "dominant_features": ["defined_jawline", "freckles"],
+                "wardrobe_styles": ["lingerie_editorial"],
+                "visual_must_haves": ["soft_gold_lighting"],
+                "visual_never_do": ["cartoon_style"],
+            },
+            "personality_profile": {
+                "voice_tone": "seductive",
+                "primary_traits": ["confident", "playful"],
+                "secondary_traits": ["warm", "strategic"],
+                "interaction_style": "Coquetea con precision, sin perder claridad ni control de la escena.",
+                "axes": {
+                    "formality": "medium",
+                    "warmth": "high",
+                    "dominance": "medium",
+                    "provocation": "high",
+                    "accessibility": "medium",
+                },
+            },
+            "narrative_profile": {
+                "archetype_summary": "Anfitriona digital premium que mezcla glamour editorial con cercania medida.",
+                "origin_story": "Construyo su audiencia convirtiendo sesiones intimas curadas en una marca de alto valor visual.",
+                "motivations": ["grow_premium_audience", "protect_brand_consistency"],
+                "interests": ["fashion", "fitness"],
+                "audience_role": "fantasy_guide",
+                "conversational_hooks": ["after_hours_stories", "style_breakdowns"],
+            },
+            "operational_limits": {
+                "allowed_content_modes": ["sfw", "sensual", "nsfw"],
+                "hard_limits": [
+                    {
+                        "code": "no_minors",
+                        "label": "No underage framing",
+                        "severity": "hard",
+                        "rationale": "El personaje siempre se representa como adulto ficticio.",
+                    }
+                ],
+                "soft_limits": [
+                    {
+                        "code": "avoid_body_horror",
+                        "label": "Avoid body horror aesthetics",
+                        "severity": "soft",
+                        "rationale": "Mantener consistencia aspiracional del personaje.",
+                    }
+                ],
+                "escalation_triggers": ["identity_drift", "unsafe_request"],
+            },
+            "system5_slots": {
+                "persona_summary": "Figura segura, elegante y provocadora que responde con precision emocional.",
+                "greeting_style": "Abre la conversacion con curiosidad segura y una invitacion breve.",
+                "reply_style_keywords": ["flirty", "direct"],
+                "memory_tags": ["style_preferences", "favorite_scenarios"],
+                "prohibited_topics": ["illegal_content", "real_world_personal_data"],
+                "upsell_style": "Escala desde complicidad ligera hacia ofertas premium sin romper personaje.",
+            },
+            "traceability": {
+                "source_issue_id": "DEV-6",
+                "source_epic_id": "DEV-3",
+                "contract_owner": "Codex",
+                "future_systems_ready": ["system_2", "system_5"],
+                "last_reviewed_at": timestamp,
+            },
+        },
+        "created_at": timestamp,
+        "updated_at": timestamp,
+    }
+
+
 def test_job_accepts_valid_payload() -> None:
     job = Job.model_validate(build_job_payload())
 
     assert job.status == "succeeded"
-    assert job.job_type == "generate_base_images"
+    assert job.job_type == "identity_image_generation"
+
+
+def test_job_accepts_legacy_job_type_aliases() -> None:
+    payload = build_job_payload()
+    payload["job_type"] = "generate_base_images"
+
+    job = Job.model_validate(payload)
+
+    assert job.job_type == "identity_image_generation"
 
 
 def test_job_requires_error_message_for_failed_state() -> None:
@@ -134,6 +249,17 @@ def test_model_registry_accepts_valid_payload() -> None:
 
     assert model.model_role == "lora"
     assert model.provider == "internal"
+    assert model.base_model_id == "flux-schnell-v1"
+    assert model.quantization == "fp8"
+
+
+def test_model_registry_backfills_base_model_id_from_metadata_for_legacy_records() -> None:
+    payload = build_model_registry_payload()
+    payload.pop("base_model_id")
+
+    model = ModelRegistry.model_validate(payload)
+
+    assert model.base_model_id == "flux-schnell-v1"
 
 
 def test_model_registry_requires_parent_model_for_lora() -> None:
@@ -153,3 +279,39 @@ def test_model_registry_rejects_storage_for_video_placeholder() -> None:
 
     with pytest.raises(ValidationError):
         ModelRegistry.model_validate(payload)
+
+
+def test_model_registry_rejects_base_models_outside_flux_family() -> None:
+    payload = build_model_registry_payload()
+    payload["model_role"] = "base_model"
+    payload["model_family"] = "custom_lora"
+    payload["parent_model_id"] = None
+
+    with pytest.raises(ValidationError):
+        ModelRegistry.model_validate(payload)
+
+
+def test_model_registry_rejects_lora_with_wrong_family() -> None:
+    payload = build_model_registry_payload()
+    payload["model_family"] = "flux"
+
+    with pytest.raises(ValidationError):
+        ModelRegistry.model_validate(payload)
+
+
+def test_lora_training_requires_ready_dataset() -> None:
+    payload = build_identity_payload()
+    payload["dataset_status"] = "in_progress"
+    identity = Identity.model_validate(payload)
+
+    with pytest.raises(ValueError, match="dataset_status=ready"):
+        assert_lora_training_allowed(identity)
+
+
+def test_content_generation_requires_validated_lora() -> None:
+    payload = build_identity_payload()
+    payload["pipeline_state"] = "lora_trained"
+    identity = Identity.model_validate(payload)
+
+    with pytest.raises(ValueError, match="pipeline_state=lora_validated"):
+        assert_content_generation_allowed(identity)

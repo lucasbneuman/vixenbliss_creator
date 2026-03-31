@@ -51,6 +51,14 @@ El MVP reforzado debe permitir:
 9. Incorporar observabilidad, timeouts, reintentos y validaciones fail-fast.
 10. Dejar preparados los puntos de entrada para el futuro Sistema 5 sin implementarlo.
 
+### 3.1 Mapa operativo entre S1 y S2
+
+- `S1` incluye generacion de imagenes de identidad para dataset y entrenamiento LoRA.
+- `S2` incluye generacion de contenido y generacion de video.
+- a nivel tecnico se recomienda mantener runtimes separados para `S1 image`, `S2 image`, `lora training` y `video`, aunque `training` pertenezca al negocio de `S1` y `video` al de `S2`
+- `S1` y `S2` deben compartir la misma familia `Flux` para preservar compatibilidad entre dataset, entrenamiento e inferencia con LoRA
+- en `DEV-8`, el runtime a cerrar es `S1 image`; `S1 train` queda como runtime futuro separado
+
 ### 4. Principios tecnicos obligatorios
 
 - `Modularidad`
@@ -93,6 +101,13 @@ El MVP reforzado debe permitir:
 - Plataforma SaaS multi-tenant o white-label.
 - Escalado comercial avanzado con multiples clientes.
 
+#### Direccion futura ya decidida para `EPIC-3`
+
+- el front debera interactuar con el backend mediante un chatbot orquestado con `LangGraph`
+- ese chatbot podra disparar operaciones de `S1` y `S2`
+- la comunicacion en tiempo real entre orquestador, serverless y front debera apoyarse en `WebSockets`
+- esta direccion queda documentada ahora como decision de arquitectura futura, pero no se vuelve requisito de implementacion inmediata del MVP actual
+
 ### 6. Stack tecnico base
 
 - `Python`
@@ -101,7 +116,7 @@ El MVP reforzado debe permitir:
 - `Supabase Storage` o `S3-compatible`
 - `ComfyUI`
 - `FluxSchnell`
-- `SDXL` o modelo NSFW especializado
+- variante `Flux` especializada o cuantizada para inferencia NSFW compatible con el modelo base canonico
 - `IP-Adapter`
 - `ControlNet`
 - `Wan2.2`, `AnimateDiff` o `SVD`
@@ -168,7 +183,10 @@ El MVP reforzado debe permitir:
 - `model_role`
 - `provider`
 - `version_name`
-- `artifact_path`
+- `display_name`
+- `base_model_id`
+- `storage_path`
+- `quantization`
 - `compatibility_notes`
 - `is_active`
 - `created_at`
@@ -204,8 +222,9 @@ El MVP reforzado debe permitir:
 
 - `prepare_dataset(identity_id, dataset_rules, source_artifacts)`
 - `train_lora(identity_id, dataset_artifact_id, base_model_id, provider_config)`
-- `generate_image(identity_id, prompt_payload, workflow_id, generation_options)`
-- `prepare_video_generation(identity_id, prompt_payload, workflow_id, generation_options)`
+- `generate_identity_images(identity_id, prompt_payload, workflow_id, generation_options)`
+- `generate_content_images(identity_id, prompt_payload, workflow_id, lora_version, generation_options)`
+- `generate_video(identity_id, prompt_payload, workflow_id, generation_options)`
 
 ### Metadata minima que siempre debe persistirse cuando aplique
 
@@ -215,7 +234,7 @@ El MVP reforzado debe permitir:
 - `workflow_id`
 - `provider`
 - `model_version`
-- `artifact_path`
+- `storage_path`
 - `checksum`
 - `job_id`
 - `qa_status`
@@ -259,12 +278,19 @@ El MVP reforzado debe permitir:
 - `MODAL_TOKEN_ID`
 - `MODAL_TOKEN_SECRET`
 - `RUNPOD_API_KEY`
+- `RUNPOD_ENDPOINT_IMAGE_IDENTITY`
+- `RUNPOD_ENDPOINT_IMAGE_CONTENT`
 - `RUNPOD_ENDPOINT_IMAGE_GEN`
 - `RUNPOD_ENDPOINT_LORA_TRAIN`
 - `RUNPOD_ENDPOINT_VIDEO_GEN`
 - `COMFYUI_BASE_URL`
 - `COMFYUI_WORKFLOW_IMAGE_ID`
+- `COMFYUI_WORKFLOW_IDENTITY_ID`
+- `COMFYUI_WORKFLOW_IDENTITY_VERSION`
+- `COMFYUI_WORKFLOW_CONTENT_ID`
+- `COMFYUI_WORKFLOW_CONTENT_VERSION`
 - `COMFYUI_WORKFLOW_VIDEO_ID`
+- `COMFYUI_WORKFLOW_VIDEO_VERSION`
 - `BASE_IMAGE_MODEL_ID`
 - `BASE_VIDEO_MODEL_ID`
 - `LORA_TRAINER_PROVIDER`
@@ -370,6 +396,8 @@ Todo artefacto relevante debe registrar:
 
 - Si falta una variable critica, el proceso debe fallar antes de ejecutar jobs.
 - Si falta un modelo base, LoRA, workflow o dataset requerido, no debe lanzarse generacion ni entrenamiento.
+- `S2` no debe consumir un `LoRA` que no este validado explicitamente.
+- `lora_training` no debe arrancar si el dataset no esta en estado `ready`.
 - Todo error relevante debe quedar persistido en job, log o traza correlacionable.
 - Los reintentos deben ser explicitos y limitados, nunca silenciosos.
 - Toda tarea debe declarar que falla bloquea el paso siguiente.

@@ -22,8 +22,14 @@ COMFYUI_USER_DIR = Path(os.getenv("COMFYUI_USER_DIR", str(COMFYUI_HOME / "user" 
 COMFYUI_INPUT_DIR = Path(os.getenv("COMFYUI_INPUT_DIR", str(COMFYUI_HOME / "input")))
 COMFYUI_OUTPUT_DIR = COMFYUI_HOME / "output"
 COMFYUI_MODELS_DIR = Path(os.getenv("COMFYUI_MODELS_DIR", str(COMFYUI_HOME / "models")))
-COMFYUI_WORKFLOW_IMAGE_ID = os.getenv("COMFYUI_WORKFLOW_IMAGE_ID", "base-image-ipadapter-impact")
-COMFYUI_WORKFLOW_IMAGE_VERSION = os.getenv("COMFYUI_WORKFLOW_IMAGE_VERSION", "2026-03-31")
+COMFYUI_WORKFLOW_IMAGE_ID = os.getenv(
+    "COMFYUI_WORKFLOW_IDENTITY_ID",
+    os.getenv("COMFYUI_WORKFLOW_IMAGE_ID", "base-image-ipadapter-impact"),
+)
+COMFYUI_WORKFLOW_IMAGE_VERSION = os.getenv(
+    "COMFYUI_WORKFLOW_IDENTITY_VERSION",
+    os.getenv("COMFYUI_WORKFLOW_IMAGE_VERSION", "2026-03-31"),
+)
 COMFYUI_FLUX_DIFFUSION_MODEL_NAME = os.getenv("COMFYUI_FLUX_DIFFUSION_MODEL_NAME", "flux1-schnell.safetensors")
 COMFYUI_FLUX_AE_NAME = os.getenv("COMFYUI_FLUX_AE_NAME", "ae.safetensors")
 COMFYUI_FLUX_CLIP_L_NAME = os.getenv("COMFYUI_FLUX_CLIP_L_NAME", "clip_l.safetensors")
@@ -36,10 +42,18 @@ COMFYUI_IP_ADAPTER_CLIP_VISION_MODEL = os.getenv(
 )
 COMFYUI_FACE_CONFIDENCE_THRESHOLD = float(os.getenv("COMFYUI_FACE_CONFIDENCE_THRESHOLD", "0.8"))
 
-WORKFLOW_TEMPLATE = Path("/opt/runpod-visual-serverless/workflows") / f"{COMFYUI_WORKFLOW_IMAGE_ID}.json"
-ENTRYPOINT_SCRIPT = Path("/opt/runpod-visual-serverless/scripts/entrypoint.sh")
+WORKFLOW_TEMPLATE = Path("/opt/runpod-s1-image-serverless/workflows") / f"{COMFYUI_WORKFLOW_IMAGE_ID}.json"
+ENTRYPOINT_SCRIPT = Path("/opt/runpod-s1-image-serverless/scripts/entrypoint.sh")
 
 _COMFYUI_PROCESS: subprocess.Popen[str] | None = None
+
+
+def _resolve_ip_adapter_model_name(job_input: dict | None = None) -> str:
+    job_input = job_input or {}
+    requested = str(job_input.get("ip_adapter_model_name", COMFYUI_IP_ADAPTER_MODEL))
+    if requested == "plus_face":
+        return "flux-ipadapter-face.safetensors"
+    return requested
 
 
 def _response_error(code: str, message: str, metadata: dict | None = None) -> dict:
@@ -52,6 +66,14 @@ def _response_error(code: str, message: str, metadata: dict | None = None) -> di
         "error_message": message,
         "metadata": metadata or {},
     }
+
+
+def _assert_s1_runtime_contract(job_input: dict) -> None:
+    runtime_stage = job_input.get("runtime_stage")
+    if runtime_stage not in {None, "", "identity_image"}:
+        raise RuntimeError(f"COMFYUI_EXECUTION_FAILED: unsupported runtime_stage {runtime_stage} for S1 image runtime")
+    if job_input.get("lora_version") not in {None, ""}:
+        raise RuntimeError("COMFYUI_EXECUTION_FAILED: S1 image runtime must not consume a LoRA version")
 
 
 def _copy_workflow() -> None:
@@ -113,7 +135,7 @@ def _required_runtime_paths(job_input: dict | None = None) -> dict[str, Path]:
         / str(job_input.get("flux_t5xxl_name", COMFYUI_FLUX_T5XXL_NAME)),
         "ip_adapter_flux": COMFYUI_MODELS_DIR
         / "ipadapter-flux"
-        / str(job_input.get("ip_adapter_model_name", COMFYUI_IP_ADAPTER_MODEL)),
+        / _resolve_ip_adapter_model_name(job_input),
     }
 
 
@@ -219,7 +241,7 @@ def _build_workflow_payload(job_input: dict) -> dict:
     workflow["random_noise"]["inputs"]["noise_seed"] = seed
     workflow["load_ip_adapter_model"]["inputs"]["ipadapter"] = job_input.get(
         "ip_adapter_model_name",
-        COMFYUI_IP_ADAPTER_MODEL,
+        _resolve_ip_adapter_model_name(job_input),
     )
     workflow["load_ip_adapter_model"]["inputs"]["clip_vision"] = job_input.get(
         "ip_adapter_clip_vision_model",
@@ -363,6 +385,7 @@ def _extract_face_confidence(history_payload: dict, job_input: dict) -> float | 
 
 def _run_generation(job_input: dict) -> dict:
     _ensure_comfyui_running()
+    _assert_s1_runtime_contract(job_input)
     _assert_required_runtime_inputs(job_input)
 
     mode = job_input.get("mode", "base_render")
@@ -410,6 +433,8 @@ def _run_generation(job_input: dict) -> dict:
         "metadata": {
             "mode": mode,
             "model_family": "flux",
+            "runtime_stage": "identity_image",
+            "workflow_scope": "s1_image",
             "requested_threshold": job_input.get("face_confidence_threshold", COMFYUI_FACE_CONFIDENCE_THRESHOLD),
             "workflow_id": COMFYUI_WORKFLOW_IMAGE_ID,
             "workflow_version": COMFYUI_WORKFLOW_IMAGE_VERSION,
@@ -418,6 +443,7 @@ def _run_generation(job_input: dict) -> dict:
                 "ae": job_input.get("flux_ae_name", COMFYUI_FLUX_AE_NAME),
                 "clip_l": job_input.get("flux_clip_l_name", COMFYUI_FLUX_CLIP_L_NAME),
                 "t5xxl": job_input.get("flux_t5xxl_name", COMFYUI_FLUX_T5XXL_NAME),
+                "ip_adapter": _resolve_ip_adapter_model_name(job_input),
             },
         },
     }
@@ -441,8 +467,11 @@ def handler(job: dict) -> dict:
                 "runtime_checks": _runtime_checks(job_input),
                 "runtime_contract": {
                     "model_family": "flux",
+                    "runtime_stage": "identity_image",
+                    "workflow_scope": "s1_image",
                     "supabase_required": False,
                     "reference_face_image_url_required": True,
+                    "lora_supported": False,
                 },
             }
         if action != "generate":

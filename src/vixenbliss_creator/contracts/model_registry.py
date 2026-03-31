@@ -25,6 +25,13 @@ class ModelFamily(str, Enum):
     FUTURE_VIDEO = "future_video"
 
 
+class Quantization(str, Enum):
+    NONE = "none"
+    FP8 = "fp8"
+    INT8 = "int8"
+    INT4 = "int4"
+
+
 class ModelProvider(str, Enum):
     BLACK_FOREST_LABS = "black_forest_labs"
     COMFYUI = "comfyui"
@@ -41,9 +48,11 @@ class ModelRegistry(ContractBaseModel):
     provider: ModelProvider
     version_name: str = Field(min_length=2, max_length=80)
     display_name: str = Field(min_length=3, max_length=120)
+    base_model_id: str | None = Field(default=None, min_length=3, max_length=120)
     storage_path: str | None = Field(default=None, min_length=3, max_length=255)
     parent_model_id: UUID | None = None
     compatibility_notes: str | None = Field(default=None, min_length=8, max_length=280)
+    quantization: Quantization = Quantization.NONE
     is_active: bool = True
     metadata_json: JsonObject = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
@@ -52,6 +61,10 @@ class ModelRegistry(ContractBaseModel):
 
     @model_validator(mode="after")
     def validate_consistency(self) -> "ModelRegistry":
+        if self.base_model_id is None:
+            metadata_base_model = self.metadata_json.get("base_model")
+            if isinstance(metadata_base_model, str) and metadata_base_model.strip():
+                self.base_model_id = metadata_base_model.strip()
         if not is_utc_datetime(self.created_at):
             raise ValueError("created_at must be a UTC datetime")
         if not is_utc_datetime(self.updated_at):
@@ -67,8 +80,14 @@ class ModelRegistry(ContractBaseModel):
                 raise ValueError("lora models require parent_model_id")
             if self.storage_path is None:
                 raise ValueError("lora models require storage_path")
+            if self.model_family != ModelFamily.CUSTOM_LORA:
+                raise ValueError("lora models require model_family=custom_lora")
         if self.model_role == ModelRole.BASE_MODEL and self.parent_model_id is not None:
             raise ValueError("base_model cannot define parent_model_id")
+        if self.model_role == ModelRole.BASE_MODEL and self.model_family != ModelFamily.FLUX:
+            raise ValueError("base_model must remain in the Flux family for S1 and S2")
         if self.model_role == ModelRole.VIDEO_PLACEHOLDER and self.storage_path is not None:
             raise ValueError("video_placeholder should not define storage_path yet")
+        if self.model_role == ModelRole.VIDEO_PLACEHOLDER and self.model_family != ModelFamily.FUTURE_VIDEO:
+            raise ValueError("video_placeholder requires model_family=future_video")
         return self
