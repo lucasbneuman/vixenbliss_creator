@@ -5,10 +5,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BUNDLE = ROOT / "infra" / "runpod-comfyui"
+BUNDLE = ROOT / "infra" / "runpod-visual-serverless"
 
-
-def test_runpod_comfyui_bundle_contains_expected_files() -> None:
+def test_runpod_visual_serverless_bundle_contains_expected_files() -> None:
     expected = [
         BUNDLE / "Dockerfile",
         BUNDLE / ".env.example",
@@ -56,4 +55,4 @@ def test_bundle_runtime_scripts_do_not_clone_repositories_at_startup() -> None:
     assert "git clone" not in entrypoint
     assert "git clone" in dockerfile
     assert "runpod.serverless.start" in handler
-    assert 'ENTRYPOINT ["/usr/bin/tini", "--", "python", "/opt/runpod-comfyui/handler.py"]' in dockerfile
+    assert 'ENTRYPOINT ["/usr/bin/tini", "--", "python", "/opt/runpod-visual-serverless/handler.py"]' in dockerfile
