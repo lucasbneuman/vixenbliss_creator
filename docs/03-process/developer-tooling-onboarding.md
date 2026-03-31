@@ -89,6 +89,35 @@ python -m pytest -q
 - nombrar servidores segun proveedor y entorno cuando aplique
 - para MCPs remotos, usar `url` con el endpoint documentado en vez de `command` y `args`
 - baseline actual: `supabase` se configura como MCP remoto por `http` usando `SUPABASE_MCP_URL`
+- baseline actual: `runpod` se configura como MCP local por `stdio` usando `npx -y @runpod/mcp-server@latest`
+- `runpod` requiere `RUNPOD_API_KEY` en el entorno local y sirve para inspeccionar endpoints, workers, requests y despliegues sin pegar curls manuales
+- mantener el archivo real de MCP fuera del repo y derivarlo desde la plantilla compartida
+
+### Baseline sugerido para `Runpod MCP`
+
+Usar este bloque en el archivo local derivado desde la plantilla:
+
+```json
+{
+  "mcpServers": {
+    "runpod": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@runpod/mcp-server@latest"],
+      "env": {
+        "RUNPOD_API_KEY": "${RUNPOD_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+Notas operativas:
+
+- reemplazar `${RUNPOD_API_KEY}` por resolucion desde entorno local, no por un token hardcodeado
+- si `npx` no esta disponible, instalar `Node.js` localmente antes de declarar este MCP
+- en Windows, si PowerShell bloquea `npx.ps1`, usar `C:\\Program Files\\nodejs\\npx.cmd` como `command`
+- usar este MCP cuando la tarea requiera depurar `Runpod Serverless`, validar workers o inspeccionar releases sin salir del flujo del agente
 
 ## Skills por workspace
 
