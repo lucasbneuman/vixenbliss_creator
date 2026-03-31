@@ -6,8 +6,8 @@ Esta carpeta define una unidad deployable para `GitHub` y `Runpod Serverless` qu
 
 La imagen esta preparada para:
 
-- exponer `ComfyUI` por HTTP para uso por API
 - ejecutar jobs compatibles con `Runpod Serverless`
+- encapsular `ComfyUI` como motor interno del worker
 - instalar `IPAdapter Plus` e `Impact Pack`
 - versionar un workflow base de imagen dentro del repo
 - alinear el runtime con el contrato actual del backend visual
@@ -42,6 +42,7 @@ La imagen debe dejar operativo un worker que soporte como minimo:
 - workflow `COMFYUI_WORKFLOW_IMAGE_ID` disponible en el runtime
 - custom nodes `IPAdapter Plus` e `Impact Pack` instalados
 - modelo `COMFYUI_IP_ADAPTER_MODEL` disponible o error fail-fast si no existe
+- respuesta serverless estable con `artifacts`, `face_detection_confidence`, `ip_adapter_used`, `regional_inpaint_triggered`, `provider_job_id` y `metadata`
 - nodos mapeables a:
   - `COMFYUI_IP_ADAPTER_NODE_ID`
   - `COMFYUI_FACE_DETECTOR_NODE_ID`
@@ -63,6 +64,9 @@ Esto evita fallos tipicos de cold start por `git clone` y reduce el costo de wor
 
 - `RUNPOD_API_KEY`
 - `RUNPOD_ENDPOINT_IMAGE_GEN`
+- `RUNPOD_POLL_INTERVAL_SECONDS`
+- `RUNPOD_JOB_TIMEOUT_SECONDS`
+- `RUNPOD_USE_RUNSYNC`
 
 ### Runtime ComfyUI
 
@@ -92,14 +96,43 @@ Esto evita fallos tipicos de cold start por `git clone` y reduce el costo de wor
 
 ## Como levantarlo en GitHub + Runpod Serverless
 
-1. subir esta carpeta al repositorio en `GitHub`
-2. crear la imagen del runtime usando este `Dockerfile`
-3. configurar en `Runpod` las variables del `.env.example`
-4. asegurar que `IPADAPTER_PLUS_FACE_URL` y `CHECKPOINT_MODEL_URL` apunten a artefactos reales si queres bootstrap automatico de modelos
-5. desplegar el endpoint `Queue based Serverless`
-6. probar un job de healthcheck con `{\"input\": {\"action\": \"healthcheck\"}}`
-7. verificar que el handler arranca `ComfyUI` internamente y que el workflow base fue copiado a `COMFYUI_USER_DIR/workflows`
-8. revisar logs y confirmar que no hubo re-bootstrap de repositorios ni fallos de `git clone`
+### Build y push de imagen publica
+
+1. publicar el repo en `GitHub`
+2. ejecutar el workflow [runpod-comfyui-image.yml](/C:/Users/AVALITH/Desktop/Proyectos/vixenbliss_creator/.github/workflows/runpod-comfyui-image.yml)
+3. verificar que la imagen quede publicada en `ghcr.io/<owner>/vixenbliss-runpod-comfyui:<tag>`
+4. usar un tag trazable por commit, preferentemente `sha-<commit>`
+
+### Template serverless
+
+1. crear un `template` serverless nuevo en `Runpod`
+2. usar como imagen `ghcr.io/<owner>/vixenbliss-runpod-comfyui:<tag>`
+3. configurar en el template las variables de [infra/runpod-comfyui/.env.example](/C:/Users/AVALITH/Desktop/Proyectos/vixenbliss_creator/infra/runpod-comfyui/.env.example)
+4. completar `IPADAPTER_PLUS_FACE_URL` y `CHECKPOINT_MODEL_URL` con artefactos reales
+5. definir `workersMin` y `workersMax` explicitos para evitar jobs eternamente en `IN_QUEUE`
+
+### Endpoint serverless
+
+1. crear un endpoint `Queue based Serverless` desde ese template
+2. registrar la URL real en `RUNPOD_ENDPOINT_IMAGE_GEN`
+3. validar que el worker arranca por `handler.py` y no por `main.py`
+4. revisar logs y confirmar que no hubo `git clone` en startup
+
+### Smoke test
+
+1. enviar `{\"input\":{\"action\":\"healthcheck\"}}`
+2. confirmar `ok=true`
+3. confirmar `runtime_checks.checkpoint_present=true`
+4. confirmar `runtime_checks.ip_adapter_present=true`
+5. confirmar `workflow_id=base-image-ipadapter-impact`
+
+### Prueba funcional
+
+1. correr `base_render` con prompt real y `reference_face_image_url`
+2. confirmar que devuelve `artifacts`, `face_detection_confidence` y `regional_inpaint_triggered=false`
+3. si `face_detection_confidence < 0.8`, correr `face_detail` con el `resume_checkpoint` devuelto por backend
+4. confirmar que devuelve `artifacts` finales y `regional_inpaint_triggered=true`
+5. guardar `provider_job_id`, logs y evidencia de artifacts recuperables
 
 ## Validacion operativa minima
 
@@ -125,5 +158,6 @@ Esto evita fallos tipicos de cold start por `git clone` y reduce el costo de wor
 - nombre/version del workflow base cargado
 - ids reales de `ip_adapter`, `face_detector` y `face_detailer`
 - evidencia de que el modelo `plus_face` esta disponible
+- evidencia de que `base_render` devuelve `face_detection_confidence`
 - una corrida exitosa con `regional_inpaint_triggered=false`
 - una corrida exitosa con `regional_inpaint_triggered=true`

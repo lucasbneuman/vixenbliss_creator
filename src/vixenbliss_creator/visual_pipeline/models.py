@@ -9,6 +9,7 @@ from vixenbliss_creator.contracts.common import ContractBaseModel, JsonObject
 
 class Provider(str, Enum):
     COMFYUI = "comfyui"
+    RUNPOD = "runpod"
 
 
 class ResumePolicy(str, Enum):
