@@ -7,6 +7,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     COMFYUI_PORT=8188 \
     COMFYUI_LISTEN=0.0.0.0 \
     COMFYUI_BASE_URL=http://127.0.0.1:8188 \
+    COMFYUI_WORKFLOW_IDENTITY_ID=base-image-ipadapter-impact \
+    COMFYUI_WORKFLOW_IDENTITY_VERSION=2026-03-31 \
     COMFYUI_WORKFLOW_IMAGE_ID=base-image-ipadapter-impact \
     COMFYUI_WORKFLOW_IMAGE_VERSION=2026-03-31 \
     COMFYUI_FLUX_DIFFUSION_MODEL_NAME=flux1-schnell.safetensors \
@@ -41,13 +43,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python-is-python3 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /tmp/runpod-visual-serverless-requirements.txt
+COPY requirements.txt /tmp/runpod-s1-image-serverless-requirements.txt
 RUN python -m pip install --upgrade pip && \
     python -m pip install --index-url https://download.pytorch.org/whl/cu118 \
       torch==2.3.1 \
       torchvision==0.18.1 \
       torchaudio==2.3.1 && \
-    python -m pip install -r /tmp/runpod-visual-serverless-requirements.txt
+    python -m pip install -r /tmp/runpod-s1-image-serverless-requirements.txt
 
 RUN git clone --depth 1 --branch "${COMFYUI_REF}" "${COMFYUI_REPO}" "${COMFYUI_HOME}" && \
     git clone --depth 1 --branch "${COMFYUI_IPADAPTER_REF}" "${COMFYUI_IPADAPTER_REPO}" "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-IPAdapter-Flux" && \
@@ -65,11 +67,11 @@ RUN python -m pip install --index-url https://download.pytorch.org/whl/cu118 \
       torchvision==0.18.1 \
       torchaudio==2.3.1
 
-COPY scripts /opt/runpod-visual-serverless/scripts
-COPY workflows /opt/runpod-visual-serverless/workflows
-COPY config /opt/runpod-visual-serverless/config
-COPY handler.py /opt/runpod-visual-serverless/handler.py
+COPY scripts /opt/runpod-s1-image-serverless/scripts
+COPY workflows /opt/runpod-s1-image-serverless/workflows
+COPY config /opt/runpod-s1-image-serverless/config
+COPY handler.py /opt/runpod-s1-image-serverless/handler.py
 
-RUN chmod +x /opt/runpod-visual-serverless/scripts/*.sh
+RUN chmod +x /opt/runpod-s1-image-serverless/scripts/*.sh
 
-ENTRYPOINT ["/usr/bin/tini", "--", "python", "/opt/runpod-visual-serverless/handler.py"]
+ENTRYPOINT ["/usr/bin/tini", "--", "python", "/opt/runpod-s1-image-serverless/handler.py"]

@@ -10,10 +10,12 @@ from urllib import error, parse, request
 from .config import VisualPipelineSettings
 from .models import (
     ErrorCode,
+    ModelFamily,
     Provider,
     ResumeCheckpoint,
     ResumeStage,
     StepExecutionResult,
+    RuntimeStage,
     VisualArtifact,
     VisualArtifactRole,
     VisualGenerationRequest,
@@ -289,9 +291,9 @@ class RunpodServerlessExecutionClient:
         mode: ResumeStage,
         checkpoint: ResumeCheckpoint | None,
     ) -> dict:
-        endpoint = (self.settings.runpod_endpoint_image_gen or "").rstrip("/")
+        endpoint = self._resolve_endpoint(request).rstrip("/")
         if not endpoint:
-            raise RuntimeError("RUNPOD_ENDPOINT_IMAGE_GEN is required for Runpod visual execution")
+            raise RuntimeError("a stage-specific Runpod endpoint is required for visual execution")
         if not self.settings.runpod_api_key:
             raise RuntimeError("RUNPOD_API_KEY is required for Runpod visual execution")
 
@@ -312,6 +314,15 @@ class RunpodServerlessExecutionClient:
             raise RuntimeError(f"Runpod did not return a job id: {payload}")
         return self._poll_job(job_id, endpoint=endpoint, headers=headers)
 
+    def _resolve_endpoint(self, request: VisualGenerationRequest) -> str:
+        if request.runtime_stage == RuntimeStage.IDENTITY_IMAGE:
+            return self.settings.runpod_endpoint_image_identity or self.settings.runpod_endpoint_image_gen or ""
+        if request.runtime_stage == RuntimeStage.CONTENT_IMAGE:
+            return self.settings.runpod_endpoint_image_content or self.settings.runpod_endpoint_image_gen or ""
+        if request.runtime_stage == RuntimeStage.VIDEO:
+            return self.settings.runpod_endpoint_video_gen or ""
+        return self.settings.runpod_endpoint_image_gen or ""
+
     def _build_job_input(
         self,
         *,
@@ -325,6 +336,8 @@ class RunpodServerlessExecutionClient:
             "workflow_id": request.workflow_id,
             "workflow_version": request.workflow_version,
             "base_model_id": request.base_model_id,
+            "model_family": request.model_family,
+            "runtime_stage": request.runtime_stage,
             "prompt": request.prompt,
             "negative_prompt": request.negative_prompt,
             "seed": request.seed,
@@ -335,6 +348,8 @@ class RunpodServerlessExecutionClient:
             "inpaint_strength": request.face_detailer.inpaint_strength,
             "ip_adapter": request.ip_adapter.model_dump(mode="json"),
             "face_detailer": request.face_detailer.model_dump(mode="json"),
+            "lora_version": request.lora_version,
+            "lora_validated": request.lora_validated,
             "metadata": request.metadata_json,
         }
         base_checkpoint_name = request.metadata_json.get("base_checkpoint_name")
@@ -380,7 +395,10 @@ class RunpodServerlessExecutionClient:
             provider_job_id=payload.get("provider_job_id") or payload.get("prompt_id"),
             successful_node_ids=payload.get("successful_node_ids", []),
             face_detection_confidence=payload.get("face_detection_confidence"),
-            metadata_json=payload.get("metadata", {}),
+            metadata_json={
+                **payload.get("metadata", {}),
+                "model_family": payload.get("model_family", ModelFamily.FLUX.value),
+            },
         )
 
 

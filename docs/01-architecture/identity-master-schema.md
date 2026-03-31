@@ -27,6 +27,7 @@ Este documento fija:
 | `vertical` | `adult_entertainment`, `lifestyle`, `performance`, `experimental` | sin default |
 | `allowed_content_modes` | `sfw`, `sensual`, `nsfw` | sin default |
 | `dataset_status` | `not_started`, `in_progress`, `ready`, `rejected` | `not_started` |
+| `base_model_id` | identificador libre del modelo base canonico Flux | sin default |
 | `technical_sheet_json.personality_profile.voice_tone` | `formal`, `informal`, `playful`, `authoritative`, `seductive` | sin default |
 
 ## Modelo top-level de `Identity`
@@ -71,6 +72,9 @@ Estos campos son candidatos directos a columnas de `identities` porque se consul
 
 - `status` inicial por defecto: `draft`.
 - `pipeline_state` inicial por defecto: `draft`.
+- `base_model_id`, cuando exista, debe referenciar la familia Flux que se usa para `S1`, entrenamiento LoRA y `S2`.
+- `dataset_status=ready` es prerequisito para iniciar `lora_training`.
+- `pipeline_state=lora_validated` y `lora_version` son prerequisitos para habilitar `content_image_generation`.
 - `created_at` y `updated_at` deben estar en UTC y `created_at <= updated_at`.
 - `traceability.last_reviewed_at` no puede ser posterior a `updated_at`.
 - `allowed_content_modes` top-level y `technical_sheet_json.operational_limits.allowed_content_modes` deben coincidir exactamente.

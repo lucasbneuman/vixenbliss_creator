@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from vixenbliss_creator.visual_pipeline import (
     ErrorCode,
     FakeVisualExecutionClient,
+    ModelFamily,
     Provider,
     ResumeCheckpoint,
     ResumePolicy,
     ResumeStage,
+    RuntimeStage,
     VisualArtifact,
     VisualArtifactRole,
     VisualGenerationOrchestrator,
@@ -25,6 +28,8 @@ def build_request(**overrides: object) -> VisualGenerationRequest:
         "workflow_id": "base-portrait-v1",
         "workflow_version": "2026-03-30",
         "base_model_id": "flux-schnell-v1",
+        "model_family": "flux",
+        "runtime_stage": "content_image",
         "prompt": "editorial portrait of a synthetic performer with premium soft lighting",
         "negative_prompt": "low quality, anatomy drift, extra limbs, text, watermark",
         "seed": 42,
@@ -46,6 +51,21 @@ def build_artifact(role: VisualArtifactRole, uri: str) -> VisualArtifact:
 def test_request_requires_reference_when_ip_adapter_is_enabled() -> None:
     with pytest.raises(ValueError, match="reference_face_image_url"):
         build_request(reference_face_image_url=None)
+
+
+def test_request_rejects_non_flux_family() -> None:
+    with pytest.raises(ValidationError, match="Input should be 'flux'"):
+        build_request(model_family="custom_lora")
+
+
+def test_content_runtime_requires_validated_lora_when_present() -> None:
+    with pytest.raises(ValueError, match="content_image runtime requires explicit lora_validated=true"):
+        build_request(lora_version="amber-v1", lora_validated=False)
+
+
+def test_identity_runtime_rejects_lora_usage() -> None:
+    with pytest.raises(ValueError, match="identity_image runtime must not consume a LoRA version"):
+        build_request(runtime_stage="identity_image", lora_version="amber-v1")
 
 
 def test_resume_checkpoint_rejects_incomplete_base_render_state() -> None:
@@ -172,12 +192,19 @@ def test_settings_from_env_reads_visual_pipeline_defaults(monkeypatch: pytest.Mo
     monkeypatch.setenv("COMFYUI_BASE_URL", "https://comfy.example.com")
     monkeypatch.setenv("COMFYUI_WORKFLOW_IMAGE_ID", "base-portrait-v1")
     monkeypatch.setenv("COMFYUI_WORKFLOW_IMAGE_VERSION", "2026-03-30")
+    monkeypatch.setenv("COMFYUI_WORKFLOW_IDENTITY_ID", "identity-workflow-v1")
+    monkeypatch.setenv("COMFYUI_WORKFLOW_CONTENT_ID", "content-workflow-v1")
+    monkeypatch.setenv("COMFYUI_WORKFLOW_VIDEO_ID", "video-workflow-v1")
     monkeypatch.setenv("COMFYUI_IP_ADAPTER_MODEL", "plus_face")
     monkeypatch.setenv("COMFYUI_FACE_CONFIDENCE_THRESHOLD", "0.85")
     monkeypatch.setenv("COMFYUI_RESUME_CACHE_MODE", "checkpoint")
     monkeypatch.setenv("COMFYUI_HTTP_TIMEOUT_SECONDS", "45")
     monkeypatch.setenv("RUNPOD_API_KEY", "secret")
+    monkeypatch.setenv("RUNPOD_ENDPOINT_IMAGE_IDENTITY", "https://api.runpod.ai/v2/identity")
+    monkeypatch.setenv("RUNPOD_ENDPOINT_IMAGE_CONTENT", "https://api.runpod.ai/v2/content")
     monkeypatch.setenv("RUNPOD_ENDPOINT_IMAGE_GEN", "https://api.runpod.ai/v2/endpoint")
+    monkeypatch.setenv("RUNPOD_ENDPOINT_LORA_TRAIN", "https://api.runpod.ai/v2/train")
+    monkeypatch.setenv("RUNPOD_ENDPOINT_VIDEO_GEN", "https://api.runpod.ai/v2/video")
     monkeypatch.setenv("RUNPOD_POLL_INTERVAL_SECONDS", "2")
     monkeypatch.setenv("RUNPOD_JOB_TIMEOUT_SECONDS", "120")
     monkeypatch.setenv("RUNPOD_USE_RUNSYNC", "true")
@@ -188,12 +215,19 @@ def test_settings_from_env_reads_visual_pipeline_defaults(monkeypatch: pytest.Mo
     assert settings.comfyui_base_url == "https://comfy.example.com"
     assert settings.comfyui_workflow_image_id == "base-portrait-v1"
     assert settings.comfyui_workflow_image_version == "2026-03-30"
+    assert settings.comfyui_workflow_identity_id == "identity-workflow-v1"
+    assert settings.comfyui_workflow_content_id == "content-workflow-v1"
+    assert settings.comfyui_workflow_video_id == "video-workflow-v1"
     assert settings.comfyui_ip_adapter_model == "plus_face"
     assert settings.comfyui_face_confidence_threshold == pytest.approx(0.85)
     assert settings.comfyui_resume_cache_mode == "checkpoint"
     assert settings.comfyui_http_timeout_seconds == 45
     assert settings.runpod_api_key == "secret"
+    assert settings.runpod_endpoint_image_identity == "https://api.runpod.ai/v2/identity"
+    assert settings.runpod_endpoint_image_content == "https://api.runpod.ai/v2/content"
     assert settings.runpod_endpoint_image_gen == "https://api.runpod.ai/v2/endpoint"
+    assert settings.runpod_endpoint_lora_train == "https://api.runpod.ai/v2/train"
+    assert settings.runpod_endpoint_video_gen == "https://api.runpod.ai/v2/video"
     assert settings.runpod_poll_interval_seconds == 2
     assert settings.runpod_job_timeout_seconds == 120
     assert settings.runpod_use_runsync is True
@@ -204,7 +238,7 @@ def test_build_visual_execution_client_selects_runpod() -> None:
         VisualPipelineSettings(
             visual_execution_provider=Provider.RUNPOD,
             runpod_api_key="secret",
-            runpod_endpoint_image_gen="https://api.runpod.ai/v2/endpoint",
+            runpod_endpoint_image_content="https://api.runpod.ai/v2/content",
         )
     )
 

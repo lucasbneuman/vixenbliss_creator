@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from .common import ContractBaseModel, JsonObject, is_utc_datetime, utc_now
 
@@ -15,12 +15,12 @@ class JobSchemaVersion(str, Enum):
 
 class JobType(str, Enum):
     CREATE_IDENTITY = "create_identity"
-    GENERATE_BASE_IMAGES = "generate_base_images"
+    IDENTITY_IMAGE_GENERATION = "identity_image_generation"
     BUILD_DATASET = "build_dataset"
     VALIDATE_DATASET = "validate_dataset"
-    TRAIN_LORA = "train_lora"
-    GENERATE_CONTENT = "generate_content"
-    PREPARE_VIDEO = "prepare_video"
+    LORA_TRAINING = "lora_training"
+    CONTENT_IMAGE_GENERATION = "content_image_generation"
+    VIDEO_GENERATION = "video_generation"
     QA_REVIEW = "qa_review"
 
 
@@ -63,6 +63,19 @@ class Job(ContractBaseModel):
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("job_type", mode="before")
+    @classmethod
+    def normalize_legacy_job_type(cls, value: object) -> object:
+        legacy_aliases = {
+            "generate_base_images": JobType.IDENTITY_IMAGE_GENERATION.value,
+            "train_lora": JobType.LORA_TRAINING.value,
+            "generate_content": JobType.CONTENT_IMAGE_GENERATION.value,
+            "prepare_video": JobType.VIDEO_GENERATION.value,
+        }
+        if isinstance(value, str):
+            return legacy_aliases.get(value, value)
+        return value
 
     @model_validator(mode="after")
     def validate_consistency(self) -> "Job":

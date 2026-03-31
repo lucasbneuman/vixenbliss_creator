@@ -23,12 +23,12 @@ Este documento fija:
 ### Tipos de job MVP
 
 - `create_identity`
-- `generate_base_images`
+- `identity_image_generation`
 - `build_dataset`
 - `validate_dataset`
-- `train_lora`
-- `generate_content`
-- `prepare_video`
+- `lora_training`
+- `content_image_generation`
+- `video_generation`
 - `qa_review`
 
 ### Estados y transiciones minimas
@@ -99,6 +99,7 @@ Este documento fija:
 
 - `model_role`: `base_model`, `lora`, `video_placeholder`
 - `model_family`: `flux`, `custom_lora`, `future_video`
+- `quantization`: `none`, `fp8`, `int8`, `int4`
 
 ### Proveedores iniciales
 
@@ -118,9 +119,11 @@ Este documento fija:
 | `provider` | enum | si | trazabilidad de proveedor |
 | `version_name` | string | si | version visible |
 | `display_name` | string | si | lectura operativa |
+| `base_model_id` | string | si | modelo base canonico declarado |
 | `storage_path` | string nullable | no | ubicacion de binario si existe |
 | `parent_model_id` | UUID nullable | no | relacion LoRA -> modelo base |
 | `compatibility_notes` | string nullable | no | notas de compatibilidad |
+| `quantization` | enum | si | variante de precision declarada |
 | `is_active` | bool | si | diferenciacion entre activo e historico |
 | `metadata_json` | json | si | extensibilidad futura |
 | `created_at` | timestamp UTC | si | auditoria |
@@ -132,10 +135,11 @@ Este documento fija:
 | Flujo | `Job` | `Artifact` | `ModelRegistry` |
 |---|---|---|---|
 | creacion de identidad | si | no obligatorio | no |
-| generacion de imagen base | si | si (`base_image`, `workflow_json`) | referencia a modelo base |
+| generacion S1 de identidad | si (`identity_image_generation`) | si (`base_image`, `workflow_json`) | referencia a modelo base Flux |
 | armado de dataset | si | si (`dataset_manifest`, `dataset_package`) | no |
-| entrenamiento LoRA | si | si (`lora_model`) | si (`lora`) |
-| generacion de contenido | si | si (`generated_image`, `thumbnail`) | referencia a modelo activo |
+| entrenamiento LoRA | si (`lora_training`) | si (`lora_model`) | si (`lora`) |
+| generacion S2 de contenido | si (`content_image_generation`) | si (`generated_image`, `thumbnail`) | referencia a modelo activo |
+| generacion de video | si (`video_generation`) | si (`generated_image`, `thumbnail`) o artefacto futuro de video | placeholder o modelo futuro |
 | QA | si | si (`qa_report`) | no |
 
 ## Reglas de consistencia
@@ -143,8 +147,10 @@ Este documento fija:
 - todo timestamp debe estar en UTC
 - `failed` y `timed_out` requieren `error_message` persistible en `Job`
 - `dataset_package` y `lora_model` requieren `checksum_sha256`
-- `lora` requiere `parent_model_id` y `storage_path`
-- `video_placeholder` no persiste binario todavia
+- `lora` requiere `parent_model_id`, `storage_path` y `model_family=custom_lora`
+- `base_model` de `S1` y `S2` debe permanecer en la familia `flux`
+- `video_placeholder` no persiste binario todavia y requiere `model_family=future_video`
+- `base_model_id` siempre debe persistirse para poder validar compatibilidad entre `S1`, `training` y `S2`
 
 ## Payloads validos de ejemplo
 
@@ -154,7 +160,7 @@ Este documento fija:
     "schema_version": "1.0.0",
     "id": "d290f1ee-6c54-4b01-90e6-d701748f0851",
     "identity_id": "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
-    "job_type": "generate_base_images",
+    "job_type": "identity_image_generation",
     "status": "succeeded",
     "timeout_seconds": 1800,
     "attempt_count": 1,
@@ -202,9 +208,11 @@ Este documento fija:
     "provider": "internal",
     "version_name": "amber-v1",
     "display_name": "Amber Vault LoRA v1",
+    "base_model_id": "flux-schnell-v1",
     "storage_path": "models/amber_vault/lora/v1/amber-v1.safetensors",
     "parent_model_id": "d290f1ee-6c54-4b01-90e6-d701748f0851",
     "compatibility_notes": "Compatible con Flux Schnell para identidades del MVP.",
+    "quantization": "fp8",
     "is_active": true,
     "metadata_json": {
       "base_model": "flux-schnell-v1",
