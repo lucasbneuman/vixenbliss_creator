@@ -61,7 +61,7 @@ Se usa cuando el backend habla contra `RUNPOD_ENDPOINT_IMAGE_GEN` y el worker en
 
 Configuracion manual esperada:
 
-1. publicar la imagen del worker de `infra/runpod-comfyui/` en un registry publico
+1. publicar la imagen del worker de `infra/runpod-visual-serverless/` en un registry publico
 2. crear un template `serverless` en `Runpod` apuntando a esa imagen
 3. configurar en el template las variables `COMFYUI_*` necesarias para el runtime interno
 4. configurar `IPADAPTER_PLUS_FACE_URL`, `CHECKPOINT_MODEL_URL` y `VAE_MODEL_URL` si el worker debe bootstrapear modelos al arrancar
@@ -71,7 +71,7 @@ Configuracion manual esperada:
 
 ## Runtime deployable recomendado
 
-El runtime productivo inicial para imagen puede versionarse en el repo bajo `infra/runpod-comfyui/`.
+El runtime productivo inicial para imagen puede versionarse en el repo bajo `infra/runpod-visual-serverless/`.
 
 Ese paquete debe cubrir:
 

@@ -28,8 +28,8 @@ COMFYUI_BASE_CHECKPOINT_NAME = os.getenv("COMFYUI_BASE_CHECKPOINT_NAME", "base-i
 COMFYUI_IP_ADAPTER_MODEL = os.getenv("COMFYUI_IP_ADAPTER_MODEL", "plus_face")
 COMFYUI_FACE_CONFIDENCE_THRESHOLD = float(os.getenv("COMFYUI_FACE_CONFIDENCE_THRESHOLD", "0.8"))
 
-WORKFLOW_TEMPLATE = Path("/opt/runpod-comfyui/workflows") / f"{COMFYUI_WORKFLOW_IMAGE_ID}.json"
-ENTRYPOINT_SCRIPT = Path("/opt/runpod-comfyui/scripts/entrypoint.sh")
+WORKFLOW_TEMPLATE = Path("/opt/runpod-visual-serverless/workflows") / f"{COMFYUI_WORKFLOW_IMAGE_ID}.json"
+ENTRYPOINT_SCRIPT = Path("/opt/runpod-visual-serverless/scripts/entrypoint.sh")
 
 _COMFYUI_PROCESS: subprocess.Popen[str] | None = None
 

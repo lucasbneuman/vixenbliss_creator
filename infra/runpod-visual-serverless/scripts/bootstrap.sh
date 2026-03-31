@@ -23,7 +23,7 @@ if [ ! -d "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack" ]; then
   exit 1
 fi
 
-if [ ! -f "/opt/runpod-comfyui/workflows/${COMFYUI_WORKFLOW_IMAGE_ID}.json" ]; then
+if [ ! -f "/opt/runpod-visual-serverless/workflows/${COMFYUI_WORKFLOW_IMAGE_ID}.json" ]; then
   echo "ComfyUI runtime is incomplete: expected workflow ${COMFYUI_WORKFLOW_IMAGE_ID}.json was not found" >&2
   exit 1
 fi

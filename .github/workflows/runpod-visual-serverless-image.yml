@@ -1,4 +1,4 @@
-name: runpod-comfyui-image
+name: runpod-visual-serverless-image
 
 on:
   workflow_dispatch:
@@ -6,8 +6,8 @@ on:
     branches:
       - develop
     paths:
-      - ".github/workflows/runpod-comfyui-image.yml"
-      - "infra/runpod-comfyui/**"
+      - ".github/workflows/runpod-visual-serverless-image.yml"
+      - "infra/runpod-visual-serverless/**"
 
 permissions:
   contents: read
@@ -34,7 +34,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/vixenbliss-runpod-comfyui
+          images: ghcr.io/${{ github.repository_owner }}/vixenbliss-runpod-visual-serverless
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-
@@ -43,8 +43,8 @@ jobs:
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
-          context: ./infra/runpod-comfyui
-          file: ./infra/runpod-comfyui/Dockerfile
+          context: ./infra/runpod-visual-serverless
+          file: ./infra/runpod-visual-serverless/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

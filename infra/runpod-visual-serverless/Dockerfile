@@ -37,13 +37,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python-is-python3 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /tmp/runpod-comfyui-requirements.txt
+COPY requirements.txt /tmp/runpod-visual-serverless-requirements.txt
 RUN python -m pip install --upgrade pip && \
     python -m pip install --index-url https://download.pytorch.org/whl/cu118 \
       torch==2.3.1 \
       torchvision==0.18.1 \
       torchaudio==2.3.1 && \
-    python -m pip install -r /tmp/runpod-comfyui-requirements.txt
+    python -m pip install -r /tmp/runpod-visual-serverless-requirements.txt
 
 RUN git clone --depth 1 --branch "${COMFYUI_REF}" "${COMFYUI_REPO}" "${COMFYUI_HOME}" && \
     git clone --depth 1 --branch "${COMFYUI_IPADAPTER_REF}" "${COMFYUI_IPADAPTER_REPO}" "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI_IPAdapter_plus" && \
@@ -61,11 +61,11 @@ RUN python -m pip install --index-url https://download.pytorch.org/whl/cu118 \
       torchvision==0.18.1 \
       torchaudio==2.3.1
 
-COPY scripts /opt/runpod-comfyui/scripts
-COPY workflows /opt/runpod-comfyui/workflows
-COPY config /opt/runpod-comfyui/config
-COPY handler.py /opt/runpod-comfyui/handler.py
+COPY scripts /opt/runpod-visual-serverless/scripts
+COPY workflows /opt/runpod-visual-serverless/workflows
+COPY config /opt/runpod-visual-serverless/config
+COPY handler.py /opt/runpod-visual-serverless/handler.py
 
-RUN chmod +x /opt/runpod-comfyui/scripts/*.sh
+RUN chmod +x /opt/runpod-visual-serverless/scripts/*.sh
 
-ENTRYPOINT ["/usr/bin/tini", "--", "python", "/opt/runpod-comfyui/handler.py"]
+ENTRYPOINT ["/usr/bin/tini", "--", "python", "/opt/runpod-visual-serverless/handler.py"]

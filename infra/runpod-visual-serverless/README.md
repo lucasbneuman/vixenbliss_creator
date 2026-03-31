@@ -1,4 +1,4 @@
-# Runpod ComfyUI Image Runtime
+# Runpod Visual Serverless Runtime
 
 ## Objetivo
 
@@ -99,15 +99,15 @@ Esto evita fallos tipicos de cold start por `git clone` y reduce el costo de wor
 ### Build y push de imagen publica
 
 1. publicar el repo en `GitHub`
-2. ejecutar el workflow [runpod-comfyui-image.yml](/C:/Users/AVALITH/Desktop/Proyectos/vixenbliss_creator/.github/workflows/runpod-comfyui-image.yml)
-3. verificar que la imagen quede publicada en `ghcr.io/<owner>/vixenbliss-runpod-comfyui:<tag>`
+2. ejecutar el workflow [runpod-visual-serverless-image.yml](/C:/Users/AVALITH/Desktop/Proyectos/vixenbliss_creator/.github/workflows/runpod-visual-serverless-image.yml)
+3. verificar que la imagen quede publicada en `ghcr.io/<owner>/vixenbliss-runpod-visual-serverless:<tag>`
 4. usar un tag trazable por commit, preferentemente `sha-<commit>`
 
 ### Template serverless
 
 1. crear un `template` serverless nuevo en `Runpod`
-2. usar como imagen `ghcr.io/<owner>/vixenbliss-runpod-comfyui:<tag>`
-3. configurar en el template las variables de [infra/runpod-comfyui/.env.example](/C:/Users/AVALITH/Desktop/Proyectos/vixenbliss_creator/infra/runpod-comfyui/.env.example)
+2. usar como imagen `ghcr.io/<owner>/vixenbliss-runpod-visual-serverless:<tag>`
+3. configurar en el template las variables de [infra/runpod-visual-serverless/.env.example](/C:/Users/AVALITH/Desktop/Proyectos/vixenbliss_creator/infra/runpod-visual-serverless/.env.example)
 4. completar `IPADAPTER_PLUS_FACE_URL` y `CHECKPOINT_MODEL_URL` con artefactos reales
 5. definir `workersMin` y `workersMax` explicitos para evitar jobs eternamente en `IN_QUEUE`
 

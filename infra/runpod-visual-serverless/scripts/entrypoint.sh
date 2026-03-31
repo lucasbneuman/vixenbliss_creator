@@ -8,11 +8,11 @@ COMFYUI_BASE_URL="${COMFYUI_BASE_URL:-http://127.0.0.1:${COMFYUI_PORT}}"
 COMFYUI_USER_DIR="${COMFYUI_USER_DIR:-${COMFYUI_HOME}/user/default}"
 COMFYUI_WORKFLOW_IMAGE_ID="${COMFYUI_WORKFLOW_IMAGE_ID:-base-image-ipadapter-impact}"
 
-/opt/runpod-comfyui/scripts/bootstrap.sh
-/opt/runpod-comfyui/scripts/download_models.sh || true
+/opt/runpod-visual-serverless/scripts/bootstrap.sh
+/opt/runpod-visual-serverless/scripts/download_models.sh || true
 
 mkdir -p "${COMFYUI_USER_DIR}/workflows"
-cp -f "/opt/runpod-comfyui/workflows/${COMFYUI_WORKFLOW_IMAGE_ID}.json" "${COMFYUI_USER_DIR}/workflows/${COMFYUI_WORKFLOW_IMAGE_ID}.json"
+cp -f "/opt/runpod-visual-serverless/workflows/${COMFYUI_WORKFLOW_IMAGE_ID}.json" "${COMFYUI_USER_DIR}/workflows/${COMFYUI_WORKFLOW_IMAGE_ID}.json"
 
 if [ ! -f "${COMFYUI_HOME}/main.py" ]; then
   echo "ComfyUI bootstrap failed: main.py not found in ${COMFYUI_HOME}" >&2

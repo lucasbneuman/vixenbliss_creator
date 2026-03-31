@@ -146,7 +146,7 @@ El detalle tecnico y las variables nuevas viven en `docs/01-architecture/visual-
 
 ## Runtime deployable de ComfyUI
 
-El repo incluye una unidad deployable para `Runpod` en `infra/runpod-comfyui/`.
+El repo incluye una unidad deployable para `Runpod` en `infra/runpod-visual-serverless/`.
 
 - imagen productiva basada en `Docker`
 - bootstrap de `ComfyUI` con `IPAdapter Plus` e `Impact Pack`
