@@ -54,6 +54,18 @@ def test_s1_bundle_runtime_scripts_point_to_s1_paths() -> None:
     ).read_text(encoding="utf-8")
 
 
+def test_s1_bundle_dockerfile_pins_production_runtime_versions() -> None:
+    dockerfile = (BUNDLE / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04" in dockerfile
+    assert "ARG COMFYUI_REF=ebf6b52e322664af91fcdc8b8848d31d5fb98f66" in dockerfile
+    assert "ARG COMFYUI_IPADAPTER_REF=eef22b6875ddaf10f13657248b8123d6bdec2014" in dockerfile
+    assert "ARG COMFYUI_IMPACT_REF=6a517ebe06fea2b74fc41b3bd089c0d7173eeced" in dockerfile
+    assert "ARG TORCH_VERSION=2.6.0" in dockerfile
+    assert "ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124" in dockerfile
+    assert "COMFYUI_REF=master" not in dockerfile
+
+
 def test_s1_bundle_download_script_prefers_runpod_network_volume() -> None:
     script = (BUNDLE / "scripts" / "download_models.sh").read_text(encoding="utf-8")
 
