@@ -164,6 +164,14 @@ El worker primero intenta enlazar/copiar desde el volumen y solo si faltan archi
 
 Este volumen puede usarse como storage transitorio de modelos de IA para `S1 image`. No es el storage principal recomendado para dataset ni artifacts de negocio.
 
+### Carga inicial del volumen
+
+Para poblar el volumen sin pasar por tu maquina local, usar el pod temporal definido en:
+
+- `infra/runpod-s1-model-loader`
+
+Ese pod descarga los modelos desde `Hugging Face` y los deja en el layout esperado dentro de `/runpod-volume/models/...`.
+
 ## Endpoint serverless
 
 1. Crear un endpoint `Queue based Serverless` especifico para `S1 image`.
