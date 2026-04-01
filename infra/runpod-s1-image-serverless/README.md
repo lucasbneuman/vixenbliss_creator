@@ -24,6 +24,20 @@ Esta carpeta define el worker serverless de `S1 image` para `DEV-8`: generacion 
 - handler serverless compatible con `Runpod /run`
 - fail-fast para `REFERENCE_IMAGE_NOT_FOUND`, `FACE_CONFIDENCE_UNAVAILABLE`, `RESUME_STATE_INCOMPLETE` y `COMFYUI_EXECUTION_FAILED`
 
+## Baseline productivo del contenedor
+
+Para evitar drift entre `ComfyUI master` y una version vieja de `torch`, este bundle queda fijado a refs reproducibles:
+
+- `ComfyUI`: release `v0.18.1` (`ebf6b52e322664af91fcdc8b8848d31d5fb98f66`)
+- `ComfyUI-IPAdapter-Flux`: `eef22b6875ddaf10f13657248b8123d6bdec2014`
+- `ComfyUI-Impact-Pack`: `6a517ebe06fea2b74fc41b3bd089c0d7173eeced`
+- `torch`: `2.6.0`
+- `torchvision`: `0.21.0`
+- `torchaudio`: `2.6.0`
+- `PyTorch` index: `cu124`
+
+La intencion es que cada rebuild produzca el mismo runtime. Si se decide mover alguna de estas versiones, debe tratarse como cambio deliberado de plataforma y validarse de nuevo en Runpod.
+
 ## Contrato FLUX del runtime
 
 El bootstrap del worker requiere estos assets reales en storage accesible por el contenedor:
@@ -98,6 +112,7 @@ Esto evita ambiguedad entre el nombre de negocio/documentacion y el archivo real
 2. Ejecutar [runpod-s1-image-serverless-image.yml](/C:/Users/AVALITH/Desktop/Proyectos/vixenbliss_creator/.github/workflows/runpod-s1-image-serverless-image.yml).
 3. Verificar que la imagen quede publicada en `ghcr.io/<owner>/vixenbliss-runpod-s1-image-serverless:<tag>`.
 4. Usar un tag trazable por commit, preferentemente `sha-<commit>`.
+5. Si el endpoint ya existe, redeployar el template para que tome la nueva imagen antes de repetir el `healthcheck`.
 
 ## Template serverless en Runpod
 
@@ -178,6 +193,7 @@ Ese pod descarga los modelos desde `Hugging Face` y los deja en el layout espera
 2. Definir `workersMin` y `workersMax` explicitos para evitar jobs eternamente en `IN_QUEUE`.
 3. Registrar la URL real en `RUNPOD_ENDPOINT_IMAGE_IDENTITY`.
 4. Validar por logs que el worker arranca via `handler.py` y no via `main.py`.
+5. Configurar `container disk` en `20 GB` minimo, preferentemente `30 GB`, para evitar fallos por espacio temporal en startup y ejecucion de `ComfyUI`.
 
 ## Smoke test
 
