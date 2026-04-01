@@ -28,6 +28,8 @@ def load_handler_module(tmp_path: Path, monkeypatch) -> types.ModuleType:
     monkeypatch.setenv("COMFYUI_USER_DIR", str(comfy_home / "user" / "default"))
     monkeypatch.setenv("COMFYUI_INPUT_DIR", str(comfy_home / "input"))
     monkeypatch.setenv("COMFYUI_WORKFLOW_IDENTITY_ID", "base-image-ipadapter-impact")
+    monkeypatch.setenv("RUNPOD_VOLUME_PATH", str(tmp_path / "runpod-volume"))
+    monkeypatch.setenv("RUNPOD_MODELS_ROOT", str(tmp_path / "runpod-volume" / "models"))
     monkeypatch.setitem(
         sys.modules,
         "runpod",
@@ -113,3 +115,4 @@ def test_s1_handler_healthcheck_reports_identity_runtime_contract(tmp_path: Path
     assert payload["runtime_contract"]["runtime_stage"] == "identity_image"
     assert payload["runtime_contract"]["workflow_scope"] == "s1_image"
     assert payload["runtime_contract"]["lora_supported"] is False
+    assert payload["runtime_contract"]["runpod_volume_models_root"].endswith("runpod-volume\\models")

@@ -41,6 +41,8 @@ COMFYUI_IP_ADAPTER_CLIP_VISION_MODEL = os.getenv(
     "google/siglip-so400m-patch14-384",
 )
 COMFYUI_FACE_CONFIDENCE_THRESHOLD = float(os.getenv("COMFYUI_FACE_CONFIDENCE_THRESHOLD", "0.8"))
+RUNPOD_VOLUME_PATH = Path(os.getenv("RUNPOD_VOLUME_PATH", "/runpod-volume"))
+RUNPOD_MODELS_ROOT = Path(os.getenv("RUNPOD_MODELS_ROOT", str(RUNPOD_VOLUME_PATH / "models")))
 
 WORKFLOW_TEMPLATE = Path("/opt/runpod-s1-image-serverless/workflows") / f"{COMFYUI_WORKFLOW_IMAGE_ID}.json"
 ENTRYPOINT_SCRIPT = Path("/opt/runpod-s1-image-serverless/scripts/entrypoint.sh")
@@ -139,14 +141,37 @@ def _required_runtime_paths(job_input: dict | None = None) -> dict[str, Path]:
     }
 
 
+def _volume_runtime_paths(job_input: dict | None = None) -> dict[str, Path]:
+    job_input = job_input or {}
+    return {
+        "flux_diffusion_model": RUNPOD_MODELS_ROOT
+        / "diffusion_models"
+        / str(job_input.get("flux_diffusion_model_name", COMFYUI_FLUX_DIFFUSION_MODEL_NAME)),
+        "flux_ae": RUNPOD_MODELS_ROOT / "vae" / str(job_input.get("flux_ae_name", COMFYUI_FLUX_AE_NAME)),
+        "flux_clip_l": RUNPOD_MODELS_ROOT
+        / "text_encoders"
+        / str(job_input.get("flux_clip_l_name", COMFYUI_FLUX_CLIP_L_NAME)),
+        "flux_t5xxl": RUNPOD_MODELS_ROOT
+        / "text_encoders"
+        / str(job_input.get("flux_t5xxl_name", COMFYUI_FLUX_T5XXL_NAME)),
+        "ip_adapter_flux": RUNPOD_MODELS_ROOT / "ipadapter-flux" / "flux-ipadapter-face.safetensors",
+    }
+
+
 def _runtime_checks(job_input: dict | None = None) -> dict[str, bool]:
     paths = _required_runtime_paths(job_input)
+    volume_paths = _volume_runtime_paths(job_input)
     return {
         "flux_diffusion_model_present": paths["flux_diffusion_model"].exists(),
         "flux_ae_present": paths["flux_ae"].exists(),
         "flux_clip_l_present": paths["flux_clip_l"].exists(),
         "flux_t5xxl_present": paths["flux_t5xxl"].exists(),
         "ip_adapter_present": paths["ip_adapter_flux"].exists(),
+        "volume_flux_diffusion_model_present": volume_paths["flux_diffusion_model"].exists(),
+        "volume_flux_ae_present": volume_paths["flux_ae"].exists(),
+        "volume_flux_clip_l_present": volume_paths["flux_clip_l"].exists(),
+        "volume_flux_t5xxl_present": volume_paths["flux_t5xxl"].exists(),
+        "volume_ip_adapter_present": volume_paths["ip_adapter_flux"].exists(),
         "workflow_baked": WORKFLOW_TEMPLATE.exists(),
         "clip_vision_cache_present": (COMFYUI_MODELS_DIR / "clip_vision" / "google").exists()
         or (COMFYUI_MODELS_DIR / "clip_vision" / "siglip-so400m-patch14-384").exists(),
@@ -472,6 +497,7 @@ def handler(job: dict) -> dict:
                     "supabase_required": False,
                     "reference_face_image_url_required": True,
                     "lora_supported": False,
+                    "runpod_volume_models_root": str(RUNPOD_MODELS_ROOT),
                 },
             }
         if action != "generate":

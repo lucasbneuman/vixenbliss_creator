@@ -36,6 +36,8 @@ def test_s1_bundle_env_example_uses_identity_endpoint_and_plus_face_alias() -> N
     assert "RUNPOD_ENDPOINT_VIDEO_GEN" not in env_example
     assert "COMFYUI_WORKFLOW_IDENTITY_ID=base-image-ipadapter-impact" in env_example
     assert "COMFYUI_IP_ADAPTER_MODEL=plus_face" in env_example
+    assert "RUNPOD_MODELS_ROOT=/runpod-volume/models" in env_example
+    assert "RUNPOD_FLUX_DIFFUSION_MODEL_PATH=/runpod-volume/models/diffusion_models/flux1-schnell.safetensors" in env_example
 
 
 def test_s1_bundle_runtime_scripts_point_to_s1_paths() -> None:
@@ -50,6 +52,14 @@ def test_s1_bundle_runtime_scripts_point_to_s1_paths() -> None:
     assert "vixenbliss-runpod-s1-image-serverless" in (
         ROOT / ".github" / "workflows" / "runpod-s1-image-serverless-image.yml"
     ).read_text(encoding="utf-8")
+
+
+def test_s1_bundle_download_script_prefers_runpod_network_volume() -> None:
+    script = (BUNDLE / "scripts" / "download_models.sh").read_text(encoding="utf-8")
+
+    assert 'RUNPOD_MODELS_ROOT="${RUNPOD_MODELS_ROOT:-${RUNPOD_VOLUME_PATH}/models}"' in script
+    assert "link_or_copy_from_volume" in script
+    assert "RUNPOD_FLUX_DIFFUSION_MODEL_PATH" in script
 
 
 def test_s1_bundle_workflow_keeps_dev8_nodes() -> None:
