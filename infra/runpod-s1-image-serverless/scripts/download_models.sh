@@ -7,19 +7,40 @@ COMFYUI_FLUX_AE_NAME="${COMFYUI_FLUX_AE_NAME:-ae.safetensors}"
 COMFYUI_FLUX_CLIP_L_NAME="${COMFYUI_FLUX_CLIP_L_NAME:-clip_l.safetensors}"
 COMFYUI_FLUX_T5XXL_NAME="${COMFYUI_FLUX_T5XXL_NAME:-t5xxl_fp8_e4m3fn.safetensors}"
 COMFYUI_IP_ADAPTER_MODEL="${COMFYUI_IP_ADAPTER_MODEL:-flux-ipadapter-face.safetensors}"
+RUNPOD_VOLUME_PATH="${RUNPOD_VOLUME_PATH:-/runpod-volume}"
+RUNPOD_MODELS_ROOT="${RUNPOD_MODELS_ROOT:-${RUNPOD_VOLUME_PATH}/models}"
+RUNPOD_FLUX_DIFFUSION_MODEL_PATH="${RUNPOD_FLUX_DIFFUSION_MODEL_PATH:-${RUNPOD_MODELS_ROOT}/diffusion_models/${COMFYUI_FLUX_DIFFUSION_MODEL_NAME}}"
+RUNPOD_FLUX_AE_PATH="${RUNPOD_FLUX_AE_PATH:-${RUNPOD_MODELS_ROOT}/vae/${COMFYUI_FLUX_AE_NAME}}"
+RUNPOD_FLUX_CLIP_L_PATH="${RUNPOD_FLUX_CLIP_L_PATH:-${RUNPOD_MODELS_ROOT}/text_encoders/${COMFYUI_FLUX_CLIP_L_NAME}}"
+RUNPOD_FLUX_T5XXL_PATH="${RUNPOD_FLUX_T5XXL_PATH:-${RUNPOD_MODELS_ROOT}/text_encoders/${COMFYUI_FLUX_T5XXL_NAME}}"
+RUNPOD_IPADAPTER_FLUX_PATH="${RUNPOD_IPADAPTER_FLUX_PATH:-${RUNPOD_MODELS_ROOT}/ipadapter-flux/flux-ipadapter-face.safetensors}"
 
 mkdir -p "${COMFYUI_MODELS_DIR}/diffusion_models" \
          "${COMFYUI_MODELS_DIR}/text_encoders" \
          "${COMFYUI_MODELS_DIR}/vae" \
          "${COMFYUI_MODELS_DIR}/ipadapter-flux"
 
+link_or_copy_from_volume() {
+  local source="$1"
+  local target="$2"
+  if [ -f "${source}" ] && [ ! -f "${target}" ]; then
+    ln -sf "${source}" "${target}" || cp -f "${source}" "${target}"
+  fi
+}
+
 download_if_present() {
   local url="$1"
   local target="$2"
-  if [ -n "${url}" ] && [ "${url}" != "CHANGEME" ]; then
+  if [ -n "${url}" ] && [ "${url}" != "CHANGEME" ] && [ ! -f "${target}" ]; then
     curl -L --fail --retry 3 -o "${target}" "${url}"
   fi
 }
+
+link_or_copy_from_volume "${RUNPOD_FLUX_DIFFUSION_MODEL_PATH}" "${COMFYUI_MODELS_DIR}/diffusion_models/${COMFYUI_FLUX_DIFFUSION_MODEL_NAME}"
+link_or_copy_from_volume "${RUNPOD_FLUX_AE_PATH}" "${COMFYUI_MODELS_DIR}/vae/${COMFYUI_FLUX_AE_NAME}"
+link_or_copy_from_volume "${RUNPOD_FLUX_CLIP_L_PATH}" "${COMFYUI_MODELS_DIR}/text_encoders/${COMFYUI_FLUX_CLIP_L_NAME}"
+link_or_copy_from_volume "${RUNPOD_FLUX_T5XXL_PATH}" "${COMFYUI_MODELS_DIR}/text_encoders/${COMFYUI_FLUX_T5XXL_NAME}"
+link_or_copy_from_volume "${RUNPOD_IPADAPTER_FLUX_PATH}" "${COMFYUI_MODELS_DIR}/ipadapter-flux/${COMFYUI_IP_ADAPTER_MODEL}"
 
 download_if_present "${FLUX_DIFFUSION_MODEL_URL:-}" "${COMFYUI_MODELS_DIR}/diffusion_models/${COMFYUI_FLUX_DIFFUSION_MODEL_NAME}"
 download_if_present "${FLUX_AE_URL:-}" "${COMFYUI_MODELS_DIR}/vae/${COMFYUI_FLUX_AE_NAME}"

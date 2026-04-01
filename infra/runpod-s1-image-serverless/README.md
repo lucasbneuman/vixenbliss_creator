@@ -34,7 +34,7 @@ El bootstrap del worker requiere estos assets reales en storage accesible por el
 - `FLUX_T5XXL_URL` -> `models/text_encoders/t5xxl_fp8_e4m3fn.safetensors`
 - `IPADAPTER_FLUX_URL` -> `models/ipadapter-flux/flux-ipadapter-face.safetensors`
 
-`Supabase` no es requisito para levantar este worker. Los assets gated de `FLUX.1-schnell` deben espejarse primero a storage propio.
+`Supabase` no es requisito para levantar este worker. La opcion preferida para destrabar el deploy es montar un `Runpod Network Volume` y guardar ahi los modelos. Los assets gated de `FLUX.1-schnell` tambien pueden espejarse a storage propio como fallback.
 
 ## Variables importantes
 
@@ -56,6 +56,8 @@ El bootstrap del worker requiere estos assets reales en storage accesible por el
 - `COMFYUI_MODELS_DIR`
 - `COMFYUI_USER_DIR`
 - `COMFYUI_INPUT_DIR`
+- `RUNPOD_VOLUME_PATH`
+- `RUNPOD_MODELS_ROOT`
 
 ### Contrato S1 image
 
@@ -72,6 +74,14 @@ El bootstrap del worker requiere estos assets reales en storage accesible por el
 - `COMFYUI_FLUX_CLIP_L_NAME`
 - `COMFYUI_FLUX_T5XXL_NAME`
 - `COMFYUI_FLUX_UNET_WEIGHT_DTYPE`
+
+### Paths preferidos en `Runpod Network Volume`
+
+- `RUNPOD_FLUX_DIFFUSION_MODEL_PATH`
+- `RUNPOD_FLUX_AE_PATH`
+- `RUNPOD_FLUX_CLIP_L_PATH`
+- `RUNPOD_FLUX_T5XXL_PATH`
+- `RUNPOD_IPADAPTER_FLUX_PATH`
 
 ## Nota sobre `plus_face`
 
@@ -109,6 +119,8 @@ COMFYUI_CUSTOM_NODES_DIR=/opt/comfyui/custom_nodes
 COMFYUI_MODELS_DIR=/opt/comfyui/models
 COMFYUI_USER_DIR=/opt/comfyui/user/default
 COMFYUI_INPUT_DIR=/opt/comfyui/input
+RUNPOD_VOLUME_PATH=/runpod-volume
+RUNPOD_MODELS_ROOT=/runpod-volume/models
 
 COMFYUI_WORKFLOW_IDENTITY_ID=base-image-ipadapter-impact
 COMFYUI_WORKFLOW_IDENTITY_VERSION=2026-03-31
@@ -116,12 +128,41 @@ COMFYUI_IP_ADAPTER_MODEL=plus_face
 COMFYUI_IP_ADAPTER_CLIP_VISION_MODEL=google/siglip-so400m-patch14-384
 COMFYUI_FACE_CONFIDENCE_THRESHOLD=0.8
 
-FLUX_DIFFUSION_MODEL_URL=<url real espejada>
-FLUX_AE_URL=<url real espejada>
-FLUX_CLIP_L_URL=<url real espejada>
-FLUX_T5XXL_URL=<url real espejada>
-IPADAPTER_FLUX_URL=<url real espejada>
+RUNPOD_FLUX_DIFFUSION_MODEL_PATH=/runpod-volume/models/diffusion_models/flux1-schnell.safetensors
+RUNPOD_FLUX_AE_PATH=/runpod-volume/models/vae/ae.safetensors
+RUNPOD_FLUX_CLIP_L_PATH=/runpod-volume/models/text_encoders/clip_l.safetensors
+RUNPOD_FLUX_T5XXL_PATH=/runpod-volume/models/text_encoders/t5xxl_fp8_e4m3fn.safetensors
+RUNPOD_IPADAPTER_FLUX_PATH=/runpod-volume/models/ipadapter-flux/flux-ipadapter-face.safetensors
+
+FLUX_DIFFUSION_MODEL_URL=CHANGEME
+FLUX_AE_URL=CHANGEME
+FLUX_CLIP_L_URL=CHANGEME
+FLUX_T5XXL_URL=CHANGEME
+IPADAPTER_FLUX_URL=CHANGEME
 ```
+
+### Layout del volumen
+
+Dentro del `Network Volume` monta estos archivos:
+
+```text
+/runpod-volume/models/diffusion_models/flux1-schnell.safetensors
+/runpod-volume/models/vae/ae.safetensors
+/runpod-volume/models/text_encoders/clip_l.safetensors
+/runpod-volume/models/text_encoders/t5xxl_fp8_e4m3fn.safetensors
+/runpod-volume/models/ipadapter-flux/flux-ipadapter-face.safetensors
+```
+
+El worker primero intenta enlazar/copiar desde el volumen y solo si faltan archivos cae al bootstrap por URL.
+
+### Volume creado para destrabar `DEV-8`
+
+- `Volume ID`: `kl6ru4hrmh`
+- `Bucket name`: `kl6ru4hrmh`
+- `Endpoint URL`: `https://s3api-us-ga-2.runpod.io`
+- `Data center`: `US-GA-2`
+
+Este volumen puede usarse como storage transitorio de modelos de IA para `S1 image`. No es el storage principal recomendado para dataset ni artifacts de negocio.
 
 ## Endpoint serverless
 
