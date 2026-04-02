@@ -19,7 +19,7 @@ jobs:
           required=(
             "AGENTS.md"
             "README.md"
-            ".env.example"
+            "env.example"
             "docs/00-product/vision.md"
             "docs/01-architecture/technical-base.md"
             "docs/01-architecture/operational-architecture.md"
@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -q "CHANGEME" .env.example || { echo ".env.example must contain CHANGEME placeholders"; exit 1; }
+          grep -q "CHANGEME" env.example || { echo "env.example must contain CHANGEME placeholders"; exit 1; }
           grep -q '"mcpServers"' templates/agent-tooling/mcp.servers.example.json || { echo "Missing mcpServers key"; exit 1; }
           grep -q 'skills:' templates/agent-tooling/skills.manifest.example.yaml || { echo "Missing skills manifest"; exit 1; }
 
