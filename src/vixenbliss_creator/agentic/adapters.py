@@ -41,7 +41,8 @@ class OpenAICompatibleLLMClient:
         critique_lines = [f"{issue.code}: {issue.message}" for issue in critique_history] or ["none"]
         instructions = (
             "Return only valid JSON for ExpansionResult. "
-            "The technical_sheet_payload must satisfy the TechnicalSheet contract exactly."
+            "Normalize explicit constraints, complete the missing identity profile fields with traceability, "
+            "and ensure the technical_sheet_payload satisfies the TechnicalSheet contract exactly."
         )
         payload = {
             "model": self.settings.llm_serverless_model,

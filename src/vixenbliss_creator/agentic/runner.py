@@ -4,27 +4,127 @@ import argparse
 import json
 from datetime import datetime, timezone
 
-from vixenbliss_creator.contracts.identity import TechnicalSheet
-
 from .adapters import FakeCopilotClient, FakeLLMClient
 from .config import AgenticSettings
 from .graph import build_agentic_brain
 from .models import CopilotRecommendation, GraphState
+from vixenbliss_creator.contracts.identity import (
+    ArchetypeCode,
+    CommunicationStyleProfile,
+    CreationCategory,
+    FieldTrace,
+    IdentityMetadata,
+    IdentityStyle,
+    JealousyPlayLevel,
+    MessageLength,
+    NarrativeMinimalProfile,
+    PersonalityAxes,
+    ResponseEnergy,
+    SocialBehaviorProfile,
+    SpeechStyle,
+    TechnicalSheet,
+)
 
 
-def _build_demo_technical_sheet(settings: AgenticSettings, idea: str) -> TechnicalSheet:
+def _scenario_from_idea(idea: str) -> dict[str, object]:
+    normalized = idea.lower()
+    lifestyle = "lifestyle" in normalized
+    premium = "premium" in normalized
+    dominant = "dominant queen" in normalized or "dominante" in normalized
+    sarcastic = "sarc" in normalized
+    casual = "casual" in normalized
+    choose_category = "categoría" in normalized or "categoria" in normalized
+    choose_style = "estilo" in normalized
+
+    style = IdentityStyle.PREMIUM if premium or lifestyle else IdentityStyle.GLAM
+    vertical = "lifestyle" if lifestyle else "adult_entertainment"
+    category = CreationCategory.LIFESTYLE_PREMIUM if lifestyle else CreationCategory.ADULT_CREATOR
+    archetype = ArchetypeCode.DOMINANT_QUEEN if dominant else (ArchetypeCode.LUXURY_MUSE if lifestyle else ArchetypeCode.PLAYFUL_TEASE)
+    speech_style = SpeechStyle.CASUAL if casual else (SpeechStyle.REFINED if lifestyle else SpeechStyle.GLAM)
+    sarcasm = "high" if sarcastic else "medium"
+    fan_relationship = "aspirational_muse" if lifestyle else "curated_distance"
+    manual_fields = []
+    if lifestyle:
+        manual_fields.append("metadata.vertical")
+    if premium:
+        manual_fields.append("metadata.style")
+    if choose_category:
+        manual_fields.append("metadata.category")
+    if choose_style and "metadata.style" not in manual_fields:
+        manual_fields.append("metadata.style")
+    if dominant:
+        manual_fields.append("archetype")
+    if casual:
+        manual_fields.append("communication_style.speech_style")
+    if sarcastic:
+        manual_fields.append("personality_axes.sarcasm")
+
+    return {
+        "metadata": {
+            "avatar_id": "avatar_velvet_ember",
+            "category": category.value,
+            "vertical": vertical,
+            "style": style.value,
+            "occupation_or_content_basis": "luxury lifestyle creator" if lifestyle else "premium digital performer",
+        },
+        "name": "Velvet Ember",
+        "archetype": archetype.value,
+        "personality_axes": {
+            "dominance": "medium" if lifestyle else "high",
+            "warmth": "high",
+            "playfulness": "medium" if lifestyle else "high",
+            "mystery": "high",
+            "flirtiness": "high",
+            "intelligence": "high" if lifestyle else "medium",
+            "sarcasm": sarcasm,
+        },
+        "communication_style": {
+            "speech_style": speech_style.value,
+            "message_length": "medium",
+            "emoji_usage": "moderate",
+            "emoji_style": "sparkles",
+            "punctuation_style": "polished" if lifestyle else "expressive",
+        },
+        "social_behavior": {
+            "fan_relationship_style": fan_relationship,
+            "attention_strategy": "balanced" if lifestyle else "exclusive",
+            "response_energy": "medium" if lifestyle else "high",
+            "jealousy_play": "light",
+        },
+        "narrative_minimal": {
+            "origin": "Construyo una identidad digital premium pensada para escena, consistencia y fantasia aspiracional.",
+            "interests": ["fashion", "hospitality"] if lifestyle else ["fashion", "nightlife"],
+            "daily_life": "Alterna sesiones de contenido curado, rituales esteticos y presencia social controlada.",
+            "motivation": "Convertir una presencia digital consistente en una marca memorable y rentable.",
+            "relationship_with_fans": "Se acerca con calidez medida y mantiene una sensacion de exclusividad controlada.",
+        },
+        "manual_fields": manual_fields,
+        "inferred_fields": [
+            field_path
+            for field_path in (
+                "metadata.category",
+                "metadata.occupation_or_content_basis",
+                "social_behavior.fan_relationship_style",
+                "narrative_minimal.relationship_with_fans",
+            )
+            if field_path not in manual_fields
+        ],
+    }
+
+
+def _build_demo_technical_sheet(settings: AgenticSettings, scenario: dict[str, object]) -> TechnicalSheet:
     timestamp = datetime(2026, 3, 30, 15, 0, tzinfo=timezone.utc).isoformat()
-    alias_hint = idea.lower().replace(" ", "_")[:18] or "synthetic_muse"
     return TechnicalSheet.model_validate(
         {
             "schema_version": "1.0.0",
+            "identity_metadata": scenario["metadata"],
             "identity_core": {
-                "display_name": "Velvet Ember",
+                "display_name": scenario["name"],
                 "fictional_age_years": 25,
                 "locale": "es-AR",
                 "primary_language": "spanish",
                 "secondary_languages": ["english"],
-                "tagline": f"Identidad premium derivada de {alias_hint} con foco visual coherente.",
+                "tagline": "Identidad premium con personalidad consistente, narrativa minima y sesgo comercial claro.",
             },
             "visual_profile": {
                 "archetype": "editorial nocturna",
@@ -39,25 +139,23 @@ def _build_demo_technical_sheet(settings: AgenticSettings, idea: str) -> Technic
                 "visual_never_do": ["cartoon_style"],
             },
             "personality_profile": {
-                "voice_tone": "seductive",
+                "archetype": scenario["archetype"],
+                "voice_tone": "authoritative" if scenario["metadata"]["vertical"] == "lifestyle" else "seductive",
                 "primary_traits": ["confident", "observant"],
                 "secondary_traits": ["warm", "strategic"],
-                "interaction_style": "Mantiene un tono directo, premium y consistente con la escena.",
-                "axes": {
-                    "formality": "medium",
-                    "warmth": "high",
-                    "dominance": "medium",
-                    "provocation": "high",
-                    "accessibility": "medium",
-                },
+                "interaction_style": "Mantiene una presencia clara, premium y alineada con la vertical comercial elegida.",
+                "axes": scenario["personality_axes"],
+                "communication_style": scenario["communication_style"],
+                "social_behavior": scenario["social_behavior"],
             },
             "narrative_profile": {
-                "archetype_summary": "Performer digital premium construida para escenas editoriales y hooks conversacionales claros.",
-                "origin_story": "Nace como una identidad sintética optimizada para glamour nocturno, consistencia visual y monetización escalable.",
+                "archetype_summary": "Performer digital premium construida para sostener una voz clara y una identidad comercial consistente.",
+                "origin_story": "Nace como una identidad sintetica preparada para estilo, coherencia y monetizacion escalable.",
                 "motivations": ["grow_premium_audience", "protect_brand_consistency"],
-                "interests": ["fashion", "nightlife"],
-                "audience_role": "fantasy_guide",
+                "interests": scenario["narrative_minimal"]["interests"],
+                "audience_role": "aspirational" if scenario["metadata"]["vertical"] == "lifestyle" else "fantasy_guide",
                 "conversational_hooks": ["after_hours_stories", "style_breakdowns"],
+                "minimal_viable_profile": scenario["narrative_minimal"],
             },
             "operational_limits": {
                 "allowed_content_modes": ["sfw", "sensual", "nsfw"],
@@ -80,9 +178,9 @@ def _build_demo_technical_sheet(settings: AgenticSettings, idea: str) -> Technic
                 "escalation_triggers": ["unsafe_request", "identity_drift"],
             },
             "system5_slots": {
-                "persona_summary": "Figura segura, elegante y provocadora con memoria de preferencias y tono premium.",
+                "persona_summary": "Figura segura, elegante y trazable, preparada para consumo por sistemas posteriores.",
                 "greeting_style": "Abre con curiosidad segura y una invitacion breve.",
-                "reply_style_keywords": ["flirty", "direct"],
+                "reply_style_keywords": ["flirty", "direct", "premium"],
                 "memory_tags": ["style_preferences", "favorite_scenarios"],
                 "prohibited_topics": ["illegal_content", "real_world_personal_data"],
                 "upsell_style": "Escala desde complicidad ligera hacia premium sin romper personaje.",
@@ -93,20 +191,68 @@ def _build_demo_technical_sheet(settings: AgenticSettings, idea: str) -> Technic
                 "contract_owner": settings.contract_owner,
                 "future_systems_ready": ["system_2", "system_5"],
                 "last_reviewed_at": timestamp,
+                "field_traces": [
+                    {
+                        "field_path": field_path,
+                        "origin": "manual" if field_path in scenario["manual_fields"] else "inferred",
+                        "source_text": "runner_demo",
+                        "confidence": 1.0,
+                        "rationale": "Runner determinista para evidencia minima.",
+                    }
+                    for field_path in [*scenario["manual_fields"], *scenario["inferred_fields"]]
+                ],
             },
         }
     )
 
 
+def _build_demo_expansion_payload(settings: AgenticSettings, idea: str) -> dict:
+    scenario = _scenario_from_idea(idea)
+    technical_sheet = _build_demo_technical_sheet(settings, scenario)
+    all_traces = technical_sheet.traceability.field_traces
+    return {
+        "expansion_summary": f"Identity expansion completed for scenario derived from: {idea}",
+        "prompt_blueprint": "Structured identity blueprint optimized for constraints, coherence, technical translation and safe operational limits.",
+        "assumptions": ["default_demo_runner", "system1_personality_mode"],
+        "normalized_constraints": {
+            "category": technical_sheet.identity_metadata.category,
+            "vertical": technical_sheet.identity_metadata.vertical,
+            "style": technical_sheet.identity_metadata.style,
+            "occupation_or_content_basis": technical_sheet.identity_metadata.occupation_or_content_basis,
+            "archetype": technical_sheet.personality_profile.archetype,
+            "speech_style": technical_sheet.personality_profile.communication_style.speech_style,
+            "voice_tone": technical_sheet.personality_profile.voice_tone,
+            "explicitly_defined_fields": scenario["manual_fields"],
+            "source_excerpt": idea,
+        },
+        "identity_draft": {
+            "metadata": technical_sheet.identity_metadata.model_dump(mode="json"),
+            "name": technical_sheet.identity_core.display_name,
+            "archetype": technical_sheet.personality_profile.archetype,
+            "personality_axes": technical_sheet.personality_profile.axes.model_dump(mode="json"),
+            "communication_style": technical_sheet.personality_profile.communication_style.model_dump(mode="json"),
+            "social_behavior": technical_sheet.personality_profile.social_behavior.model_dump(mode="json"),
+            "narrative_minimal": technical_sheet.narrative_profile.minimal_viable_profile.model_dump(mode="json"),
+            "field_traces": [trace.model_dump(mode="json") for trace in all_traces],
+        },
+        "completion_report": {
+            "manually_defined_fields": scenario["manual_fields"],
+            "inferred_fields": scenario["inferred_fields"],
+            "missing_fields": [],
+        },
+        "technical_sheet_payload": technical_sheet.model_dump(mode="json"),
+    }
+
+
 def _build_demo_recommendation() -> CopilotRecommendation:
     return CopilotRecommendation.model_validate(
         {
-            "workflow_id": "copilot-editorial-v1",
+            "workflow_id": "copilot-editorial-v2",
             "base_model_id": "flux-schnell-v1",
             "node_ids": ["load_model", "ip_adapter_plus", "ksampler", "vae_decode"],
-            "prompt_template": "Editorial nightlife portrait, premium lighting, identity-consistent facial features.",
+            "prompt_template": "Editorial portrait aligned with identity metadata, archetype and communication style.",
             "negative_prompt": "low quality, anatomy drift, minors, body horror, extra limbs",
-            "rationale": "Workflow preparado para glamour nocturno con control de identidad y sampler consumible.",
+            "rationale": "Workflow preparado para mantener consistencia visual y tono comercial del avatar.",
             "content_modes_supported": ["sfw", "sensual", "nsfw"],
         }
     )
@@ -114,14 +260,8 @@ def _build_demo_recommendation() -> CopilotRecommendation:
 
 def run_agentic_brain(idea: str, settings: AgenticSettings | None = None) -> GraphState:
     settings = settings or AgenticSettings.from_env()
-    technical_sheet = _build_demo_technical_sheet(settings, idea)
     llm = FakeLLMClient(
-        factory=lambda current_idea, critique_history, attempt_count: {
-            "expansion_summary": f"Expansion attempt {attempt_count} for: {current_idea}",
-            "prompt_blueprint": "Identity blueprint optimized for visual consistency, emotional hooks and safe operational limits.",
-            "assumptions": ["default_demo_runner"],
-            "technical_sheet_payload": technical_sheet.model_dump(mode="json"),
-        }
+        factory=lambda current_idea, critique_history, attempt_count: _build_demo_expansion_payload(settings, current_idea)
     )
     copilot = FakeCopilotClient(sequence=[_build_demo_recommendation()])
     brain = build_agentic_brain(settings=settings, llm_client=llm, copilot_client=copilot)
