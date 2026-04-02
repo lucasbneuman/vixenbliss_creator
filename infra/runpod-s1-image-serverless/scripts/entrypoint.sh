@@ -9,7 +9,7 @@ COMFYUI_USER_DIR="${COMFYUI_USER_DIR:-${COMFYUI_HOME}/user/default}"
 COMFYUI_WORKFLOW_IMAGE_ID="${COMFYUI_WORKFLOW_IDENTITY_ID:-${COMFYUI_WORKFLOW_IMAGE_ID:-base-image-ipadapter-impact}}"
 
 /opt/runpod-s1-image-serverless/scripts/bootstrap.sh
-/opt/runpod-s1-image-serverless/scripts/download_models.sh || true
+/opt/runpod-s1-image-serverless/scripts/download_models.sh
 
 mkdir -p "${COMFYUI_USER_DIR}/workflows"
 cp -f "/opt/runpod-s1-image-serverless/workflows/${COMFYUI_WORKFLOW_IMAGE_ID}.json" "${COMFYUI_USER_DIR}/workflows/${COMFYUI_WORKFLOW_IMAGE_ID}.json"
