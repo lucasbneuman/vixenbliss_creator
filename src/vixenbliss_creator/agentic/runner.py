@@ -4,7 +4,7 @@ import argparse
 import json
 from datetime import datetime, timezone
 
-from .adapters import FakeCopilotClient, FakeLLMClient
+from .adapters import FakeCopilotClient, FakeLLMClient, OpenAICompatibleLLMClient
 from .config import AgenticSettings
 from .graph import build_agentic_brain
 from .models import CopilotRecommendation, GraphState
@@ -269,12 +269,26 @@ def run_agentic_brain(idea: str, settings: AgenticSettings | None = None) -> Gra
     return brain.invoke(seed_state)
 
 
+def run_agentic_brain_with_real_llm(idea: str, settings: AgenticSettings | None = None) -> GraphState:
+    settings = settings or AgenticSettings.from_env()
+    llm = OpenAICompatibleLLMClient(settings)
+    copilot = FakeCopilotClient(sequence=[_build_demo_recommendation()])
+    brain = build_agentic_brain(settings=settings, llm_client=llm, copilot_client=copilot)
+    seed_state = GraphState(input_idea=idea, max_attempts=settings.max_attempts)
+    return brain.invoke(seed_state)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the VixenBliss agentic brain demo.")
     parser.add_argument("--idea", required=True, help="Natural-language idea to transform into GraphState.")
+    parser.add_argument(
+        "--real-llm",
+        action="store_true",
+        help="Use the real OpenAI-compatible/OpenAI LLM adapter and keep Copilot deterministic.",
+    )
     args = parser.parse_args()
 
-    result = run_agentic_brain(args.idea)
+    result = run_agentic_brain_with_real_llm(args.idea) if args.real_llm else run_agentic_brain(args.idea)
     print(json.dumps(result.model_dump(mode="json"), indent=2))
     return 0
 

@@ -488,6 +488,56 @@ def test_openai_adapter_parses_openai_compatible_payload(monkeypatch: pytest.Mon
     assert result.technical_sheet_payload.identity_core.display_name == "Velvet Ember"
 
 
+def test_settings_can_resolve_openai_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LLM_SERVERLESS_BASE_URL", raising=False)
+    monkeypatch.delenv("LLM_SERVERLESS_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_SERVERLESS_MODEL", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-4o-mini")
+
+    settings = AgenticSettings.from_env()
+
+    assert settings.resolved_llm_base_url == "https://api.openai.com/v1"
+    assert settings.resolved_llm_api_key == "openai-secret"
+    assert settings.resolved_llm_model == "gpt-4o-mini"
+
+
+def test_openai_adapter_uses_openai_fallback_when_serverless_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = AgenticSettings(
+        openai_api_key="openai-secret",
+        openai_model="gpt-4o-mini",
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_post(url: str, payload: dict, headers: dict[str, str]) -> dict:
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["headers"] = headers
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(build_expansion_payload())
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr("vixenbliss_creator.agentic.adapters._json_post", fake_post)
+
+    result = OpenAICompatibleLLMClient(settings).generate_expansion(
+        idea="idea de prueba suficientemente larga",
+        critique_history=[],
+        attempt_count=1,
+    )
+
+    assert captured["url"] == "https://api.openai.com/v1/chat/completions"
+    assert captured["payload"]["model"] == "gpt-4o-mini"
+    assert captured["headers"]["Authorization"] == "Bearer openai-secret"
+    assert result.identity_draft.metadata.category == "lifestyle_premium"
+
+
 def test_copilot_adapter_parses_http_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = AgenticSettings(
         comfyui_copilot_base_url="https://copilot.example.com/api",

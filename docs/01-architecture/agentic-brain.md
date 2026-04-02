@@ -77,3 +77,17 @@ Definir el modulo que transforma una instruccion conversacional del operador en 
 ```
 
 El runner usa fakes deterministas y deja un flujo completo reproducible sin depender de credenciales ni red.
+
+## Smoke con OpenAI real
+
+Si se define `OPENAI_API_KEY`, se puede validar el tramo real de LLM usando `OpenAICompatibleLLMClient` y dejando `Copilot` en fake determinista:
+
+```powershell
+.venv\Scripts\python.exe -m vixenbliss_creator.agentic.runner --real-llm --idea "Creá un avatar nuevo para lifestyle premium"
+```
+
+Variables esperadas:
+
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL` opcional, default `gpt-4o-mini`
+- `OPENAI_BASE_URL` opcional, default `https://api.openai.com/v1`

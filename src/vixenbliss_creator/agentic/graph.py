@@ -21,11 +21,18 @@ from .validator import TechnicalSheetGraphValidator
 from vixenbliss_creator.contracts.identity import (
     ArchetypeCode,
     CreationCategory,
+    FieldTrace,
+    FieldOrigin,
     IdentityStyle,
     SpeechStyle,
     Vertical,
     VoiceTone,
 )
+
+
+def _trim_error_message(prefix: str, exc: Exception, limit: int = 280) -> str:
+    message = f"{prefix}: {exc}"
+    return message if len(message) <= limit else message[: limit - 3] + "..."
 
 
 class GraphStateDict(TypedDict, total=False):
@@ -296,19 +303,66 @@ class AgenticBrain:
                 update={
                     "attempt_count": attempt_count,
                     "completion_status": CompletionStatus.FAILED,
-                    "terminal_error_message": f"Expansion failed explicitly: {exc}",
+                    "terminal_error_message": _trim_error_message("Expansion failed explicitly", exc),
                 }
             ).as_graph_dict()
 
         completion = expanded.completion_report
+        trace_map = expanded.identity_draft.trace_map()
+        merged_manual_fields = [
+            field_path
+            for field_path in list(dict.fromkeys([*state.manually_defined_fields, *completion.manually_defined_fields]))
+            if field_path != "field.path"
+        ]
+        merged_inferred_fields = [
+            field_path
+            for field_path in list(dict.fromkeys([*state.inferred_fields, *completion.inferred_fields]))
+            if field_path not in merged_manual_fields and field_path != "field.path"
+        ]
+        merged_traces = list(expanded.identity_draft.field_traces)
+        for field_path in merged_manual_fields:
+            if field_path not in trace_map:
+                merged_traces.append(
+                    FieldTrace(
+                        field_path=field_path,
+                        origin=FieldOrigin.MANUAL,
+                        source_text=state.input_idea,
+                        confidence=1.0,
+                        rationale="Campo manual preservado desde la extraccion inicial de constraints.",
+                    )
+                )
+        trace_map = {trace.field_path: trace for trace in merged_traces}
+        for field_path in merged_inferred_fields:
+            if field_path not in trace_map:
+                merged_traces.append(
+                    FieldTrace(
+                        field_path=field_path,
+                        origin=FieldOrigin.INFERRED,
+                        source_text=state.input_idea,
+                        confidence=0.8,
+                        rationale="Campo inferido preservado para mantener trazabilidad del draft final.",
+                    )
+                )
+        patched_identity_draft = expanded.identity_draft.model_copy(update={"field_traces": merged_traces})
+        patched_expanded = expanded.model_copy(
+            update={
+                "identity_draft": patched_identity_draft,
+                "completion_report": completion.model_copy(
+                    update={
+                        "manually_defined_fields": merged_manual_fields,
+                        "inferred_fields": merged_inferred_fields,
+                    }
+                ),
+            }
+        )
         return state.model_copy(
             update={
                 "attempt_count": attempt_count,
-                "expanded_context": expanded,
-                "normalized_constraints": expanded.normalized_constraints,
-                "identity_draft": expanded.identity_draft,
-                "manually_defined_fields": completion.manually_defined_fields,
-                "inferred_fields": completion.inferred_fields,
+                "expanded_context": patched_expanded,
+                "normalized_constraints": patched_expanded.normalized_constraints,
+                "identity_draft": patched_identity_draft,
+                "manually_defined_fields": merged_manual_fields,
+                "inferred_fields": merged_inferred_fields,
                 "missing_fields": completion.missing_fields,
                 "coherence_report": None,
                 "copilot_recommendation": None,
@@ -415,7 +469,7 @@ class AgenticBrain:
             return state.model_copy(
                 update={
                     "completion_status": CompletionStatus.FAILED,
-                    "terminal_error_message": f"Copilot recommendation failed explicitly: {exc}",
+                    "terminal_error_message": _trim_error_message("Copilot recommendation failed explicitly", exc),
                 }
             ).as_graph_dict()
         return state.model_copy(update={"copilot_recommendation": recommendation}).as_graph_dict()
@@ -430,7 +484,7 @@ class AgenticBrain:
             return state.model_copy(
                 update={
                     "completion_status": CompletionStatus.FAILED,
-                    "terminal_error_message": f"Validation failed explicitly: {exc}",
+                    "terminal_error_message": _trim_error_message("Validation failed explicitly", exc),
                 }
             ).as_graph_dict()
         return state.model_copy(update={"validation_result": outcome}).as_graph_dict()
