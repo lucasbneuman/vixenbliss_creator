@@ -166,3 +166,13 @@ En `S1`, `LangGraph` sigue siendo el orquestador y consume tres runtimes separad
 - `S1 lora train`: entrena el LoRA a partir del dataset
 
 El contrato recomendado de runtime es `HTTP` para submit/status/result/healthcheck y `WebSocket` opcional para progreso en tiempo real.
+
+## Directus y PostgreSQL
+
+El repo ahora tambien incluye una capa opcional de integracion con `Directus` como control plane sobre `PostgreSQL` para `S1`.
+
+- cliente autenticado y settings en `src/vixenbliss_creator/s1_control/`
+- bootstrap de esquema base para colecciones de `S1`
+- integracion opcional: no reemplaza a `LangGraph` ni al flujo actual de servicios `S1`
+
+Detalle en `docs/01-architecture/directus-s1-control-plane.md`.

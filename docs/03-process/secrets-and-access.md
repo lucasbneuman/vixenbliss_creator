@@ -16,6 +16,7 @@ Definir el contrato minimo de secretos, accesos y ownership para que el equipo c
 
 - variables locales y de CI en mayusculas con `_`
 - prefijos por proveedor cuando aplique: `SUPABASE_`, `AWS_`, `RUNPOD_`, `MODAL_`, `LANGFUSE_`
+- para `Directus`, usar prefijo `DIRECTUS_` y mantener separados los valores de control plane de los secretos del runtime
 - endpoints y buckets con nombres explicitos
 - defaults no sensibles permitidos en `.env.example`
 - secretos reales solo en `.env`, secret manager o configuracion del proveedor
@@ -70,6 +71,7 @@ Ejemplos:
 | `FluxSchnell` | `FLUXSCHNELL_ENDPOINT`, `LORA_TRAINER_PROVIDER` | proyecto | ML | local o despliegue |
 | `Langfuse` | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | proyecto | observabilidad | local o secret manager |
 | `Llama.cpp` | `LLAMA_CPP_BASE_URL` | endpoint local o compartido | platform | local o despliegue |
+| `Directus` | `DIRECTUS_BASE_URL`, `DIRECTUS_API_TOKEN`, `DIRECTUS_WEBHOOK_SECRET`, `DIRECTUS_ASSETS_STORAGE` | proyecto o despliegue | backend / ops | local o secret manager |
 
 ## Politica de rotacion
 
