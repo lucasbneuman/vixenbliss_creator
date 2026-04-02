@@ -11,6 +11,7 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
 ## Mapa S1 y S2
 
 - `S1` cubre generacion de imagenes de identidad para dataset y entrenamiento LoRA.
+- `S1 llm` actua como preparador de manifiestos de generacion para `LangGraph`; no reemplaza la orquestacion.
 - `S2` cubre generacion de contenido y generacion de video.
 - la separacion por runtime sigue siendo recomendada aunque `training` pertenezca al negocio de `S1` y `video` pertenezca al negocio de `S2`
 - `S1` y `S2` deben permanecer en la misma familia `Flux` para preservar compatibilidad del LoRA
@@ -56,7 +57,7 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
 
 ## Modos de ejecucion
 
-El contrato del motor visual ahora prioriza proveedores neutrales y portables por etapa.
+El contrato del motor visual ahora prioriza proveedores neutrales y portables por etapa. En el estado operativo actual, la implementacion activa es `Modal-only`.
 
 ### `ComfyUI` HTTP directo
 
@@ -70,17 +71,6 @@ Configuracion manual esperada:
 4. mapear `COMFYUI_IP_ADAPTER_NODE_ID`, `COMFYUI_FACE_DETECTOR_NODE_ID` y `COMFYUI_FACE_DETAILER_NODE_ID` a nodos reales del workflow
 5. garantizar acceso del runtime a la imagen de referencia facial o resolverla antes de inyectarla al workflow
 
-### `Beam`
-
-Se usa cuando el backend habla contra un runtime `Beam` por etapa y el worker encapsula a `ComfyUI` como motor interno.
-
-Configuracion manual esperada:
-
-1. publicar el contenedor comun del servicio
-2. montar `Beam Volumes` para modelos y cache si aplica
-3. exponer endpoints `jobs`, `status`, `result` y `healthcheck` por servicio
-4. consumirlo desde backend via `S1_IMAGE_PROVIDER=beam`, `S2_IMAGE_PROVIDER=beam` o la combinacion elegida
-
 ### `Modal`
 
 Se usa cuando el backend habla contra un runtime `Modal` por etapa y el worker encapsula a `ComfyUI` o al job runner del servicio.
@@ -90,7 +80,12 @@ Configuracion manual esperada:
 1. publicar el contenedor comun del servicio
 2. usar `Modal Volumes` o `CloudBucketMount` segun la naturaleza del runtime
 3. exponer el mismo contrato neutral de `jobs`, `status`, `result` y `healthcheck`
-4. consumirlo desde backend via `S1_LORA_TRAIN_PROVIDER=modal`, `S1_LLM_PROVIDER=modal`, `S2_VIDEO_PROVIDER=modal` o la combinacion elegida
+4. exponer `WebSocket` opcional por job para progreso en tiempo real
+5. consumirlo desde backend via `S1_IMAGE_PROVIDER=modal`, `S1_LORA_TRAIN_PROVIDER=modal`, `S1_LLM_PROVIDER=modal`, `S2_IMAGE_PROVIDER=modal` y `S2_VIDEO_PROVIDER=modal`
+
+### `Beam` futuro
+
+La capa neutral mantiene soporte para `Beam`, pero hoy no forma parte del camino critico por indisponibilidad operativa.
 
 ### `Runpod Serverless` legado
 
@@ -122,9 +117,9 @@ La familia de bundles debe cubrir para cada servicio:
 El backend puede consumir ese runtime de dos maneras:
 
 - via `ComfyUIHTTPExecutionClient` cuando el proveedor real es `comfyui_http`
-- via `BeamExecutionClient` cuando el proveedor real es `beam`
 - via `ModalExecutionClient` cuando el proveedor real es `modal`
 - via `RoutedVisualExecutionClient` cuando la seleccion del proveedor se hace por etapa
+- via `BeamExecutionClient` cuando en el futuro vuelva a haber disponibilidad operativa
 
 ### Familia de bundles nueva
 
@@ -142,6 +137,7 @@ Los bundles `runpod-*` quedan como baseline previo, no como direccion futura.
 - ese chatbot podra solicitar acciones de `S1` y `S2` usando el orquestador como capa de coordinacion
 - la comunicacion de progreso con la UI debera evolucionar hacia `WebSockets`
 - los serverless seguiran actuando como workers asincronos, mientras el orquestador centraliza estado, eventos y resultados
+- el contrato recomendado para progreso es `HTTP + WebSocket opcional`; el polling HTTP sigue siendo fallback operativo
 
 ## Variables de entorno
 
@@ -164,6 +160,7 @@ Los bundles `runpod-*` quedan como baseline previo, no como direccion futura.
 - `MODAL_ENDPOINT_S1_LLM`
 - `MODAL_ENDPOINT_S2_IMAGE`
 - `MODAL_ENDPOINT_S2_VIDEO`
+- `progress_url` derivado desde el endpoint cuando el runtime soporte `WebSocket`
 - `PROVIDER_HTTP_TIMEOUT_SECONDS`
 - `PROVIDER_POLL_INTERVAL_SECONDS`
 - `PROVIDER_JOB_TIMEOUT_SECONDS`
@@ -201,6 +198,12 @@ Los bundles `runpod-*` quedan como baseline previo, no como direccion futura.
 ## Nota FLUX
 
 `Supabase` no es bloqueante para levantar este runtime. El bloqueante real son las URLs accesibles para los assets pesados y para `reference_face_image_url`.
+
+Mientras la DB no este lista, cada etapa de `S1` debe dejar manifests JSON persistibles fuera del repo:
+
+- `S1 llm`: `generation_manifest`
+- `S1 image`: `dataset_manifest` y `dataset_package`
+- `S1 lora train`: `training_manifest` y metadata del `lora_model`
 
 Para `FLUX.1-schnell`, el runtime ya no debe asumir un unico `checkpoint`. El deploy debe proveer assets separados para:
 

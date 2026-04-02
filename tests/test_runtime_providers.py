@@ -12,20 +12,30 @@ from vixenbliss_creator.runtime_providers import (
 
 
 def test_runtime_provider_settings_reads_service_specific_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("S1_IMAGE_PROVIDER", "beam")
+    monkeypatch.setenv("S1_IMAGE_PROVIDER", "modal")
     monkeypatch.setenv("S1_LORA_TRAIN_PROVIDER", "modal")
     monkeypatch.setenv("S1_LLM_PROVIDER", "modal")
-    monkeypatch.setenv("S2_IMAGE_PROVIDER", "beam")
+    monkeypatch.setenv("S2_IMAGE_PROVIDER", "modal")
     monkeypatch.setenv("S2_VIDEO_PROVIDER", "modal")
-    monkeypatch.setenv("BEAM_ENDPOINT_S1_IMAGE", "https://beam.example.com/s1-image")
+    monkeypatch.setenv("MODAL_ENDPOINT_S1_IMAGE", "https://modal.example.com/s1-image")
     monkeypatch.setenv("MODAL_ENDPOINT_S2_VIDEO", "https://modal.example.com/s2-video")
 
     settings = RuntimeProviderSettings.from_env()
 
-    assert settings.provider_for(ServiceRuntime.S1_IMAGE).value == "beam"
+    assert settings.provider_for(ServiceRuntime.S1_IMAGE).value == "modal"
     assert settings.provider_for(ServiceRuntime.S2_VIDEO).value == "modal"
-    assert settings.endpoint_for(settings.provider_for(ServiceRuntime.S1_IMAGE), ServiceRuntime.S1_IMAGE) == "https://beam.example.com/s1-image"
+    assert settings.endpoint_for(settings.provider_for(ServiceRuntime.S1_IMAGE), ServiceRuntime.S1_IMAGE) == "https://modal.example.com/s1-image"
     assert settings.endpoint_for(settings.provider_for(ServiceRuntime.S2_VIDEO), ServiceRuntime.S2_VIDEO) == "https://modal.example.com/s2-video"
+
+
+def test_runtime_provider_settings_defaults_to_modal_for_all_services() -> None:
+    settings = RuntimeProviderSettings()
+
+    assert settings.provider_for(ServiceRuntime.S1_IMAGE).value == "modal"
+    assert settings.provider_for(ServiceRuntime.S1_LORA_TRAIN).value == "modal"
+    assert settings.provider_for(ServiceRuntime.S1_LLM).value == "modal"
+    assert settings.provider_for(ServiceRuntime.S2_IMAGE).value == "modal"
+    assert settings.provider_for(ServiceRuntime.S2_VIDEO).value == "modal"
 
 
 def test_beam_client_submits_and_fetches_result(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -82,3 +92,21 @@ def test_modal_client_healthcheck_uses_modal_headers(monkeypatch: pytest.MonkeyP
     response = client.healthcheck(ServiceRuntime.S1_LLM)
 
     assert response == {"ok": True}
+
+
+def test_handle_defaults_progress_url_when_provider_does_not_return_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = RuntimeProviderSettings(
+        modal_endpoint_s1_image="https://modal.example.com/s1-image",
+        modal_token_id="modal-id",
+        modal_token_secret="modal-secret",
+    )
+
+    def fake_post(url: str, payload: dict, timeout_seconds: int, headers: dict[str, str] | None = None) -> dict:
+        return {"job_id": "modal-job-2", "status": "queued"}
+
+    monkeypatch.setattr("vixenbliss_creator.runtime_providers.adapters._json_post", fake_post)
+
+    client = ModalRuntimeProviderClient(settings)
+    handle = client.submit_job(ServiceRuntime.S1_IMAGE, {"prompt": "hello"})
+
+    assert handle.progress_url == "wss://modal.example.com/s1-image/ws/jobs/modal-job-2"

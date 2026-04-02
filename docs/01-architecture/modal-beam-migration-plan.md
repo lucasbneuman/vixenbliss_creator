@@ -1,4 +1,4 @@
-# Migracion de infraestructura a Modal + Beam
+# Migracion de infraestructura a Modal
 
 ## Objetivo
 
@@ -6,8 +6,8 @@ Sacar a `Runpod` del camino critico y dejar la infraestructura desacoplada del p
 
 La estrategia actual del repo queda:
 
-- `Beam` como proveedor principal para inferencia visual cuantizada
-- `Modal` como proveedor principal para `LoRA train`, `video` y `S1 llm`
+- `Modal` como proveedor activo para los 5 servicios
+- la capa neutral de proveedores se preserva para reintroducir un segundo proveedor cuando haya una opcion operable sin friccion
 - cambio de proveedor por configuracion, no por cambio de contrato de negocio
 
 ## Servicios objetivo
@@ -24,21 +24,33 @@ La capa nueva se separa en dos niveles:
 
 1. `runtime_providers`
 - capacidades neutrales de `submit job`, `get status`, `fetch result`, `healthcheck`
-- soporte inicial para `Beam` y `Modal`
+- progreso en tiempo real opcional por `WebSocket`, sin reemplazar el contrato HTTP base
+- soporte inicial para `Modal` y capacidad de sumar otro proveedor despues
 
 2. `service runtimes`
 - estructura `infra/` por servicio
 - contenedor comun por servicio
-- wrappers por proveedor en `providers/beam/` y `providers/modal/`
+- wrapper activo en `providers/modal/`
+- `providers/beam/` queda solo como placeholder futuro mientras `Beam` siga sin disponibilidad operativa
+- `LangGraph` sigue siendo el orquestador central y consume estos runtimes como workers externos
+
+## Estado operativo S1
+
+- `S1 llm` prepara prompt estructurado, negative prompt, seeds fijas y manifiesto tecnico consumible por `S1 image`
+- `S1 image` genera imagenes base y produce `dataset_manifest` + `dataset_package`
+- `S1 lora train` consume el dataset y devuelve `lora_model` + manifest tecnico de entrenamiento
+- mientras la DB no este lista, la persistencia intermedia se resuelve con artifacts JSON fuera del repo
 
 ## Seleccion por defecto
 
-- `S1_IMAGE_PROVIDER=beam`
+- `S1_IMAGE_PROVIDER=modal`
 - `S1_LORA_TRAIN_PROVIDER=modal`
 - `S1_LLM_PROVIDER=modal`
-- `S2_IMAGE_PROVIDER=beam`
+- `S2_IMAGE_PROVIDER=modal`
 - `S2_VIDEO_PROVIDER=modal`
 
 ## Nota sobre Runpod
 
 `Runpod` queda como referencia historica y puede seguir existiendo temporalmente en codigo y tests legacy, pero no debe usarse como baseline nuevo ni como direccion de crecimiento del repo.
+
+`Beam` queda fuera del camino critico actual por lista de espera, aunque la abstraccion se conserva para retomarlo mas adelante sin rediseñar la app.

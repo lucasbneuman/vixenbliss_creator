@@ -1,0 +1,191 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import PurePosixPath
+from uuid import uuid4
+
+from .models import DatasetServiceInput, GenerationManifest, GenerationServiceInput, LoraTrainingServiceInput, SeedBundle
+
+
+def _stable_digest(payload: object) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _seed_from_digest(digest: str, offset: int) -> int:
+    start = offset * 8
+    return int(digest[start : start + 8], 16) % (2**31 - 1)
+
+
+def build_generation_manifest(payload: GenerationServiceInput) -> GenerationManifest:
+    digest = _stable_digest(
+        {
+            "identity_id": str(payload.identity_id),
+            "identity_context": payload.identity_context,
+            "workflow_id": payload.workflow_id,
+            "workflow_version": payload.workflow_version,
+            "base_model_id": payload.base_model_id,
+            "seed_basis": payload.seed_basis or str(payload.identity_id),
+        }
+    )
+    identity_summary = payload.identity_context.get("identity_summary") or payload.identity_context.get("summary") or "synthetic premium identity"
+    tone = payload.identity_context.get("voice_tone") or payload.identity_context.get("style") or "editorial"
+    prompt = (
+        f"Create a consistent identity dataset portrait for {identity_summary}. "
+        f"Preserve premium visual coherence, natural anatomy, face consistency and reusable training coverage. "
+        f"Tone: {tone}."
+    )
+    negative_prompt = "low quality, anatomy drift, extra limbs, minors, watermark, text, body horror"
+    artifact_path = str(PurePosixPath("artifacts") / "s1-llm" / str(payload.identity_id) / f"generation-manifest-{digest[:12]}.json")
+    return GenerationManifest(
+        identity_id=payload.identity_id,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        seed_bundle=SeedBundle(
+            portrait_seed=_seed_from_digest(digest, 0),
+            variation_seed=_seed_from_digest(digest, 1),
+            dataset_seed=_seed_from_digest(digest, 2),
+        ),
+        workflow_id=payload.workflow_id,
+        workflow_version=payload.workflow_version,
+        base_model_id=payload.base_model_id,
+        comfy_parameters={
+            "width": payload.image_width,
+            "height": payload.image_height,
+            "reference_face_image_url": payload.reference_face_image_url,
+            "ip_adapter": payload.ip_adapter,
+            "prompt_hints": payload.prompt_hints,
+            "negative_prompt_hints": payload.negative_prompt_hints,
+        },
+        artifact_path=artifact_path,
+    )
+
+
+def build_dataset_result(payload: DatasetServiceInput) -> dict:
+    if payload.face_detection_confidence is None:
+        raise ValueError("face_detection_confidence is required to validate dataset generation")
+    digest = _stable_digest(
+        {
+            "identity_id": str(payload.identity_id),
+            "manifest": payload.generation_manifest.model_dump(mode="json"),
+            "samples_target": payload.samples_target,
+            "metadata_json": payload.metadata_json,
+        }
+    )
+    identity_root = PurePosixPath(payload.artifact_root) / str(payload.identity_id)
+    manifest_path = str(identity_root / f"dataset-manifest-{digest[:12]}.json")
+    package_path = str(identity_root / f"dataset-package-{digest[:12]}.zip")
+    base_image_path = str(identity_root / f"base-image-{digest[:12]}.png")
+    checksum = _stable_digest({"dataset_package_path": package_path, "digest": digest})
+    return {
+        "provider": "modal",
+        "service": "s1_image",
+        "model_family": "flux",
+        "workflow_id": payload.generation_manifest.workflow_id,
+        "workflow_version": payload.generation_manifest.workflow_version,
+        "base_model_id": payload.generation_manifest.base_model_id,
+        "artifacts": [
+            {
+                "artifact_type": "base_image",
+                "storage_path": base_image_path,
+                "content_type": "image/png",
+                "metadata_json": {
+                    "seed": payload.generation_manifest.seed_bundle.portrait_seed,
+                    "face_detection_confidence": payload.face_detection_confidence,
+                },
+            },
+            {
+                "artifact_type": "dataset_manifest",
+                "storage_path": manifest_path,
+                "content_type": "application/json",
+                "metadata_json": {
+                    "samples_target": payload.samples_target,
+                    "reference_face_image_url": payload.reference_face_image_url,
+                    "source_manifest_path": payload.generation_manifest.artifact_path,
+                },
+            },
+            {
+                "artifact_type": "dataset_package",
+                "storage_path": package_path,
+                "content_type": "application/zip",
+                "checksum_sha256": checksum,
+                "metadata_json": {
+                    "samples_target": payload.samples_target,
+                    "seed": payload.generation_manifest.seed_bundle.dataset_seed,
+                },
+            },
+        ],
+        "dataset_manifest": {
+            "identity_id": str(payload.identity_id),
+            "artifact_path": manifest_path,
+            "dataset_package_path": package_path,
+            "sample_count": payload.samples_target,
+            "workflow_id": payload.generation_manifest.workflow_id,
+            "workflow_version": payload.generation_manifest.workflow_version,
+            "base_model_id": payload.generation_manifest.base_model_id,
+            "prompt": payload.generation_manifest.prompt,
+            "negative_prompt": payload.generation_manifest.negative_prompt,
+            "seed_bundle": payload.generation_manifest.seed_bundle.model_dump(mode="json"),
+            "reference_face_image_url": payload.reference_face_image_url,
+            "face_detection_confidence": payload.face_detection_confidence,
+            "checksum_sha256": checksum,
+        },
+    }
+
+
+def build_lora_training_result(payload: LoraTrainingServiceInput) -> dict:
+    if payload.model_family != "flux":
+        raise ValueError("lora training only supports the flux model family")
+    dataset_locator = payload.dataset_package_path or json.dumps(payload.dataset_manifest, sort_keys=True)
+    digest = _stable_digest(
+        {
+            "identity_id": str(payload.identity_id),
+            "dataset_locator": dataset_locator,
+            "base_model_id": payload.base_model_id,
+            "training_config": payload.training_config,
+        }
+    )
+    identity_root = PurePosixPath(payload.artifact_root) / str(payload.identity_id)
+    lora_path = str(identity_root / f"lora-model-{digest[:12]}.safetensors")
+    manifest_path = str(identity_root / f"training-result-{digest[:12]}.json")
+    checksum = _stable_digest({"lora_path": lora_path, "digest": digest})
+    trigger_word = payload.training_config.get("trigger_word") or f"vb_{str(payload.identity_id).replace('-', '')[:8]}"
+    steps = int(payload.training_config.get("training_steps", 1200))
+    return {
+        "provider": "modal",
+        "service": "s1_lora_train",
+        "base_model_id": payload.base_model_id,
+        "model_family": payload.model_family,
+        "artifacts": [
+            {
+                "artifact_type": "lora_model",
+                "storage_path": lora_path,
+                "content_type": "application/octet-stream",
+                "checksum_sha256": checksum,
+                "metadata_json": {
+                    "training_steps": steps,
+                    "trigger_word": trigger_word,
+                    "result_manifest_path": manifest_path,
+                },
+            }
+        ],
+        "training_manifest": {
+            "identity_id": str(payload.identity_id),
+            "base_model_id": payload.base_model_id,
+            "dataset_package_path": payload.dataset_package_path,
+            "dataset_manifest": payload.dataset_manifest,
+            "training_steps": steps,
+            "trigger_word": trigger_word,
+            "result_manifest_path": manifest_path,
+            "lora_model_path": lora_path,
+            "checksum_sha256": checksum,
+            "model_registry": {
+                "version_name": f"lora-{digest[:8]}",
+                "display_name": f"S1 LoRA {str(payload.identity_id)[:8]}",
+                "base_model_id": payload.base_model_id,
+                "storage_path": lora_path,
+                "provider": "modal",
+            },
+        },
+    }

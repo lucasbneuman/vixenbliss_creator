@@ -76,7 +76,7 @@ El roadmap del repo existe como vision flexible y contexto tecnico, no como agen
 - Arquitectura operativa: `docs/01-architecture/operational-architecture.md`
 - Motor visual: `docs/01-architecture/visual-generation-engine.md`
 - Portfolio serverless: `docs/01-architecture/serverless-provider-portfolio-analysis.md`
-- Migracion Modal + Beam: `docs/01-architecture/modal-beam-migration-plan.md`
+- Migracion a Modal: `docs/01-architecture/modal-beam-migration-plan.md`
 - Factibilidad Beam: `docs/01-architecture/beam-feasibility-analysis.md`
 - Roadmap maestro flexible: `docs/02-roadmap/roadmap-master.md`
 - Reglas de trabajo: `docs/03-process/working-agreement.md`
@@ -157,4 +157,12 @@ El repo ahora separa la infraestructura por servicio y no por proveedor en `infr
 - `infra/s2-image/`
 - `infra/s2-video/`
 
-Cada servicio define un `runtime/` comun y wrappers de deploy para `Beam` y `Modal`. Los bundles `infra/runpod-*` quedan como referencia historica mientras termina la migracion.
+Cada servicio define un `runtime/` comun y wrapper activo de deploy para `Modal`. `Beam` queda como placeholder futuro y los bundles `infra/runpod-*` quedan como referencia historica mientras termina la migracion.
+
+En `S1`, `LangGraph` sigue siendo el orquestador y consume tres runtimes separados:
+
+- `S1 llm`: prepara prompt, negative prompt, seeds y manifiesto tecnico
+- `S1 image`: genera imagenes base y arma dataset
+- `S1 lora train`: entrena el LoRA a partir del dataset
+
+El contrato recomendado de runtime es `HTTP` para submit/status/result/healthcheck y `WebSocket` opcional para progreso en tiempo real.

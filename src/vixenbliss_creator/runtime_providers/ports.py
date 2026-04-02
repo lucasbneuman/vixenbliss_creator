@@ -15,6 +15,9 @@ class RuntimeProviderClient(Protocol):
     def fetch_result(self, handle: JobHandle) -> dict:
         ...
 
+    def progress_stream_url(self, handle: JobHandle) -> str | None:
+        ...
+
     def resolve_asset_uri(self, uri: str) -> str:
         ...
 

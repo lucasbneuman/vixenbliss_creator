@@ -30,5 +30,6 @@ class JobHandle(ContractBaseModel):
     submit_url: str | None = Field(default=None, min_length=3, max_length=500)
     status_url: str | None = Field(default=None, min_length=3, max_length=500)
     result_url: str | None = Field(default=None, min_length=3, max_length=500)
+    progress_url: str | None = Field(default=None, min_length=3, max_length=500)
     status: JobStatus = JobStatus.QUEUED
     metadata_json: JsonObject = Field(default_factory=dict)
