@@ -1,8 +1,11 @@
 """Visual generation engine contracts and orchestration for visual workflows."""
 
 from .adapters import (
+    BeamExecutionClient,
     ComfyUIExecutionHTTPClient,
     FakeVisualExecutionClient,
+    ModalExecutionClient,
+    RoutedVisualExecutionClient,
     RunpodServerlessExecutionClient,
     build_visual_execution_client,
 )
@@ -26,15 +29,18 @@ from .service import VisualGenerationOrchestrator
 
 __all__ = [
     "ComfyUIExecutionHTTPClient",
+    "BeamExecutionClient",
     "ErrorCode",
     "FaceDetailerConfig",
     "FakeVisualExecutionClient",
     "IpAdapterConfig",
     "ModelFamily",
+    "ModalExecutionClient",
     "Provider",
     "ResumeCheckpoint",
     "ResumePolicy",
     "ResumeStage",
+    "RoutedVisualExecutionClient",
     "RuntimeStage",
     "RunpodServerlessExecutionClient",
     "VisualArtifact",

@@ -263,6 +263,20 @@ def build_copilot_payload(*, supported_modes: list[str] | None = None) -> dict:
     }
 
 
+def test_agentic_settings_reads_s1_llm_runtime_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("S1_LLM_PROVIDER", "modal")
+    monkeypatch.setenv("S1_LLM_RUNTIME_BASE_URL", "https://modal.example.com/s1-llm")
+    monkeypatch.setenv("S1_LLM_RUNTIME_API_KEY", "runtime-secret")
+    monkeypatch.setenv("S1_LLM_RUNTIME_TIMEOUT_SECONDS", "45")
+
+    settings = AgenticSettings.from_env()
+
+    assert settings.s1_llm_provider == "modal"
+    assert settings.s1_llm_runtime_base_url == "https://modal.example.com/s1-llm"
+    assert settings.s1_llm_runtime_api_key == "runtime-secret"
+    assert settings.s1_llm_runtime_timeout_seconds == 45
+
+
 def test_runner_returns_succeeded_graph_state() -> None:
     result = run_agentic_brain("Creá un avatar nuevo para lifestyle premium")
 

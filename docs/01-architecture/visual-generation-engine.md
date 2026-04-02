@@ -56,7 +56,7 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
 
 ## Modos de ejecucion
 
-El contrato del motor visual admite dos despliegues validos y ambos pueden exponerse por etapa.
+El contrato del motor visual ahora prioriza proveedores neutrales y portables por etapa.
 
 ### `ComfyUI` HTTP directo
 
@@ -70,9 +70,31 @@ Configuracion manual esperada:
 4. mapear `COMFYUI_IP_ADAPTER_NODE_ID`, `COMFYUI_FACE_DETECTOR_NODE_ID` y `COMFYUI_FACE_DETAILER_NODE_ID` a nodos reales del workflow
 5. garantizar acceso del runtime a la imagen de referencia facial o resolverla antes de inyectarla al workflow
 
-### `Runpod Serverless`
+### `Beam`
 
-Se usa cuando el backend habla contra endpoints separados por etapa y el worker encapsula a `ComfyUI` como motor interno.
+Se usa cuando el backend habla contra un runtime `Beam` por etapa y el worker encapsula a `ComfyUI` como motor interno.
+
+Configuracion manual esperada:
+
+1. publicar el contenedor comun del servicio
+2. montar `Beam Volumes` para modelos y cache si aplica
+3. exponer endpoints `jobs`, `status`, `result` y `healthcheck` por servicio
+4. consumirlo desde backend via `S1_IMAGE_PROVIDER=beam`, `S2_IMAGE_PROVIDER=beam` o la combinacion elegida
+
+### `Modal`
+
+Se usa cuando el backend habla contra un runtime `Modal` por etapa y el worker encapsula a `ComfyUI` o al job runner del servicio.
+
+Configuracion manual esperada:
+
+1. publicar el contenedor comun del servicio
+2. usar `Modal Volumes` o `CloudBucketMount` segun la naturaleza del runtime
+3. exponer el mismo contrato neutral de `jobs`, `status`, `result` y `healthcheck`
+4. consumirlo desde backend via `S1_LORA_TRAIN_PROVIDER=modal`, `S1_LLM_PROVIDER=modal`, `S2_VIDEO_PROVIDER=modal` o la combinacion elegida
+
+### `Runpod Serverless` legado
+
+Se mantiene solo como referencia historica mientras termina la migracion fuera de `Runpod`.
 
 Configuracion manual esperada:
 
@@ -86,27 +108,33 @@ Configuracion manual esperada:
 
 ## Runtime deployable recomendado
 
-Los runtimes productivos iniciales pueden versionarse en el repo como una familia comun y desplegarse como endpoints separados.
+Los runtimes productivos iniciales deben versionarse en el repo como una familia comun por servicio y desplegarse con wrappers por proveedor.
 
-La familia de bundles debe cubrir:
+La familia de bundles debe cubrir para cada servicio:
 
 - imagen `Docker` reproducible
 - bootstrap de `ComfyUI`
 - instalacion de `ComfyUI-IPAdapter-Flux` e `Impact Pack`
 - workflows versionados por etapa
 - scripts de arranque y healthcheck
-- handlers `Runpod Serverless` compatibles con `identity_image_generation`, `content_image_generation`, `lora_training`, `video_generation`, `base_render`, `face_detail` y `healthcheck` segun el runtime
+- handlers o entrypoints neutrales compatibles con `jobs`, `status`, `result`, `healthcheck`, `base_render` y `face_detail` segun el runtime
 
 El backend puede consumir ese runtime de dos maneras:
 
-- via `ComfyUIExecutionHTTPClient` cuando el proveedor real es `comfyui`
-- via `RunpodServerlessExecutionClient` cuando el proveedor real es `runpod`
+- via `ComfyUIHTTPExecutionClient` cuando el proveedor real es `comfyui_http`
+- via `BeamExecutionClient` cuando el proveedor real es `beam`
+- via `ModalExecutionClient` cuando el proveedor real es `modal`
+- via `RoutedVisualExecutionClient` cuando la seleccion del proveedor se hace por etapa
 
-### Bundle actual de `DEV-8`
+### Familia de bundles nueva
 
-- el bundle operativo actual para cerrar `DEV-8` es `infra/runpod-s1-image-serverless`
-- este runtime esta acotado a `identity_image`
-- `S1 train` queda previsto como runtime futuro separado y no forma parte del cierre de `DEV-8`
+- `infra/s1-image/`
+- `infra/s1-lora-train/`
+- `infra/s1-llm/`
+- `infra/s2-image/`
+- `infra/s2-video/`
+
+Los bundles `runpod-*` quedan como baseline previo, no como direccion futura.
 
 ## Direccion futura de orquestacion
 
@@ -118,6 +146,27 @@ El backend puede consumir ese runtime de dos maneras:
 ## Variables de entorno
 
 - `VISUAL_EXECUTION_PROVIDER`
+- `S1_IMAGE_PROVIDER`
+- `S1_LORA_TRAIN_PROVIDER`
+- `S1_LLM_PROVIDER`
+- `S2_IMAGE_PROVIDER`
+- `S2_VIDEO_PROVIDER`
+- `BEAM_API_KEY`
+- `BEAM_ENDPOINT_S1_IMAGE`
+- `BEAM_ENDPOINT_S1_LORA_TRAIN`
+- `BEAM_ENDPOINT_S1_LLM`
+- `BEAM_ENDPOINT_S2_IMAGE`
+- `BEAM_ENDPOINT_S2_VIDEO`
+- `MODAL_TOKEN_ID`
+- `MODAL_TOKEN_SECRET`
+- `MODAL_ENDPOINT_S1_IMAGE`
+- `MODAL_ENDPOINT_S1_LORA_TRAIN`
+- `MODAL_ENDPOINT_S1_LLM`
+- `MODAL_ENDPOINT_S2_IMAGE`
+- `MODAL_ENDPOINT_S2_VIDEO`
+- `PROVIDER_HTTP_TIMEOUT_SECONDS`
+- `PROVIDER_POLL_INTERVAL_SECONDS`
+- `PROVIDER_JOB_TIMEOUT_SECONDS`
 - `RUNPOD_API_KEY`
 - `RUNPOD_ENDPOINT_IMAGE_IDENTITY`
 - `RUNPOD_ENDPOINT_IMAGE_CONTENT`

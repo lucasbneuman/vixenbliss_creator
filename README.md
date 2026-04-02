@@ -75,6 +75,9 @@ El roadmap del repo existe como vision flexible y contexto tecnico, no como agen
 - Base tecnica: `docs/01-architecture/technical-base.md`
 - Arquitectura operativa: `docs/01-architecture/operational-architecture.md`
 - Motor visual: `docs/01-architecture/visual-generation-engine.md`
+- Portfolio serverless: `docs/01-architecture/serverless-provider-portfolio-analysis.md`
+- Migracion Modal + Beam: `docs/01-architecture/modal-beam-migration-plan.md`
+- Factibilidad Beam: `docs/01-architecture/beam-feasibility-analysis.md`
 - Roadmap maestro flexible: `docs/02-roadmap/roadmap-master.md`
 - Reglas de trabajo: `docs/03-process/working-agreement.md`
 - Ciclo de tarea: `docs/03-process/task-lifecycle.md`
@@ -146,11 +149,12 @@ El detalle tecnico y las variables nuevas viven en `docs/01-architecture/visual-
 
 ## Runtime deployable de ComfyUI
 
-El repo incluye una unidad deployable para `Runpod` en `infra/runpod-visual-serverless/`.
+El repo ahora separa la infraestructura por servicio y no por proveedor en `infra/`.
 
-- imagen productiva basada en `Docker`
-- bootstrap de `ComfyUI` con `IPAdapter Plus` e `Impact Pack`
-- workflow base versionado para imagen
-- scripts de arranque y healthcheck
+- `infra/s1-image/`
+- `infra/s1-lora-train/`
+- `infra/s1-llm/`
+- `infra/s2-image/`
+- `infra/s2-video/`
 
-La carpeta esta pensada para publicarse en `GitHub` y usarse como base reproducible del runtime de imagen.
+Cada servicio define un `runtime/` comun y wrappers de deploy para `Beam` y `Modal`. Los bundles `infra/runpod-*` quedan como referencia historica mientras termina la migracion.

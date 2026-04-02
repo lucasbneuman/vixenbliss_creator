@@ -3,12 +3,14 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from .models import Provider
+from vixenbliss_creator.runtime_providers.config import RuntimeProviderSettings
+from vixenbliss_creator.runtime_providers.models import ServiceRuntime
+from vixenbliss_creator.provider import Provider
 
 
 @dataclass(frozen=True)
 class VisualPipelineSettings:
-    visual_execution_provider: Provider = Provider.COMFYUI
+    visual_execution_provider: Provider = Provider.ROUTED
     comfyui_base_url: str | None = None
     comfyui_workflow_image_id: str | None = None
     comfyui_workflow_image_version: str = "v1"
@@ -34,11 +36,21 @@ class VisualPipelineSettings:
     runpod_poll_interval_seconds: int = 3
     runpod_job_timeout_seconds: int = 600
     runpod_use_runsync: bool = False
+    runtime_provider_settings: RuntimeProviderSettings = RuntimeProviderSettings()
+
+    def provider_for_stage(self, runtime_stage: str) -> Provider:
+        if runtime_stage == "identity_image":
+            return self.runtime_provider_settings.provider_for(ServiceRuntime.S1_IMAGE)
+        if runtime_stage == "content_image":
+            return self.runtime_provider_settings.provider_for(ServiceRuntime.S2_IMAGE)
+        if runtime_stage == "video":
+            return self.runtime_provider_settings.provider_for(ServiceRuntime.S2_VIDEO)
+        return self.visual_execution_provider
 
     @classmethod
     def from_env(cls) -> "VisualPipelineSettings":
         return cls(
-            visual_execution_provider=Provider(os.getenv("VISUAL_EXECUTION_PROVIDER", Provider.COMFYUI.value)),
+            visual_execution_provider=Provider(os.getenv("VISUAL_EXECUTION_PROVIDER", Provider.ROUTED.value)),
             comfyui_base_url=os.getenv("COMFYUI_BASE_URL"),
             comfyui_workflow_image_id=os.getenv("COMFYUI_WORKFLOW_IMAGE_ID"),
             comfyui_workflow_image_version=os.getenv("COMFYUI_WORKFLOW_IMAGE_VERSION", "v1"),
@@ -64,4 +76,5 @@ class VisualPipelineSettings:
             runpod_poll_interval_seconds=int(os.getenv("RUNPOD_POLL_INTERVAL_SECONDS", "3")),
             runpod_job_timeout_seconds=int(os.getenv("RUNPOD_JOB_TIMEOUT_SECONDS", "600")),
             runpod_use_runsync=os.getenv("RUNPOD_USE_RUNSYNC", "false").lower() in {"1", "true", "yes", "on"},
+            runtime_provider_settings=RuntimeProviderSettings.from_env(),
         )

@@ -6,6 +6,10 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class AgenticSettings:
+    s1_llm_provider: str = "modal"
+    s1_llm_runtime_base_url: str | None = None
+    s1_llm_runtime_api_key: str | None = None
+    s1_llm_runtime_timeout_seconds: int = 30
     llm_serverless_base_url: str | None = None
     llm_serverless_api_key: str | None = None
     llm_serverless_model: str | None = None
@@ -39,6 +43,10 @@ class AgenticSettings:
             llm_serverless_base_url=os.getenv("LLM_SERVERLESS_BASE_URL"),
             llm_serverless_api_key=os.getenv("LLM_SERVERLESS_API_KEY"),
             llm_serverless_model=os.getenv("LLM_SERVERLESS_MODEL"),
+            s1_llm_provider=os.getenv("S1_LLM_PROVIDER", "modal"),
+            s1_llm_runtime_base_url=os.getenv("S1_LLM_RUNTIME_BASE_URL"),
+            s1_llm_runtime_api_key=os.getenv("S1_LLM_RUNTIME_API_KEY"),
+            s1_llm_runtime_timeout_seconds=int(os.getenv("S1_LLM_RUNTIME_TIMEOUT_SECONDS", "30")),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             openai_model=os.getenv("OPENAI_MODEL"),
             openai_base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
