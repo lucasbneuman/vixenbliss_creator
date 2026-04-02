@@ -71,7 +71,16 @@ def test_s1_bundle_download_script_prefers_runpod_network_volume() -> None:
 
     assert 'RUNPOD_MODELS_ROOT="${RUNPOD_MODELS_ROOT:-${RUNPOD_VOLUME_PATH}/models}"' in script
     assert "link_or_copy_from_volume" in script
+    assert 'COMFYUI_IP_ADAPTER_ASSET_NAME="$(resolve_ip_adapter_asset_name "${COMFYUI_IP_ADAPTER_MODEL}")"' in script
+    assert "wait_for_volume_file" in script
     assert "RUNPOD_FLUX_DIFFUSION_MODEL_PATH" in script
+
+
+def test_s1_entrypoint_fails_fast_when_model_bootstrap_fails() -> None:
+    entrypoint = (BUNDLE / "scripts" / "entrypoint.sh").read_text(encoding="utf-8")
+
+    assert "/opt/runpod-s1-image-serverless/scripts/download_models.sh" in entrypoint
+    assert "/opt/runpod-s1-image-serverless/scripts/download_models.sh || true" not in entrypoint
 
 
 def test_s1_bundle_workflow_keeps_dev8_nodes() -> None:
