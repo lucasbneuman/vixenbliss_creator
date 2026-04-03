@@ -132,9 +132,14 @@ def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:
     manifest_artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "dataset_manifest")
     assert manifest_artifact["file"].startswith("file-")
     assert manifest_artifact["metadata_json"]["original_storage_path"] == str(manifest_path)
+    package_artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "dataset_package")
+    assert package_artifact["metadata_json"]["checksum_sha256"] == "abc123"
     assert len(fake.files) == 3
     assert identity["latest_seed_bundle_json"]["portrait_seed"] == 11
+    assert identity["latest_visual_config_json"]["dataset_storage_mode"] == "directus_files"
+    assert len(identity["latest_visual_config_json"]["persisted_artifacts"]) == 3
     assert identity["latest_dataset_manifest_file_id"].startswith("file-")
+    assert identity["latest_dataset_package_file_id"].startswith("file-")
     assert identity["latest_visual_config_json"]["reference_face_image_url"] == "https://example.com/ref.png"
 
 
@@ -214,3 +219,64 @@ def test_recorder_falls_back_when_upload_fails(tmp_path: Path) -> None:
     assert fake.store["s1_artifacts"][0]["file"] is None
     assert fake.store["s1_artifacts"][0]["uri"] == str(artifact_path)
     assert any(event["event_type"] == "runtime_artifact_upload_failed" for event in fake.store["s1_events"])
+
+
+def test_recorder_publishes_persisted_artifacts_metadata(tmp_path: Path) -> None:
+    fake = FakeControlPlane()
+    fake.create_item("s1_identities", {"avatar_id": "88", "status": "draft"})
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    recorder = S1RuntimeDirectusRecorder(client=fake)
+
+    result_payload = {
+        "provider": "modal",
+        "metadata": {},
+        "artifacts": [
+            {
+                "artifact_type": "dataset_manifest",
+                "storage_path": str(manifest_path),
+                "content_type": "application/json",
+                "metadata_json": {},
+            }
+        ],
+    }
+
+    recorder.record_job(
+        service_name="s1_image",
+        job_id="job-888",
+        status="completed",
+        input_payload={"identity_id": "88", "prompt": "test prompt"},
+        result_payload=result_payload,
+    )
+
+    assert result_payload["metadata"]["dataset_storage_mode"] == "directus_files"
+    assert result_payload["metadata"]["persisted_artifacts"][0]["role"] == "dataset_manifest"
+    assert result_payload["metadata"]["persisted_artifacts"][0]["file_id"].startswith("file-")
+
+
+def test_recorder_reads_identity_id_from_metadata(tmp_path: Path) -> None:
+    fake = FakeControlPlane()
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    recorder = S1RuntimeDirectusRecorder(client=fake)
+
+    recorder.record_job(
+        service_name="s1_image",
+        job_id="job-555",
+        status="completed",
+        input_payload={"metadata": {"identity_id": "meta-identity"}, "prompt": "test prompt"},
+        result_payload={
+            "provider": "modal",
+            "metadata": {},
+            "artifacts": [
+                {
+                    "artifact_type": "dataset_manifest",
+                    "storage_path": str(manifest_path),
+                    "content_type": "application/json",
+                    "metadata_json": {},
+                }
+            ],
+        },
+    )
+
+    assert fake.store["s1_generation_runs"][0]["identity_id"] == "meta-identity"

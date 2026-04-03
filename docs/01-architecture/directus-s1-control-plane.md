@@ -55,6 +55,8 @@ Estado implementado en el repo:
 - `s1_artifacts.file` guarda el UUID del file persistido
 - `s1_artifacts.uri` pasa a privilegiar el locator persistente del asset en `Directus`
 - `metadata_json` conserva la trazabilidad entre path local y file persistido
+- la respuesta del runtime de `S1 image` expone `metadata.directus_run_id`, `metadata.dataset_storage_mode` y `metadata.persisted_artifacts`
+- el snapshot de `s1_identities` replica `dataset_storage_mode` y el resumen de `persisted_artifacts` dentro de `latest_visual_config_json`
 
 ## Snapshot tecnico canonico por avatar
 
@@ -78,6 +80,22 @@ Objetivo operativo:
 - evitar que servicios futuros dependan de reconstruir estado tecnico a partir de runs historicas o manifests locales
 
 Esto evita acoplar el handoff de negocio al storage interno de `Modal`.
+
+## Smoke operativa recomendada
+
+Para validar la conexion end-to-end `S1 image -> Directus` sin depender de GPU ni de una instancia viva de `ComfyUI`, el repo incorpora una smoke reproducible:
+
+- bootstrap de schema: `python -m vixenbliss_creator.s1_control.bootstrap`
+- smoke de persistencia real: `python -m vixenbliss_creator.s1_control.live_smoke`
+
+La smoke carga el runtime de `S1 image`, stubbea la ejecucion visual de forma determinista, ejecuta un job minimo con `identity_id` real y verifica en `Directus`:
+
+- `s1_generation_runs`
+- `s1_artifacts`
+- `s1_events`
+- `s1_identities`
+
+Esta validacion confirma persistencia y trazabilidad end-to-end. No valida todavia batching con `BatchingNodes` ni bootstrap determinista de modelos con `ComfyPack`.
 
 ## Variables requeridas
 

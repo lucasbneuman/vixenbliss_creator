@@ -88,10 +88,36 @@ python -m pytest -q
 - no commitear archivos reales con secretos
 - nombrar servidores segun proveedor y entorno cuando aplique
 - para MCPs remotos, usar `url` con el endpoint documentado en vez de `command` y `args`
+- baseline actual: `directus` se configura como MCP remoto por `http` usando `DIRECTUS_MCP_URL`
 - baseline actual: `supabase` se configura como MCP remoto por `http` usando `SUPABASE_MCP_URL`
 - baseline actual: `runpod` se configura como MCP local por `stdio` usando `npx -y @runpod/mcp-server@latest`
 - `runpod` requiere `RUNPOD_API_KEY` en el entorno local y sirve para inspeccionar endpoints, workers, requests y despliegues sin pegar curls manuales
 - mantener el archivo real de MCP fuera del repo y derivarlo desde la plantilla compartida
+
+### Baseline sugerido para `Directus MCP`
+
+Usar este bloque en el archivo local derivado desde la plantilla:
+
+```json
+{
+  "mcpServers": {
+    "directus": {
+      "transport": "http",
+      "url": "${DIRECTUS_MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${DIRECTUS_API_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+Notas operativas:
+
+- definir `DIRECTUS_MCP_URL` como la URL base de `Directus` terminada en `/mcp`
+- reutilizar `DIRECTUS_API_TOKEN` si el mismo token tiene permisos suficientes para la superficie MCP
+- si el entorno de `Directus` separa token operativo y token MCP, documentarlo fuera del repo y no hardcodearlo en la plantilla
+- usar este MCP cuando la tarea requiera inspeccionar o administrar colecciones, files, schema o configuracion de `S1` sin salir del flujo del agente
 
 ### Baseline sugerido para `Runpod MCP`
 
@@ -124,6 +150,24 @@ Notas operativas:
 - usar `templates/agent-tooling/skills.manifest.example.yaml` como baseline
 - declarar skills obligatorias, opcionales y futuras
 - documentar dependencias locales o variables requeridas si una skill sale del baseline minimo
+
+### Skill compartida sugerida para `Runpod CLI`
+
+Para tareas que requieran operar la CLI oficial de `Runpod`, instalar tambien la skill `runpodctl` desde `https://github.com/runpod/skills`.
+
+Comando recomendado en Windows:
+
+```powershell
+& 'C:\Program Files\nodejs\npx.cmd' skills add https://github.com/runpod/skills --skill runpodctl --agent codex --global --yes
+```
+
+Notas operativas:
+
+- reiniciar `Codex` despues de instalar la skill para que quede disponible en nuevas sesiones
+- la instalacion global actual de la CLI `skills` para `Codex` copia la skill en `~/.agents/skills/runpodctl`
+- usar esta skill como apoyo para comandos `runpodctl` sobre pods, serverless, templates, network volumes, registry, billing y transferencias
+- `runpodctl` sigue requiriendo autenticacion propia de `Runpod`; validar `RUNPOD_API_KEY` o el login que corresponda fuera del repo
+- la version upstream instalada hoy declara `compatibility: Linux, macOS` y `allowed-tools: Bash(runpodctl:*)`; en Windows puede servir como referencia documental, pero para operaciones nativas del agente conviene priorizar el `Runpod MCP` ya documentado en esta guia
 
 ## Credenciales personales
 
@@ -174,6 +218,12 @@ Un agente esta listo si puede:
 - confirmar que `SUPABASE_MCP_URL` apunta al endpoint `/mcp` esperado
 - validar que el cliente MCP pueda conectarse y listar herramientas o recursos
 - si el endpoint requiere autenticacion adicional o whitelist de red, resolverlo fuera del repo y dejar evidencia en la tarea
+
+### Smoke check sugerido para `Directus MCP`
+
+- confirmar que `DIRECTUS_MCP_URL` apunta al endpoint `/mcp` de la instancia activa
+- validar que el token usado por `Authorization: Bearer ...` tenga permisos sobre la superficie que se quiere administrar
+- si el MCP responde pero las operaciones de files o schema fallan, revisar la configuracion interna de `Directus` antes de culpar al cliente MCP
 
 ## Si algo falla
 

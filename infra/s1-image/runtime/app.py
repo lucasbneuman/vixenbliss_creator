@@ -520,15 +520,17 @@ def _seed_bundle_from_job_input(job_input: dict) -> SeedBundle:
 
 def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
     identity_id = _resolve_identity_id(job_input)
+    result.setdefault("metadata", {})
+    result["metadata"].setdefault("persisted_artifacts", [])
     if identity_id is None:
-        result.setdefault("metadata", {})["dataset_handoff_ready"] = False
+        result["metadata"]["dataset_handoff_ready"] = False
         result["metadata"]["dataset_handoff_reason"] = "identity_id was not provided"
         return result
 
     artifacts = result.get("artifacts") or []
     base_image_bytes = _resolve_base_image_bytes(artifacts)
     if base_image_bytes is None:
-        result.setdefault("metadata", {})["dataset_handoff_ready"] = False
+        result["metadata"]["dataset_handoff_ready"] = False
         result["metadata"]["dataset_handoff_reason"] = "base_image artifact is not materializable"
         return result
 
@@ -605,7 +607,7 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
     result["dataset_manifest"] = manifest
     result["dataset_package_path"] = package_path.as_posix()
     result["dataset_artifacts"] = materialized_artifacts
-    result.setdefault("metadata", {})["dataset_handoff_ready"] = True
+    result["metadata"]["dataset_handoff_ready"] = True
     result["metadata"]["dataset_storage_mode"] = "local_artifact_root"
     result["metadata"]["dataset_review_required"] = manifest["review_required"]
     result["metadata"]["seed_bundle"] = seed_bundle.model_dump(mode="json")
@@ -884,8 +886,11 @@ def submit_job(payload: dict) -> dict:
             if record.result is not None and isinstance(run, dict):
                 record.result.setdefault("metadata", {})
                 record.result["metadata"]["directus_run_id"] = str(run.get("id"))
-        except Exception:
-            pass
+        except Exception as exc:
+            if record.result is not None:
+                record.result.setdefault("metadata", {})
+                record.result["metadata"]["directus_recording_failed"] = True
+                record.result["metadata"]["directus_recording_error"] = str(exc)
     response = record.status_payload(
         progress_url=f"/ws/jobs/{record.job_id}",
         result_url=f"/jobs/{record.job_id}/result",

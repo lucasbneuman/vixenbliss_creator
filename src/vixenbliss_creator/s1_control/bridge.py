@@ -14,6 +14,15 @@ def _stringify(value: Any) -> str | None:
     return str(value)
 
 
+def _input_value(input_payload: dict[str, Any], key: str) -> Any:
+    if key in input_payload:
+        return input_payload.get(key)
+    metadata = input_payload.get("metadata")
+    if isinstance(metadata, dict):
+        return metadata.get(key)
+    return None
+
+
 @dataclass
 class S1RuntimeDirectusRecorder:
     client: ControlPlanePort
@@ -32,20 +41,19 @@ class S1RuntimeDirectusRecorder:
         result_payload: dict[str, Any] | None = None,
         error_message: str | None = None,
     ) -> dict[str, Any]:
-        identity_id = _stringify(input_payload.get("identity_id"))
-        runtime_metadata = result_payload.get("metadata", {}) if isinstance(result_payload, dict) else {}
+        identity_id = _stringify(_input_value(input_payload, "identity_id"))
         run_payload = {
             "identity_id": identity_id,
             "run_type": service_name,
             "status": "running" if status == "in_progress" else status,
             "provider": result_payload.get("provider", "modal") if isinstance(result_payload, dict) else "modal",
             "external_job_id": job_id,
-            "input_idea": input_payload.get("idea") or input_payload.get("prompt"),
+            "input_idea": _input_value(input_payload, "idea") or _input_value(input_payload, "prompt"),
             "result_json": result_payload or {},
             "error_message": error_message,
-            "prompt_request_id": _stringify(input_payload.get("prompt_request_id")),
+            "prompt_request_id": _stringify(_input_value(input_payload, "prompt_request_id")),
         }
-        existing_run_id = _stringify(input_payload.get("directus_run_id"))
+        existing_run_id = _stringify(_input_value(input_payload, "directus_run_id"))
         if existing_run_id:
             run = self.client.update_item("s1_generation_runs", existing_run_id, run_payload)
         else:
@@ -57,6 +65,7 @@ class S1RuntimeDirectusRecorder:
             service_name=service_name,
             result_payload=result_payload,
         )
+        runtime_metadata = result_payload.get("metadata", {}) if isinstance(result_payload, dict) else {}
         self.client.create_item(
             "s1_events",
             {
@@ -109,6 +118,16 @@ class S1RuntimeDirectusRecorder:
                 },
             )
         return run
+
+    @staticmethod
+    def _persisted_artifact_summary(artifact: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "role": artifact.get("artifact_type") or artifact.get("role"),
+            "file_id": artifact.get("directus_file_id"),
+            "uri": artifact.get("directus_asset_url") or artifact.get("storage_path") or artifact.get("uri"),
+            "storage": artifact.get("directus_storage"),
+            "checksum_sha256": artifact.get("checksum_sha256"),
+        }
 
     def _persist_artifacts(
         self,
@@ -174,6 +193,9 @@ class S1RuntimeDirectusRecorder:
 
         result_payload["persisted_artifacts"] = persisted
         result_payload.setdefault("metadata", {})
+        result_payload["metadata"]["persisted_artifacts"] = [
+            self._persisted_artifact_summary(item) for item in persisted
+        ]
         if any(item.get("directus_file_id") for item in persisted):
             result_payload["metadata"]["dataset_storage_mode"] = "directus_files"
         else:
@@ -220,14 +242,7 @@ class S1RuntimeDirectusRecorder:
             "reference_face_image_url": runtime_metadata.get("reference_face_image_url") or input_payload.get("reference_face_image_url"),
             "face_detection_confidence": result_payload.get("face_detection_confidence"),
             "dataset_storage_mode": runtime_metadata.get("dataset_storage_mode"),
-            "persisted_artifacts": [
-                {
-                    "role": item.get("artifact_type") or item.get("role"),
-                    "file_id": item.get("directus_file_id"),
-                    "uri": item.get("directus_asset_url") or item.get("storage_path") or item.get("uri"),
-                }
-                for item in uploaded_artifacts
-            ],
+            "persisted_artifacts": runtime_metadata.get("persisted_artifacts", []),
         }
         snapshot_payload = {
             "avatar_id": identity_id,

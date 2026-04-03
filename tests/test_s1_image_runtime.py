@@ -221,6 +221,7 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     assert payload["metadata"]["dataset_handoff_ready"] is True
     assert payload["metadata"]["dataset_review_required"] is False
     assert payload["metadata"]["dataset_storage_mode"] == "local_artifact_root"
+    assert payload["metadata"]["persisted_artifacts"] == []
     assert payload["metadata"]["seed"] == 42
     assert payload["metadata"]["seed_bundle"]["portrait_seed"] == 42
     assert payload["metadata"]["workflow_id"] == "base-image-ipadapter-impact"
@@ -280,6 +281,45 @@ def test_s1_image_runtime_response_includes_directus_persistence_metadata(tmp_pa
     assert payload["metadata"]["dataset_storage_mode"] == "directus_files"
     assert payload["metadata"]["directus_run_id"] == "run-123"
     assert payload["metadata"]["persisted_artifacts"][0]["file_id"] == "file-123"
+
+
+def test_s1_image_runtime_exposes_directus_recording_failure(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
+    monkeypatch.setattr(module, "_submit_prompt", lambda *_args, **_kwargs: "prompt-1")
+    monkeypatch.setattr(
+        module,
+        "_poll_history",
+        lambda _prompt_id: {
+            "outputs": {
+                "save_base_image": {
+                    "images": [{"filename": "base.png", "subfolder": "vb", "type": "output"}],
+                },
+                "face_detector": {"metrics": {"bbox_confidence": 0.91}},
+            }
+        },
+    )
+    _create_required_flux_assets(module)
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(b"png")
+
+    class FailingRecorder:
+        def record_job(self, **kwargs) -> dict:
+            raise RuntimeError("directus unavailable")
+
+    module._directus_recorder = FailingRecorder()
+    client = TestClient(module.app)
+    identity_id = str(uuid4())
+
+    response = client.post(
+        "/jobs",
+        json={"input": _base_job_input(metadata={"identity_id": identity_id, "autopromote": True, "samples_target": 8})},
+    )
+    payload = response.json()["output"]
+
+    assert payload["metadata"]["directus_recording_failed"] is True
+    assert "directus unavailable" in payload["metadata"]["directus_recording_error"]
 
 
 def test_s1_image_runtime_skips_dataset_handoff_without_identity_id(tmp_path: Path, monkeypatch) -> None:
