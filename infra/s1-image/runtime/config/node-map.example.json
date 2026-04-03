@@ -1,0 +1,9 @@
+{
+  "workflow_id": "base-image-ipadapter-impact",
+  "workflow_version": "2026-03-31",
+  "nodes": {
+    "ip_adapter": "ip_adapter_apply",
+    "face_detector": "face_detector",
+    "face_detailer": "face_detailer"
+  }
+}

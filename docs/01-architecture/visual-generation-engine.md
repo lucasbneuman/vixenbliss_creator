@@ -12,6 +12,7 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
 
 - `S1` cubre generacion de imagenes de identidad para dataset y entrenamiento LoRA.
 - `S1 llm` actua como preparador de manifiestos de generacion para `LangGraph`; no reemplaza la orquestacion.
+- el mismo runtime puede exponer un endpoint OpenAI-compatible en `/v1/chat/completions` para que `LangGraph` consuma el modelo sin cambiar su adapter
 - `S2` cubre generacion de contenido y generacion de video.
 - la separacion por runtime sigue siendo recomendada aunque `training` pertenezca al negocio de `S1` y `video` pertenezca al negocio de `S2`
 - `S1` y `S2` deben permanecer en la misma familia `Flux` para preservar compatibilidad del LoRA
@@ -82,6 +83,13 @@ Configuracion manual esperada:
 3. exponer el mismo contrato neutral de `jobs`, `status`, `result` y `healthcheck`
 4. exponer `WebSocket` opcional por job para progreso en tiempo real
 5. consumirlo desde backend via `S1_IMAGE_PROVIDER=modal`, `S1_LORA_TRAIN_PROVIDER=modal`, `S1_LLM_PROVIDER=modal`, `S2_IMAGE_PROVIDER=modal` y `S2_VIDEO_PROVIDER=modal`
+
+Estado aterrizado en el repo:
+
+- `S1 image` ya corre con runtime visual real bajo `infra/s1-image/runtime/`
+- el bundle de `S1 image` embebe `ComfyUI`, `ComfyUI-IPAdapter-Flux` y `ComfyUI-Impact-Pack`
+- el wrapper de `Modal` usa `Volume` para cache de modelos
+- el servicio mantiene `runtime_stage=identity_image`, no consume `LoRA` y devuelve artifacts y errores normalizados compatibles con `visual_pipeline`
 
 ### `Beam` futuro
 
@@ -160,6 +168,15 @@ Los bundles `runpod-*` quedan como baseline previo, no como direccion futura.
 - `MODAL_ENDPOINT_S1_LLM`
 - `MODAL_ENDPOINT_S2_IMAGE`
 - `MODAL_ENDPOINT_S2_VIDEO`
+- `S1_LLM_RUNTIME_BASE_URL`
+- `S1_LLM_RUNTIME_API_KEY`
+- `S1_LLM_RUNTIME_MODEL`
+- `S1_LLM_RUNTIME_TIMEOUT_SECONDS`
+- `LLM_SERVERLESS_BASE_URL`
+- `LLM_SERVERLESS_API_KEY`
+- `LLM_SERVERLESS_MODEL`
+- `OLLAMA_MODEL`
+- `OLLAMA_TIMEOUT_SECONDS`
 - `progress_url` derivado desde el endpoint cuando el runtime soporte `WebSocket`
 - `PROVIDER_HTTP_TIMEOUT_SECONDS`
 - `PROVIDER_POLL_INTERVAL_SECONDS`
@@ -194,6 +211,13 @@ Los bundles `runpod-*` quedan como baseline previo, no como direccion futura.
 - `COMFYUI_FACE_CONFIDENCE_THRESHOLD`
 - `COMFYUI_RESUME_CACHE_MODE`
 - `COMFYUI_HTTP_TIMEOUT_SECONDS`
+- `MODEL_CACHE_ROOT`
+- `MODEL_CACHE_FLUX_DIFFUSION_PATH`
+- `MODEL_CACHE_FLUX_AE_PATH`
+- `MODEL_CACHE_FLUX_CLIP_L_PATH`
+- `MODEL_CACHE_FLUX_T5XXL_PATH`
+- `MODEL_CACHE_IPADAPTER_FLUX_PATH`
+- `MODEL_BOOTSTRAP_WAIT_SECONDS`
 
 ## Nota FLUX
 
