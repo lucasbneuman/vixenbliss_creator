@@ -79,12 +79,55 @@ El runtime nuevo porta el comportamiento útil del bundle legacy `infra/runpod-s
 - `S1_IMAGE_MODAL_FUNCTION_NAME`
 - `S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME`
 
+## Prueba local minima
+
+Para una prueba local realista de `S1 image`, el stack minimo queda asi:
+
+- `FastAPI` del runtime ejecutado localmente o en `Coolify`
+- acceso autenticado a `Modal` para despertar el worker GPU
+- `HF_TOKEN` con acceso a `FLUX.1-schnell`
+- `Modal Volume` ya primado con los assets pesados o URLs de bootstrap validas
+- una `reference_face_image_url` accesible desde el worker
+
+Validacion minima recomendada:
+
+1. correr `runtime_healthcheck(deep=True)` sobre el worker de `Modal`
+2. levantar el runtime `FastAPI` con `S1_IMAGE_EXECUTION_BACKEND=modal`
+3. ejecutar `POST /jobs` con `runtime_stage=identity_image`
+4. verificar que el resultado devuelva `base_image`, `resume_checkpoint` y `face_detection_confidence`
+5. si la confianza facial queda baja, validar la corrida posterior de `face_detail`
+
 ## Topologia operativa obligatoria
 
 - `Coolify` aloja el `FastAPI` publico del servicio y el orquestador que consume `LangGraph`
 - `Modal` no debe alojar el HTTP publico de `S1 image`
 - `Modal` solo expone funciones GPU privadas para ejecutar `ComfyUI`, entrenamiento o inferencia pesada
 - `MODAL_ENDPOINT_S1_IMAGE` debe apuntar al endpoint HTTP publicado por `Coolify`, no a un `modal.run`
+
+## Estrategia de persistencia recomendada
+
+La salida de `S1 image` no debe tratarse como storage permanente en `Modal`.
+
+Direccion recomendada:
+
+- `Modal Volume`: solo para modelos, caches de `ComfyUI` y staging efimero de muy corta vida
+- `Directus Files` sobre storage `S3-compatible`: fuente de verdad para `dataset_manifest`, `dataset_package` y evidencia de QA
+
+Modos operativos esperados:
+
+1. modo `review`
+- `S1 image` persiste `dataset_manifest` y `dataset_package`
+- el equipo revisa calidad del dataset
+- recien despues se habilita `S1 lora train`
+
+2. modo `autopromote`
+- `S1 image` persiste como minimo `dataset_manifest`
+- `dataset_package` se guarda con retencion corta
+- el orquestador dispara `S1 lora train` al terminar la generacion
+- luego aplica limpieza automatica de artifacts temporales segun politica
+
+Mientras el flujo este en validacion, priorizar `review`.
+Cuando la calidad del dataset ya este estabilizada, pasar a `autopromote` con storage en `Directus`.
 
 ## Nota sobre Runpod
 

@@ -152,6 +152,31 @@ Este documento fija:
 - `video_placeholder` no persiste binario todavia y requiere `model_family=future_video`
 - `base_model_id` siempre debe persistirse para poder validar compatibilidad entre `S1`, `training` y `S2`
 
+## Regla de persistencia para `S1 image`
+
+Para el handoff `S1 image -> S1 lora train`:
+
+- `dataset_manifest` es obligatorio como artifact persistido
+- `dataset_package` debe persistirse mientras exista QA manual o mientras el training no pueda reconstruir el dataset solo desde el manifest
+- la fuente de verdad recomendada para ambos es storage externo (`Directus Files`, `Supabase Storage` o `S3-compatible`)
+- `Modal Volume` puede usarse como cache o staging efimero, pero no como registro persistente entre servicios
+
+## Modos de handoff admitidos
+
+### `review`
+
+- `S1 image` genera `dataset_manifest`
+- `S1 image` genera `dataset_package`
+- el operador revisa calidad
+- `S1 lora train` se habilita solo despues de aprobacion
+
+### `autopromote`
+
+- `S1 image` genera `dataset_manifest`
+- `S1 image` persiste `dataset_package` con retencion corta o suficiente para retry
+- el orquestador dispara `lora_training` automaticamente
+- luego se aplica cleanup de artifacts temporales segun politica operativa
+
 ## Payloads validos de ejemplo
 
 ```json

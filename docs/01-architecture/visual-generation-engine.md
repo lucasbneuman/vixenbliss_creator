@@ -234,6 +234,19 @@ Mientras la DB no este lista, cada etapa de `S1` debe dejar manifests JSON persi
 - `S1 image`: `dataset_manifest` y `dataset_package`
 - `S1 lora train`: `training_manifest` y metadata del `lora_model`
 
+Direccion recomendada de persistencia para `S1 image`:
+
+- `Modal Volume`: modelos, caches y staging efimero
+- `Directus Files` o storage `S3-compatible`: `dataset_manifest`, `dataset_package` y artifacts de QA
+
+Direccion recomendada del handoff:
+
+1. `S1 image` produce `dataset_manifest`
+2. `S1 image` persiste `dataset_package` solo el tiempo necesario para QA o retry
+3. en modo `review`, el operador valida calidad antes de disparar training
+4. en modo `autopromote`, el orquestador en `Coolify` dispara `S1 lora train` apenas termina la persistencia
+5. luego se aplica limpieza de artifacts temporales segun politica
+
 Para `FLUX.1-schnell`, el runtime ya no debe asumir un unico `checkpoint`. El deploy debe proveer assets separados para:
 
 - `models/diffusion_models/flux1-schnell.safetensors`
