@@ -124,7 +124,7 @@
   "load_ip_adapter_model": {
     "class_type": "IPAdapterFluxLoader",
     "inputs": {
-      "ipadapter": "flux-ipadapter-face.safetensors",
+      "ipadapter": "ip-adapter.bin",
       "clip_vision": "google/siglip-so400m-patch14-384",
       "provider": "cuda"
     }

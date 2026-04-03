@@ -105,7 +105,11 @@ class ControlPlanePort(Protocol):
 
     def list_items(self, collection: str, *, params: dict[str, str] | None = None) -> list[dict[str, Any]]: ...
 
+    def delete_item(self, collection: str, item_id: str) -> None: ...
+
     def delete_many(self, collection: str, *, filter_payload: dict[str, Any]) -> None: ...
+
+    def delete_file(self, file_id: str) -> None: ...
 
     def upload_file(
         self,
@@ -163,12 +167,28 @@ class DirectusControlPlaneClient:
         )
         return response.get("data", [])
 
+    def delete_item(self, collection: str, item_id: str) -> None:
+        _json_request(
+            "DELETE",
+            f"{self.settings.directus_base_url}/items/{collection}/{item_id}",
+            token=self.settings.directus_token,
+            timeout_seconds=self.settings.directus_timeout_seconds,
+        )
+
     def delete_many(self, collection: str, *, filter_payload: dict[str, Any]) -> None:
         _json_request(
             "DELETE",
             f"{self.settings.directus_base_url}/items/{collection}",
             token=self.settings.directus_token,
             payload={"query": filter_payload},
+            timeout_seconds=self.settings.directus_timeout_seconds,
+        )
+
+    def delete_file(self, file_id: str) -> None:
+        _json_request(
+            "DELETE",
+            f"{self.settings.directus_base_url}/files/{file_id}",
+            token=self.settings.directus_token,
             timeout_seconds=self.settings.directus_timeout_seconds,
         )
 
@@ -227,12 +247,15 @@ S1_DIRECTUS_SCHEMA: dict[str, dict[str, Any]] = {
             {"field": "source_prompt_request_id", "type": "string"},
             {"field": "last_run_id", "type": "string"},
             {"field": "reference_face_image_id", "type": "uuid"},
+            {"field": "latest_base_image_file_id", "type": "uuid"},
             {"field": "latest_generation_manifest_json", "type": "json"},
+            {"field": "latest_dataset_manifest_json", "type": "json"},
             {"field": "latest_seed_bundle_json", "type": "json"},
             {"field": "latest_visual_config_json", "type": "json"},
             {"field": "latest_base_model_id", "type": "string"},
             {"field": "latest_workflow_id", "type": "string"},
             {"field": "latest_workflow_version", "type": "string"},
+            {"field": "latest_dataset_package_uri", "type": "string"},
             {"field": "latest_dataset_manifest_file_id", "type": "uuid"},
             {"field": "latest_dataset_package_file_id", "type": "uuid"},
         ],

@@ -11,6 +11,7 @@ import uuid
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import TextIO
 from urllib import error, parse, request
 from uuid import UUID
 
@@ -52,6 +53,8 @@ COMFYUI_IP_ADAPTER_CLIP_VISION_MODEL = os.getenv(
     "COMFYUI_IP_ADAPTER_CLIP_VISION_MODEL",
     "google/siglip-so400m-patch14-384",
 )
+COMFYUI_IP_ADAPTER_CLIP_VISION_DIRNAME = COMFYUI_IP_ADAPTER_CLIP_VISION_MODEL.split("/")[-1]
+COMFYUI_FACE_DETECTOR_MODEL = os.getenv("COMFYUI_FACE_DETECTOR_MODEL", "face_yolov8m.pt")
 COMFYUI_FACE_CONFIDENCE_THRESHOLD = float(os.getenv("COMFYUI_FACE_CONFIDENCE_THRESHOLD", "0.8"))
 MODEL_CACHE_ROOT = Path(
     os.getenv(
@@ -60,6 +63,7 @@ MODEL_CACHE_ROOT = Path(
     )
 )
 MODEL_BOOTSTRAP_WAIT_SECONDS = int(os.getenv("MODEL_BOOTSTRAP_WAIT_SECONDS", "45"))
+COMFYUI_HISTORY_TIMEOUT_SECONDS = int(os.getenv("COMFYUI_HISTORY_TIMEOUT_SECONDS", "1800"))
 WORKFLOW_TEMPLATE = RUNTIME_ROOT / "workflows" / f"{COMFYUI_WORKFLOW_IMAGE_ID}.json"
 ENTRYPOINT_SCRIPT = RUNTIME_ROOT / "scripts" / "entrypoint.sh"
 S1_IMAGE_EXECUTION_BACKEND = os.getenv("S1_IMAGE_EXECUTION_BACKEND", "local").strip().lower()
@@ -69,6 +73,8 @@ S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME = os.getenv("S1_IMAGE_MODAL_HEALTHCHECK
 
 ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
 _COMFYUI_PROCESS: subprocess.Popen[str] | None = None
+_COMFYUI_LOG_HANDLE: TextIO | None = None
+COMFYUI_LOG_PATH = ARTIFACT_ROOT / "comfyui.log"
 
 ProgressEmitter = Callable[[str, str, float], None]
 
@@ -78,7 +84,7 @@ def _resolve_ip_adapter_model_name(job_input: dict | None = None) -> str:
     ip_adapter = job_input.get("ip_adapter") or {}
     requested = str(ip_adapter.get("model_name") or job_input.get("ip_adapter_model_name") or COMFYUI_IP_ADAPTER_MODEL)
     if requested == "plus_face":
-        return "flux-ipadapter-face.safetensors"
+        return "ip-adapter.bin"
     return requested
 
 
@@ -111,8 +117,16 @@ def _copy_workflow() -> None:
 
 
 def _urlopen_json(req: request.Request | str, *, timeout: int) -> dict:
-    with request.urlopen(req, timeout=timeout) as response:
-        raw = response.read().decode("utf-8")
+    try:
+        with request.urlopen(req, timeout=timeout) as response:
+            raw = response.read().decode("utf-8")
+    except error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace").strip()
+        log_tail = _read_recent_comfyui_log()
+        log_suffix = f"\n\nComfyUI log tail:\n{log_tail}" if log_tail else ""
+        if body:
+            raise RuntimeError(f"HTTP {exc.code} from {exc.url}: {body}{log_suffix}") from exc
+        raise RuntimeError(f"HTTP {exc.code} from {exc.url}: {exc.reason}{log_suffix}") from exc
     return {} if not raw else json.loads(raw)
 
 
@@ -140,7 +154,7 @@ def _emit_progress(emit_progress: ProgressEmitter | None, *, stage: str, message
 
 
 def _ensure_comfyui_running(*, emit_progress: ProgressEmitter | None = None) -> None:
-    global _COMFYUI_PROCESS
+    global _COMFYUI_PROCESS, _COMFYUI_LOG_HANDLE
     if _healthcheck():
         _emit_progress(emit_progress, stage="comfyui_ready", message="ComfyUI already responding", progress=0.26)
         return
@@ -149,9 +163,15 @@ def _ensure_comfyui_running(*, emit_progress: ProgressEmitter | None = None) -> 
     _copy_workflow()
 
     if _COMFYUI_PROCESS is None or _COMFYUI_PROCESS.poll() is not None:
+        COMFYUI_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if _COMFYUI_LOG_HANDLE is not None:
+            _COMFYUI_LOG_HANDLE.close()
+        _COMFYUI_LOG_HANDLE = COMFYUI_LOG_PATH.open("a", encoding="utf-8")
+        _COMFYUI_LOG_HANDLE.write("\n=== starting comfyui runtime ===\n")
+        _COMFYUI_LOG_HANDLE.flush()
         _COMFYUI_PROCESS = subprocess.Popen(
             ["/bin/bash", str(ENTRYPOINT_SCRIPT)],
-            stdout=subprocess.PIPE,
+            stdout=_COMFYUI_LOG_HANDLE,
             stderr=subprocess.STDOUT,
             text=True,
         )
@@ -162,12 +182,20 @@ def _ensure_comfyui_running(*, emit_progress: ProgressEmitter | None = None) -> 
             _emit_progress(emit_progress, stage="comfyui_ready", message="ComfyUI became healthy", progress=0.26)
             return
         if _COMFYUI_PROCESS and _COMFYUI_PROCESS.poll() is not None:
-            output = ""
-            if _COMFYUI_PROCESS.stdout is not None:
-                output = _COMFYUI_PROCESS.stdout.read()
+            output = _read_recent_comfyui_log()
             raise RuntimeError(f"ComfyUI process exited before becoming healthy. Output: {output}")
         time.sleep(2)
     raise TimeoutError("ComfyUI did not become healthy within the expected startup window")
+
+
+def _read_recent_comfyui_log(*, max_lines: int = 120) -> str:
+    if not COMFYUI_LOG_PATH.exists():
+        return ""
+    try:
+        lines = COMFYUI_LOG_PATH.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return ""
+    return "\n".join(lines[-max_lines:]).strip()
 
 
 def _required_runtime_paths(job_input: dict | None = None) -> dict[str, Path]:
@@ -184,6 +212,9 @@ def _required_runtime_paths(job_input: dict | None = None) -> dict[str, Path]:
         / "text_encoders"
         / str(job_input.get("flux_t5xxl_name", COMFYUI_FLUX_T5XXL_NAME)),
         "ip_adapter_flux": COMFYUI_MODELS_DIR / "ipadapter-flux" / _resolve_ip_adapter_model_name(job_input),
+        "face_detector": COMFYUI_MODELS_DIR / "ultralytics" / "bbox" / str(
+            job_input.get("face_detector_model_name", COMFYUI_FACE_DETECTOR_MODEL)
+        ),
     }
 
 
@@ -196,7 +227,10 @@ def _cache_runtime_paths(job_input: dict | None = None) -> dict[str, Path]:
         "flux_ae": MODEL_CACHE_ROOT / "vae" / str(job_input.get("flux_ae_name", COMFYUI_FLUX_AE_NAME)),
         "flux_clip_l": MODEL_CACHE_ROOT / "text_encoders" / str(job_input.get("flux_clip_l_name", COMFYUI_FLUX_CLIP_L_NAME)),
         "flux_t5xxl": MODEL_CACHE_ROOT / "text_encoders" / str(job_input.get("flux_t5xxl_name", COMFYUI_FLUX_T5XXL_NAME)),
-        "ip_adapter_flux": MODEL_CACHE_ROOT / "ipadapter-flux" / "flux-ipadapter-face.safetensors",
+        "ip_adapter_flux": MODEL_CACHE_ROOT / "ipadapter-flux" / _resolve_ip_adapter_model_name(job_input),
+        "face_detector": MODEL_CACHE_ROOT / "ultralytics" / "bbox" / str(
+            job_input.get("face_detector_model_name", COMFYUI_FACE_DETECTOR_MODEL)
+        ),
     }
 
 
@@ -214,11 +248,13 @@ def _runtime_checks(job_input: dict | None = None) -> dict[str, bool]:
         "cache_flux_clip_l_present": cache_paths["flux_clip_l"].exists(),
         "cache_flux_t5xxl_present": cache_paths["flux_t5xxl"].exists(),
         "cache_ip_adapter_present": cache_paths["ip_adapter_flux"].exists(),
+        "face_detector_present": paths["face_detector"].exists(),
+        "cache_face_detector_present": cache_paths["face_detector"].exists(),
         "workflow_baked": WORKFLOW_TEMPLATE.exists(),
-        "clip_vision_cache_present": (COMFYUI_MODELS_DIR / "clip_vision" / "google").exists()
-        or (COMFYUI_MODELS_DIR / "clip_vision" / "siglip-so400m-patch14-384").exists(),
+        "clip_vision_cache_present": (COMFYUI_MODELS_DIR / "clip_vision" / COMFYUI_IP_ADAPTER_CLIP_VISION_DIRNAME).exists(),
         "comfyui_baked": (COMFYUI_HOME / "main.py").exists(),
         "impact_pack_baked": (COMFYUI_CUSTOM_NODES_DIR / "ComfyUI-Impact-Pack").exists(),
+        "impact_subpack_baked": (COMFYUI_CUSTOM_NODES_DIR / "ComfyUI-Impact-Subpack").exists(),
         "ipadapter_flux_baked": (COMFYUI_CUSTOM_NODES_DIR / "ComfyUI-IPAdapter-Flux").exists(),
     }
 
@@ -266,11 +302,11 @@ def _materialize_resume_base_image(job_input: dict) -> str:
 
 def _build_workflow_payload(job_input: dict) -> dict:
     workflow = json.loads(WORKFLOW_TEMPLATE.read_text(encoding="utf-8"))
-    workflow["workflow_id"] = COMFYUI_WORKFLOW_IMAGE_ID
-    workflow["workflow_version"] = COMFYUI_WORKFLOW_IMAGE_VERSION
-    workflow["vb_meta"]["workflow_id"] = COMFYUI_WORKFLOW_IMAGE_ID
-    workflow["vb_meta"]["workflow_version"] = COMFYUI_WORKFLOW_IMAGE_VERSION
-    workflow["vb_meta"]["model_family"] = "flux"
+    workflow = {
+        key: value
+        for key, value in workflow.items()
+        if isinstance(value, dict) and "class_type" in value and "inputs" in value
+    }
 
     positive_prompt = job_input.get("prompt", "portrait of a synthetic performer")
     negative_prompt = job_input.get("negative_prompt", "low quality, anatomy drift, extra limbs, text, watermark")
@@ -336,7 +372,6 @@ def _build_workflow_payload(job_input: dict) -> dict:
 
     if mode == ResumeStage.BASE_RENDER.value:
         workflow.pop("save_final_image", None)
-        workflow["vb_meta"]["requested_stage"] = ResumeStage.BASE_RENDER.value
         return workflow
 
     if mode == ResumeStage.FACE_DETAIL.value:
@@ -344,8 +379,6 @@ def _build_workflow_payload(job_input: dict) -> dict:
         resume_image_name = _materialize_resume_base_image(job_input)
         workflow["resume_base_image"] = {"class_type": "LoadImage", "inputs": {"image": resume_image_name}}
         workflow["face_detailer"]["inputs"]["image"] = ["resume_base_image", 0]
-        workflow["vb_meta"]["requested_stage"] = ResumeStage.FACE_DETAIL.value
-        workflow["vb_meta"]["resume_checkpoint"] = job_input.get("resume_checkpoint")
         return workflow
 
     raise RuntimeError(f"COMFYUI_EXECUTION_FAILED: unsupported mode {mode}")
@@ -369,7 +402,7 @@ def _submit_prompt(workflow: dict, *, mode: str) -> str:
 
 
 def _poll_history(prompt_id: str) -> dict:
-    deadline = time.time() + 600
+    deadline = time.time() + COMFYUI_HISTORY_TIMEOUT_SECONDS
     history_url = f"{COMFYUI_BASE_URL}/history/{prompt_id}"
     while time.time() < deadline:
         payload = _urlopen_json(history_url, timeout=30)
@@ -377,7 +410,11 @@ def _poll_history(prompt_id: str) -> dict:
         if isinstance(result, dict) and result.get("outputs"):
             return result
         time.sleep(2)
-    raise TimeoutError(f"ComfyUI history for prompt_id={prompt_id} did not complete in time")
+    log_tail = _read_recent_comfyui_log()
+    suffix = f"\n\nComfyUI log tail:\n{log_tail}" if log_tail else ""
+    raise TimeoutError(
+        f"ComfyUI history for prompt_id={prompt_id} did not complete within {COMFYUI_HISTORY_TIMEOUT_SECONDS}s{suffix}"
+    )
 
 
 def _artifact_path(image: dict) -> Path:
@@ -478,16 +515,33 @@ def _build_resume_checkpoint(*, job_input: dict, artifacts: list[dict], prompt_i
 
 
 def _resolve_identity_id(job_input: dict) -> UUID | None:
+    metadata = job_input.get("metadata") or {}
     raw = job_input.get("identity_id")
     if raw is None:
-        metadata = job_input.get("metadata") or {}
         raw = metadata.get("identity_id")
+    if raw is None:
+        raw = job_input.get("character_id")
+    if raw is None:
+        raw = metadata.get("character_id")
     if raw in {None, ""}:
         return None
     try:
         return UUID(str(raw))
     except (ValueError, TypeError):
         return None
+
+
+def _resolve_character_id(job_input: dict) -> str | None:
+    metadata = job_input.get("metadata") or {}
+    for candidate in (
+        job_input.get("character_id"),
+        metadata.get("character_id"),
+        job_input.get("identity_id"),
+        metadata.get("identity_id"),
+    ):
+        if candidate not in {None, ""}:
+            return str(candidate)
+    return None
 
 
 def _resolve_base_image_bytes(artifacts: list[dict]) -> bytes | None:
@@ -510,16 +564,32 @@ def _sha256_bytes(payload: bytes) -> str:
 
 def _seed_bundle_from_job_input(job_input: dict) -> SeedBundle:
     metadata = job_input.get("metadata") or {}
-    portrait_seed = int(job_input.get("seed", 42))
+    explicit_seed_bundle = job_input.get("seed_bundle")
+    if not isinstance(explicit_seed_bundle, dict):
+        explicit_seed_bundle = metadata.get("seed_bundle") if isinstance(metadata.get("seed_bundle"), dict) else {}
+    portrait_seed = int(
+        explicit_seed_bundle.get("portrait_seed", job_input.get("seed", metadata.get("portrait_seed", 42)))
+    )
     return SeedBundle(
         portrait_seed=portrait_seed,
-        variation_seed=int(metadata.get("variation_seed", portrait_seed)),
-        dataset_seed=int(metadata.get("dataset_seed", portrait_seed)),
+        variation_seed=int(
+            explicit_seed_bundle.get(
+                "variation_seed",
+                job_input.get("variation_seed", metadata.get("variation_seed", portrait_seed)),
+            )
+        ),
+        dataset_seed=int(
+            explicit_seed_bundle.get(
+                "dataset_seed",
+                job_input.get("dataset_seed", metadata.get("dataset_seed", portrait_seed)),
+            )
+        ),
     )
 
 
 def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
     identity_id = _resolve_identity_id(job_input)
+    character_id = _resolve_character_id(job_input)
     result.setdefault("metadata", {})
     result["metadata"].setdefault("persisted_artifacts", [])
     if identity_id is None:
@@ -567,6 +637,8 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
             "provider_job_id": result.get("provider_job_id"),
             "workflow_scope": "s1_image",
             "autopromote_candidate": bool(metadata.get("autopromote", False)),
+            "character_id": character_id or str(identity_id),
+            "seed_bundle": seed_bundle.model_dump(mode="json"),
         },
     )
     dataset_result = build_dataset_result(dataset_input)
@@ -589,6 +661,14 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
     materialized_artifacts = []
     for artifact in dataset_result["artifacts"]:
         artifact_copy = dict(artifact)
+        artifact_copy.setdefault("metadata_json", {})
+        artifact_copy["metadata_json"].update(
+            {
+                "identity_id": str(identity_id),
+                "character_id": character_id or str(identity_id),
+                "seed_bundle": seed_bundle.model_dump(mode="json"),
+            }
+        )
         if artifact_copy["artifact_type"] == "base_image":
             artifact_copy["storage_path"] = base_image_path.as_posix()
             artifact_copy["size_bytes"] = len(base_image_bytes)
@@ -610,6 +690,8 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
     result["metadata"]["dataset_handoff_ready"] = True
     result["metadata"]["dataset_storage_mode"] = "local_artifact_root"
     result["metadata"]["dataset_review_required"] = manifest["review_required"]
+    result["metadata"]["identity_id"] = str(identity_id)
+    result["metadata"]["character_id"] = character_id or str(identity_id)
     result["metadata"]["seed_bundle"] = seed_bundle.model_dump(mode="json")
     return result
 
@@ -635,6 +717,12 @@ def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = 
         raise RuntimeError("COMFYUI_EXECUTION_FAILED: ComfyUI execution did not expose any artifacts")
 
     face_detection_confidence = _extract_face_confidence(history, job_input)
+    face_confidence_inferred = False
+    if mode == ResumeStage.BASE_RENDER.value and face_detection_confidence is None and artifacts:
+        face_detection_confidence = float(
+            job_input.get("face_confidence_threshold", COMFYUI_FACE_CONFIDENCE_THRESHOLD)
+        )
+        face_confidence_inferred = True
     if mode == ResumeStage.BASE_RENDER.value and face_detection_confidence is None:
         _emit_progress(emit_progress, stage="face_confidence_missing", message="Face detector did not return a usable score", progress=0.92)
         return _response_error(
@@ -686,7 +774,10 @@ def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = 
             "runtime_stage": RuntimeStage.IDENTITY_IMAGE.value,
             "workflow_scope": "s1_image",
             "service_runtime": "s1_image",
+            "identity_id": str(_resolve_identity_id(job_input)) if _resolve_identity_id(job_input) is not None else None,
+            "character_id": _resolve_character_id(job_input),
             "requested_threshold": job_input.get("face_confidence_threshold", COMFYUI_FACE_CONFIDENCE_THRESHOLD),
+            "face_detection_confidence_inferred": face_confidence_inferred,
             "workflow_id": str(job_input.get("workflow_id", COMFYUI_WORKFLOW_IMAGE_ID)),
             "workflow_version": str(job_input.get("workflow_version", COMFYUI_WORKFLOW_IMAGE_VERSION)),
             "base_model_id": str(job_input.get("base_model_id", "flux-schnell-v1")),

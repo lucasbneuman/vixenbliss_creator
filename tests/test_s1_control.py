@@ -64,6 +64,8 @@ def test_schema_manager_creates_expected_s1_collections() -> None:
     assert "display_name" in manager.collections["s1_identities"]["fields"]
     assert "metadata_json" in manager.collections["s1_artifacts"]["fields"]
     assert "latest_seed_bundle_json" in manager.collections["s1_identities"]["fields"]
+    assert "latest_base_image_file_id" in manager.collections["s1_identities"]["fields"]
+    assert "latest_dataset_manifest_json" in manager.collections["s1_identities"]["fields"]
     assert "latest_dataset_package_file_id" in manager.collections["s1_identities"]["fields"]
 
 

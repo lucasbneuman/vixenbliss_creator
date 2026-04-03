@@ -29,14 +29,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
     MODEL_CACHE_ROOT=/cache/models
 
 ARG COMFYUI_REPO=https://github.com/Comfy-Org/ComfyUI.git
-ARG COMFYUI_REF=ebf6b52e322664af91fcdc8b8848d31d5fb98f66
+ARG COMFYUI_REF=bda1482a272e36315d39ef84663073f88d0a0367
 ARG COMFYUI_IPADAPTER_REPO=https://github.com/Shakker-Labs/ComfyUI-IPAdapter-Flux.git
 ARG COMFYUI_IPADAPTER_REF=eef22b6875ddaf10f13657248b8123d6bdec2014
 ARG COMFYUI_IMPACT_REPO=https://github.com/ltdrdata/ComfyUI-Impact-Pack.git
 ARG COMFYUI_IMPACT_REF=6a517ebe06fea2b74fc41b3bd089c0d7173eeced
-ARG TORCH_VERSION=2.6.0
-ARG TORCHVISION_VERSION=0.21.0
-ARG TORCHAUDIO_VERSION=2.6.0
+ARG COMFYUI_IMPACT_SUBPACK_REPO=https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git
+ARG COMFYUI_IMPACT_SUBPACK_REF=50c7b71a6a224734cc9b21963c6d1926816a97f1
+ARG TORCH_VERSION=2.5.1
+ARG TORCHVISION_VERSION=0.20.1
+ARG TORCHAUDIO_VERSION=2.5.1
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124
 
 WORKDIR /opt
@@ -46,6 +48,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     tini \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    libxcb1 \
     python3 \
     python3-pip \
     python3-venv \
@@ -71,11 +79,18 @@ RUN git init "${COMFYUI_HOME}" && \
     git init "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack" && \
     git -C "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack" remote add origin "${COMFYUI_IMPACT_REPO}" && \
     git -C "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack" fetch --depth 1 origin "${COMFYUI_IMPACT_REF}" && \
-    git -C "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack" checkout --detach FETCH_HEAD
+    git -C "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack" checkout --detach FETCH_HEAD && \
+    git init "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Subpack" && \
+    git -C "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Subpack" remote add origin "${COMFYUI_IMPACT_SUBPACK_REPO}" && \
+    git -C "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Subpack" fetch --depth 1 origin "${COMFYUI_IMPACT_SUBPACK_REF}" && \
+    git -C "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Subpack" checkout --detach FETCH_HEAD
+
+RUN python -c "from pathlib import Path; core_path = Path('/opt/comfyui/custom_nodes/ComfyUI-Impact-Pack/modules/impact/core.py'); original = 'return list(comfy.samplers.SCHEDULER_HANDLERS) + ADDITIONAL_SCHEDULERS'; patched = \"return list(getattr(comfy.samplers, 'SCHEDULER_HANDLERS', comfy.samplers.SCHEDULER_NAMES)) + ADDITIONAL_SCHEDULERS\"; text = core_path.read_text(encoding='utf-8'); assert original in text, f'Expected Impact Pack scheduler hook not found in {core_path}'; core_path.write_text(text.replace(original, patched), encoding='utf-8')"
 
 RUN python -m pip install -r "${COMFYUI_HOME}/requirements.txt" && \
     if [ -f "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-IPAdapter-Flux/requirements.txt" ]; then python -m pip install -r "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-IPAdapter-Flux/requirements.txt"; fi && \
-    if [ -f "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack/requirements.txt" ]; then python -m pip install -r "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack/requirements.txt"; fi
+    if [ -f "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack/requirements.txt" ]; then python -m pip install -r "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack/requirements.txt"; fi && \
+    if [ -f "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Subpack/requirements.txt" ]; then python -m pip install -r "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Subpack/requirements.txt"; fi
 
 RUN python -m pip install --index-url "${TORCH_INDEX_URL}" \
       --upgrade --force-reinstall \

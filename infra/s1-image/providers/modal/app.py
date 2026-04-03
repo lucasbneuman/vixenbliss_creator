@@ -10,6 +10,9 @@ import modal
 
 APP_NAME = os.getenv("S1_IMAGE_MODAL_APP_NAME", "vixenbliss-s1-image")
 MODEL_CACHE_ROOT = "/cache/models"
+CLIP_VISION_MODEL = os.getenv("COMFYUI_IP_ADAPTER_CLIP_VISION_MODEL", "google/siglip-so400m-patch14-384")
+CLIP_VISION_DIRNAME = CLIP_VISION_MODEL.split("/")[-1]
+FACE_DETECTOR_MODEL = os.getenv("COMFYUI_FACE_DETECTOR_MODEL", "face_yolov8m.pt")
 
 app = modal.App(APP_NAME)
 
@@ -118,6 +121,20 @@ def _download_model(repo_id: str, filename: str, target: Path, *, token: str | N
     shutil.copyfile(cached, target)
 
 
+def _download_repo_snapshot(repo_id: str, target_dir: Path, *, token: str | None) -> None:
+    from huggingface_hub import snapshot_download
+
+    if target_dir.exists() and any(target_dir.iterdir()):
+        return
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_download(
+        repo_id=repo_id,
+        token=token,
+        local_dir=target_dir,
+        local_dir_use_symlinks=False,
+    )
+
+
 @app.function(
     image=image,
     timeout=3600,
@@ -154,9 +171,15 @@ def prime_model_cache() -> dict:
             False,
         ),
         (
-            os.getenv("FLUX_IPADAPTER_REPO_ID", "XLabs-AI/flux-ip-adapter"),
-            os.getenv("FLUX_IPADAPTER_SOURCE_FILENAME", "ip_adapter.safetensors"),
-            cache_root / "ipadapter-flux" / "flux-ipadapter-face.safetensors",
+            os.getenv("FLUX_IPADAPTER_REPO_ID", "InstantX/FLUX.1-dev-IP-Adapter"),
+            os.getenv("FLUX_IPADAPTER_SOURCE_FILENAME", "ip-adapter.bin"),
+            cache_root / "ipadapter-flux" / "ip-adapter.bin",
+            False,
+        ),
+        (
+            os.getenv("COMFYUI_FACE_DETECTOR_REPO_ID", "Bingsu/adetailer"),
+            FACE_DETECTOR_MODEL,
+            cache_root / "ultralytics" / "bbox" / FACE_DETECTOR_MODEL,
             False,
         ),
     ]
@@ -164,9 +187,14 @@ def prime_model_cache() -> dict:
     for repo_id, filename, target, gated in downloads:
         _download_model(repo_id, filename, target, token=token, gated=gated)
 
+    clip_vision_target = cache_root / "clip_vision" / CLIP_VISION_DIRNAME
+    _download_repo_snapshot(CLIP_VISION_MODEL, clip_vision_target, token=token)
+
     model_cache_volume.commit()
     return {
         "ok": True,
         "model_cache_root": MODEL_CACHE_ROOT,
         "downloaded_files": [str(target) for _, _, target, _ in downloads],
+        "clip_vision_model": CLIP_VISION_MODEL,
+        "clip_vision_dir": str(clip_vision_target),
     }

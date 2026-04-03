@@ -6,7 +6,6 @@ import os
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -14,22 +13,11 @@ from fastapi.testclient import TestClient
 from .bootstrap import bootstrap_directus_schema
 from .config import S1ControlSettings
 from .directus import DirectusControlPlaneClient
+from .support import load_local_env, tiny_png_bytes
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_PATH = REPO_ROOT / "infra" / "s1-image" / "runtime" / "app.py"
-
-
-def _load_local_env() -> None:
-    env_path = REPO_ROOT / ".env"
-    if not env_path.exists():
-        return
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip())
 
 
 def _load_runtime_module() -> object:
@@ -63,12 +51,12 @@ def _job_input(identity_id: str) -> dict[str, object]:
         "reference_face_image_url": "https://example.com/reference.png",
         "ip_adapter": {"enabled": True, "model_name": "plus_face", "weight": 0.9},
         "face_detailer": {"enabled": True, "confidence_threshold": 0.8, "inpaint_strength": 0.35},
-        "metadata": {"identity_id": identity_id, "autopromote": True, "samples_target": 8},
+        "metadata": {"identity_id": identity_id, "character_id": identity_id, "autopromote": False, "samples_target": 8},
     }
 
 
 def run_live_smoke() -> dict[str, object]:
-    _load_local_env()
+    load_local_env()
     created_collections = bootstrap_directus_schema()
     settings = S1ControlSettings.from_env()
     client = DirectusControlPlaneClient(settings)
@@ -103,7 +91,7 @@ def run_live_smoke() -> dict[str, object]:
             }
         }
         _create_required_assets(module)
-        (output_dir / "base.png").write_bytes(b"png")
+        (output_dir / "base.png").write_bytes(tiny_png_bytes())
         api_client = TestClient(module.app)
 
         response = api_client.post("/jobs", json={"input": _job_input(identity_id)})
@@ -152,6 +140,9 @@ def run_live_smoke() -> dict[str, object]:
                 "id": str(identity["id"]) if identity else None,
                 "avatar_id": identity.get("avatar_id") if identity else None,
                 "last_run_id": identity.get("last_run_id") if identity else None,
+                "latest_base_image_file_id": identity.get("latest_base_image_file_id") if identity else None,
+                "latest_dataset_manifest_json": identity.get("latest_dataset_manifest_json") if identity else None,
+                "latest_dataset_package_uri": identity.get("latest_dataset_package_uri") if identity else None,
                 "latest_dataset_manifest_file_id": identity.get("latest_dataset_manifest_file_id") if identity else None,
                 "latest_dataset_package_file_id": identity.get("latest_dataset_package_file_id") if identity else None,
             },

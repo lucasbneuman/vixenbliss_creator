@@ -33,6 +33,24 @@ Para cambios Python, el baseline operativo del repo es:
 - `End-to-end`: flujo principal del MVP reforzado
 - `Revision humana`: muestras, QA funcional y consistencia visual cuando aplique
 
+## Smoke reusable de S1
+
+Para validar el handoff previo a `S1 Training` sin depender de un endpoint publico ya desplegado, el repo incorpora dos checks reutilizables:
+
+- `python -m vixenbliss_creator.s1_control.live_smoke`
+- `python -m vixenbliss_creator.s1_control.readiness_check --idea "Quiero una modelo morocha para contenido NSFW, el resto completalo de manera automatica"`
+- `python -m vixenbliss_creator.s1_control.cleanup_directus`
+
+Uso recomendado:
+
+- `live_smoke` valida persistencia real en `Directus` con runtime local controlado
+- `readiness_check` combina `LangGraph` con LLM real, `S1 llm` local, fallback local de `S1 image` y verificacion de artifacts persistidos
+- cuando `MODAL_TOKEN_ID` y `MODAL_TOKEN_SECRET` estan presentes, `readiness_check` debe priorizar el worker GPU real de `S1 Image` en `Modal`
+- los checks esperan que `Directus Files` reciba solo imagenes; `dataset_manifest` y `dataset_package` deben quedar en tablas y metadata tecnica
+- el PNG usado por la smoke es un fixture tecnico valido mayor a `1x1`, suficiente para integridad binaria pero no para aprobar calidad de entrenamiento
+- la validacion visual final para habilitar `LoRA training` sigue requiriendo revision humana sobre imagenes reales del runtime GPU
+- `cleanup_directus` borra las filas y files de prueba de `S1` para dejar el control plane limpio antes de una nueva tanda de validacion
+
 ## Escenarios de proceso a cubrir
 
 - creacion de tarea desde roadmap

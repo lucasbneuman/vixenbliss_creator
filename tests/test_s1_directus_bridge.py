@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 from typing import Any
 
 from vixenbliss_creator.s1_control import S1RuntimeDirectusRecorder
+from vixenbliss_creator.s1_control.support import tiny_png_bytes
 
 
 class FakeControlPlane:
@@ -73,7 +75,7 @@ def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text('{"sample_count": 12}', encoding="utf-8")
     base_path = tmp_path / "base.png"
-    base_path.write_bytes(b"png")
+    base_path.write_bytes(tiny_png_bytes())
     package_path = tmp_path / "dataset.zip"
     package_path.write_bytes(b"zip")
     recorder = S1RuntimeDirectusRecorder(client=fake)
@@ -130,16 +132,21 @@ def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:
     assert fake.store["s1_generation_runs"][0]["external_job_id"] == "job-123"
     assert any(event["event_type"] == "runtime_job_recorded" for event in fake.store["s1_events"])
     manifest_artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "dataset_manifest")
-    assert manifest_artifact["file"].startswith("file-")
+    assert manifest_artifact["file"] is None
     assert manifest_artifact["metadata_json"]["original_storage_path"] == str(manifest_path)
+    assert manifest_artifact["metadata_json"]["persistence_target"] == "directus_row"
     package_artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "dataset_package")
     assert package_artifact["metadata_json"]["checksum_sha256"] == "abc123"
-    assert len(fake.files) == 3
+    assert package_artifact["file"] is None
+    assert len(fake.files) == 1
     assert identity["latest_seed_bundle_json"]["portrait_seed"] == 11
-    assert identity["latest_visual_config_json"]["dataset_storage_mode"] == "directus_files"
+    assert identity["latest_visual_config_json"]["dataset_storage_mode"] == "directus_images_and_rows"
     assert len(identity["latest_visual_config_json"]["persisted_artifacts"]) == 3
-    assert identity["latest_dataset_manifest_file_id"].startswith("file-")
-    assert identity["latest_dataset_package_file_id"].startswith("file-")
+    assert identity["latest_base_image_file_id"].startswith("file-")
+    assert identity["latest_dataset_manifest_json"]["identity_id"] == "42"
+    assert identity["latest_dataset_manifest_file_id"] is None
+    assert identity["latest_dataset_package_file_id"] is None
+    assert identity["latest_dataset_package_uri"] == str(package_path)
     assert identity["latest_visual_config_json"]["reference_face_image_url"] == "https://example.com/ref.png"
 
 
@@ -218,7 +225,7 @@ def test_recorder_falls_back_when_upload_fails(tmp_path: Path) -> None:
 
     assert fake.store["s1_artifacts"][0]["file"] is None
     assert fake.store["s1_artifacts"][0]["uri"] == str(artifact_path)
-    assert any(event["event_type"] == "runtime_artifact_upload_failed" for event in fake.store["s1_events"])
+    assert all(event["event_type"] != "runtime_artifact_upload_failed" for event in fake.store["s1_events"])
 
 
 def test_recorder_publishes_persisted_artifacts_metadata(tmp_path: Path) -> None:
@@ -249,9 +256,65 @@ def test_recorder_publishes_persisted_artifacts_metadata(tmp_path: Path) -> None
         result_payload=result_payload,
     )
 
-    assert result_payload["metadata"]["dataset_storage_mode"] == "directus_files"
+    assert result_payload["metadata"]["dataset_storage_mode"] == "directus_rows"
     assert result_payload["metadata"]["persisted_artifacts"][0]["role"] == "dataset_manifest"
-    assert result_payload["metadata"]["persisted_artifacts"][0]["file_id"].startswith("file-")
+    assert result_payload["metadata"]["persisted_artifacts"][0]["file_id"] is None
+
+
+def test_recorder_materializes_base_image_from_runtime_artifact_inline_payload() -> None:
+    fake = FakeControlPlane()
+    identity = fake.create_item("s1_identities", {"avatar_id": "99", "status": "draft"})
+    recorder = S1RuntimeDirectusRecorder(client=fake)
+    png_payload = tiny_png_bytes()
+    result_payload = {
+        "provider": "modal",
+        "workflow_id": "base-image-ipadapter-impact",
+        "workflow_version": "2026-04-03",
+        "dataset_manifest": {
+            "identity_id": "99",
+            "seed_bundle": {"portrait_seed": 1, "variation_seed": 2, "dataset_seed": 3},
+        },
+        "metadata": {
+            "seed_bundle": {"portrait_seed": 1, "variation_seed": 2, "dataset_seed": 3},
+        },
+        "artifacts": [
+            {
+                "artifact_type": "base_image",
+                "uri": "/opt/comfyui/output/vb/base_00001_.png",
+                "content_type": "image/png",
+                "metadata_json": {
+                    "inline_data_base64": base64.b64encode(png_payload).decode("ascii"),
+                },
+            }
+        ],
+        "dataset_artifacts": [
+            {
+                "artifact_type": "base_image",
+                "storage_path": "/app/data/artifacts/99/base-image.png",
+                "content_type": "image/png",
+                "metadata_json": {
+                    "identity_id": "99",
+                    "character_id": "99",
+                },
+            }
+        ],
+    }
+
+    recorder.record_job(
+        service_name="s1_image",
+        job_id="job-321",
+        status="completed",
+        input_payload={"identity_id": "99", "prompt": "real modal image"},
+        result_payload=result_payload,
+    )
+
+    base_artifact = fake.store["s1_artifacts"][0]
+    assert base_artifact["role"] == "base_image"
+    assert base_artifact["file"].startswith("file-")
+    assert base_artifact["metadata_json"]["materialized_from_runtime_artifact"] is True
+    assert len(fake.files) == 1
+    assert identity["latest_base_image_file_id"] == base_artifact["file"]
+    assert result_payload["metadata"]["persisted_artifacts"][0]["persistence_target"] == "directus_file"
 
 
 def test_recorder_reads_identity_id_from_metadata(tmp_path: Path) -> None:

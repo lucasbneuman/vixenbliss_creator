@@ -43,6 +43,18 @@ class RuntimeProviderSettings:
     modal_endpoint_s1_llm: str | None = None
     modal_endpoint_s2_image: str | None = None
     modal_endpoint_s2_video: str | None = None
+    modal_app_name_s1_image: str | None = None
+    modal_app_name_s1_lora_train: str | None = None
+    modal_app_name_s1_llm: str | None = None
+    modal_job_function_s1_image: str | None = None
+    modal_job_function_s1_lora_train: str | None = None
+    modal_job_function_s1_llm: str | None = None
+    modal_healthcheck_function_s1_image: str | None = None
+    modal_healthcheck_function_s1_lora_train: str | None = None
+    modal_healthcheck_function_s1_llm: str | None = None
+    modal_web_function_s1_image: str | None = None
+    modal_web_function_s1_lora_train: str | None = None
+    modal_web_function_s1_llm: str | None = None
     provider_http_timeout_seconds: int = 30
     provider_poll_interval_seconds: int = 3
     provider_job_timeout_seconds: int = 900
@@ -75,6 +87,38 @@ class RuntimeProviderSettings:
             },
         }
         return endpoints.get(provider, {}).get(service_runtime)
+
+    def modal_app_name_for(self, service_runtime: ServiceRuntime) -> str | None:
+        mapping = {
+            ServiceRuntime.S1_IMAGE: self.modal_app_name_s1_image,
+            ServiceRuntime.S1_LORA_TRAIN: self.modal_app_name_s1_lora_train,
+            ServiceRuntime.S1_LLM: self.modal_app_name_s1_llm,
+        }
+        return mapping.get(service_runtime)
+
+    def modal_job_function_for(self, service_runtime: ServiceRuntime) -> str | None:
+        mapping = {
+            ServiceRuntime.S1_IMAGE: self.modal_job_function_s1_image,
+            ServiceRuntime.S1_LORA_TRAIN: self.modal_job_function_s1_lora_train,
+            ServiceRuntime.S1_LLM: self.modal_job_function_s1_llm,
+        }
+        return mapping.get(service_runtime)
+
+    def modal_healthcheck_function_for(self, service_runtime: ServiceRuntime) -> str | None:
+        mapping = {
+            ServiceRuntime.S1_IMAGE: self.modal_healthcheck_function_s1_image,
+            ServiceRuntime.S1_LORA_TRAIN: self.modal_healthcheck_function_s1_lora_train,
+            ServiceRuntime.S1_LLM: self.modal_healthcheck_function_s1_llm,
+        }
+        return mapping.get(service_runtime)
+
+    def modal_web_function_for(self, service_runtime: ServiceRuntime) -> str | None:
+        mapping = {
+            ServiceRuntime.S1_IMAGE: self.modal_web_function_s1_image,
+            ServiceRuntime.S1_LORA_TRAIN: self.modal_web_function_s1_lora_train,
+            ServiceRuntime.S1_LLM: self.modal_web_function_s1_llm,
+        }
+        return mapping.get(service_runtime)
 
     def auth_headers_for(self, provider: Provider) -> dict[str, str]:
         if provider == Provider.BEAM and self.beam_api_key:
@@ -142,6 +186,18 @@ class RuntimeProviderSettings:
             modal_endpoint_s1_llm=modal_endpoint_s1_llm,
             modal_endpoint_s2_image=modal_endpoint_s2_image,
             modal_endpoint_s2_video=modal_endpoint_s2_video,
+            modal_app_name_s1_image=os.getenv("S1_IMAGE_MODAL_APP_NAME", "vixenbliss-s1-image"),
+            modal_app_name_s1_lora_train=os.getenv("S1_LORA_TRAIN_MODAL_APP_NAME"),
+            modal_app_name_s1_llm=os.getenv("S1_LLM_MODAL_APP_NAME"),
+            modal_job_function_s1_image=os.getenv("S1_IMAGE_MODAL_FUNCTION_NAME", "run_s1_image_job"),
+            modal_job_function_s1_lora_train=os.getenv("S1_LORA_TRAIN_MODAL_FUNCTION_NAME"),
+            modal_job_function_s1_llm=os.getenv("S1_LLM_MODAL_FUNCTION_NAME"),
+            modal_healthcheck_function_s1_image=os.getenv("S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME", "runtime_healthcheck"),
+            modal_healthcheck_function_s1_lora_train=os.getenv("S1_LORA_TRAIN_MODAL_HEALTHCHECK_FUNCTION_NAME"),
+            modal_healthcheck_function_s1_llm=os.getenv("S1_LLM_MODAL_HEALTHCHECK_FUNCTION_NAME"),
+            modal_web_function_s1_image=os.getenv("S1_IMAGE_MODAL_WEB_FUNCTION_NAME"),
+            modal_web_function_s1_lora_train=os.getenv("S1_LORA_TRAIN_MODAL_WEB_FUNCTION_NAME"),
+            modal_web_function_s1_llm=os.getenv("S1_LLM_MODAL_WEB_FUNCTION_NAME"),
             provider_http_timeout_seconds=int(os.getenv("PROVIDER_HTTP_TIMEOUT_SECONDS", "30")),
             provider_poll_interval_seconds=int(os.getenv("PROVIDER_POLL_INTERVAL_SECONDS", "3")),
             provider_job_timeout_seconds=int(os.getenv("PROVIDER_JOB_TIMEOUT_SECONDS", "900")),

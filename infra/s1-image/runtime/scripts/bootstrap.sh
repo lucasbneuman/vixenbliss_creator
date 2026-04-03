@@ -24,6 +24,11 @@ if [ ! -d "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Pack" ]; then
   exit 1
 fi
 
+if [ ! -d "${COMFYUI_CUSTOM_NODES_DIR}/ComfyUI-Impact-Subpack" ]; then
+  echo "ComfyUI runtime is incomplete: Impact Subpack was not baked into the image" >&2
+  exit 1
+fi
+
 if [ ! -f "${RUNTIME_ROOT}/workflows/${COMFYUI_WORKFLOW_IMAGE_ID}.json" ]; then
   echo "ComfyUI runtime is incomplete: expected workflow ${COMFYUI_WORKFLOW_IMAGE_ID}.json was not found" >&2
   exit 1

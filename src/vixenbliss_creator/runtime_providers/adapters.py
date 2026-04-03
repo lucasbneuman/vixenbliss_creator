@@ -131,3 +131,64 @@ class BeamRuntimeProviderClient(HTTPPollingRuntimeProviderClient):
 class ModalRuntimeProviderClient(HTTPPollingRuntimeProviderClient):
     def __init__(self, settings: RuntimeProviderSettings) -> None:
         super().__init__(provider=Provider.MODAL, settings=settings)
+
+    def submit_job(self, service_runtime: ServiceRuntime, payload: dict) -> JobHandle:
+        modal_function = self._remote_function_for(service_runtime, self.settings.modal_job_function_for(service_runtime))
+        if modal_function is not None:
+            result = modal_function.remote(payload)
+            if not isinstance(result, dict):
+                raise RuntimeError(f"modal function for {service_runtime.value} returned a non-dict payload")
+            provider_job_id = str(
+                result.get("provider_job_id")
+                or result.get("prompt_id")
+                or result.get("job_id")
+                or result.get("id")
+                or f"modal-{service_runtime.value}"
+            )
+            return JobHandle(
+                provider=self.provider,
+                service_runtime=service_runtime,
+                job_id=provider_job_id,
+                submit_url=None,
+                status_url=None,
+                result_url=None,
+                progress_url=None,
+                status=JobStatus.COMPLETED,
+                metadata_json={
+                    "_inline_output": result,
+                    "modal_app_name": self.settings.modal_app_name_for(service_runtime),
+                    "modal_function_name": self.settings.modal_job_function_for(service_runtime),
+                },
+            )
+        return super().submit_job(service_runtime, payload)
+
+    def healthcheck(self, service_runtime: ServiceRuntime) -> dict:
+        modal_function = self._remote_function_for(
+            service_runtime,
+            self.settings.modal_healthcheck_function_for(service_runtime),
+        )
+        if modal_function is not None:
+            try:
+                return modal_function.remote(deep=False)
+            except TypeError:
+                return modal_function.remote()
+        return super().healthcheck(service_runtime)
+
+    def _endpoint_for(self, service_runtime: ServiceRuntime) -> str:
+        endpoint = self.settings.endpoint_for(self.provider, service_runtime)
+        if endpoint:
+            return endpoint.rstrip("/")
+        web_function = self._remote_function_for(service_runtime, self.settings.modal_web_function_for(service_runtime))
+        if web_function is not None:
+            web_url = web_function.get_web_url()
+            if web_url:
+                return web_url.rstrip("/")
+        raise RuntimeError(f"missing modal app/function target for {service_runtime.value}")
+
+    def _remote_function_for(self, service_runtime: ServiceRuntime, function_name: str | None):
+        app_name = self.settings.modal_app_name_for(service_runtime)
+        if not app_name or not function_name:
+            return None
+        import modal
+
+        return modal.Function.from_name(app_name, function_name)

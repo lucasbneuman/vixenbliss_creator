@@ -46,7 +46,7 @@ El runtime nuevo porta el comportamiento útil del bundle legacy `infra/runpod-s
 - `FastAPI` y `LangGraph` corren en `Coolify` como capa de orquestacion
 - `Modal` solo despierta el worker GPU con `ComfyUI` embebido
 - workflow versionado `base-image-ipadapter-impact.json`
-- alias lógico `plus_face` resuelto al asset real `flux-ipadapter-face.safetensors`
+- alias lógico `plus_face` resuelto al asset real `ip-adapter.bin`
 - fail-fast para `REFERENCE_IMAGE_NOT_FOUND`, `FACE_CONFIDENCE_UNAVAILABLE`, `RESUME_STATE_INCOMPLETE` y `COMFYUI_EXECUTION_FAILED`
 - `runtime_stage=identity_image`
 - `lora_supported=false`
@@ -59,7 +59,9 @@ El runtime nuevo porta el comportamiento útil del bundle legacy `infra/runpod-s
 ## Variables relevantes
 
 - `S1_IMAGE_PROVIDER=modal`
-- `MODAL_ENDPOINT_S1_IMAGE`
+- `S1_IMAGE_MODAL_APP_NAME`
+- `S1_IMAGE_MODAL_FUNCTION_NAME`
+- `S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME`
 - `COMFYUI_WORKFLOW_IDENTITY_ID`
 - `COMFYUI_WORKFLOW_IDENTITY_VERSION`
 - `COMFYUI_IP_ADAPTER_MODEL`
@@ -75,9 +77,8 @@ El runtime nuevo porta el comportamiento útil del bundle legacy `infra/runpod-s
 - `FLUX_T5XXL_URL`
 - `IPADAPTER_FLUX_URL`
 - `S1_IMAGE_EXECUTION_BACKEND=modal`
-- `S1_IMAGE_MODAL_APP_NAME`
-- `S1_IMAGE_MODAL_FUNCTION_NAME`
-- `S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME`
+- `MODAL_TOKEN_ID` y `MODAL_TOKEN_SECRET` alcanzan para invocar la app privada `vixenbliss-s1-image`
+- `MODAL_ENDPOINT_S1_IMAGE` solo como fallback legado si existe un web endpoint intermedio
 
 ## Prueba local minima
 
@@ -102,7 +103,7 @@ Validacion minima recomendada:
 - `Coolify` aloja el `FastAPI` publico del servicio y el orquestador que consume `LangGraph`
 - `Modal` no debe alojar el HTTP publico de `S1 image`
 - `Modal` solo expone funciones GPU privadas para ejecutar `ComfyUI`, entrenamiento o inferencia pesada
-- `MODAL_ENDPOINT_S1_IMAGE` debe apuntar al endpoint HTTP publicado por `Coolify`, no a un `modal.run`
+- el contrato principal con `Modal` es `token + app_name + function_name`; un `MODAL_ENDPOINT_S1_IMAGE` solo aplica como compatibilidad hacia un proxy HTTP externo
 
 ## Estrategia de persistencia recomendada
 
@@ -111,17 +112,18 @@ La salida de `S1 image` no debe tratarse como storage permanente en `Modal`.
 Direccion recomendada:
 
 - `Modal Volume`: solo para modelos, caches de `ComfyUI` y staging efimero de muy corta vida
-- `Directus Files` sobre storage `S3-compatible`: fuente de verdad para `dataset_manifest`, `dataset_package` y evidencia de QA
+- `Directus Files` sobre storage `S3-compatible`: fuente de verdad para `base_image` y evidencia visual de QA
+- `s1_artifacts`, `s1_generation_runs` y `s1_identities`: fuente de verdad para `dataset_manifest`, `dataset_package_path`, `character_id` y `seed_bundle`
 
 Modos operativos esperados:
 
 1. modo `review`
-- `S1 image` persiste `dataset_manifest` y `dataset_package`
+- `S1 image` registra `dataset_manifest` y `dataset_package`
 - el equipo revisa calidad del dataset
 - recien despues se habilita `S1 lora train`
 
 2. modo `autopromote`
-- `S1 image` persiste como minimo `dataset_manifest`
+- `S1 image` registra como minimo `dataset_manifest`
 - `dataset_package` se guarda con retencion corta
 - el orquestador dispara `S1 lora train` al terminar la generacion
 - luego aplica limpieza automatica de artifacts temporales segun politica

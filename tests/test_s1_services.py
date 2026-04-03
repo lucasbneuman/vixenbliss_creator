@@ -74,12 +74,17 @@ def test_dataset_generation_returns_manifest_and_package() -> None:
             generation_manifest=manifest,
             reference_face_image_url="https://example.com/ref.png",
             samples_target=16,
+            metadata_json={"character_id": str(manifest.identity_id)},
         )
     )
 
     assert result["dataset_manifest"]["sample_count"] == 16
+    assert result["dataset_manifest"]["character_id"] == str(manifest.identity_id)
     artifact_types = {artifact["artifact_type"] for artifact in result["artifacts"]}
     assert {"base_image", "dataset_manifest", "dataset_package"} <= artifact_types
+    base_image_artifact = next(item for item in result["artifacts"] if item["artifact_type"] == "base_image")
+    assert base_image_artifact["metadata_json"]["character_id"] == str(manifest.identity_id)
+    assert base_image_artifact["metadata_json"]["seed_bundle"]["portrait_seed"] == manifest.seed_bundle.portrait_seed
 
 
 def test_lora_training_requires_dataset_source() -> None:

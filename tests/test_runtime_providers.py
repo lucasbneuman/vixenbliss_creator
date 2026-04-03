@@ -11,21 +11,19 @@ from vixenbliss_creator.runtime_providers import (
 )
 
 
-def test_runtime_provider_settings_reads_service_specific_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runtime_provider_settings_reads_modal_app_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("S1_IMAGE_PROVIDER", "modal")
-    monkeypatch.setenv("S1_LORA_TRAIN_PROVIDER", "modal")
-    monkeypatch.setenv("S1_LLM_PROVIDER", "modal")
-    monkeypatch.setenv("S2_IMAGE_PROVIDER", "modal")
-    monkeypatch.setenv("S2_VIDEO_PROVIDER", "modal")
-    monkeypatch.setenv("MODAL_ENDPOINT_S1_IMAGE", "https://modal.example.com/s1-image")
-    monkeypatch.setenv("MODAL_ENDPOINT_S2_VIDEO", "https://modal.example.com/s2-video")
+    monkeypatch.setenv("S1_IMAGE_MODAL_APP_NAME", "vixenbliss-s1-image")
+    monkeypatch.setenv("S1_IMAGE_MODAL_FUNCTION_NAME", "run_s1_image_job")
+    monkeypatch.setenv("S1_LLM_MODAL_APP_NAME", "vixenbliss-s1-llm")
+    monkeypatch.setenv("S1_LLM_MODAL_WEB_FUNCTION_NAME", "fastapi_app")
 
     settings = RuntimeProviderSettings.from_env()
 
     assert settings.provider_for(ServiceRuntime.S1_IMAGE).value == "modal"
-    assert settings.provider_for(ServiceRuntime.S2_VIDEO).value == "modal"
-    assert settings.endpoint_for(settings.provider_for(ServiceRuntime.S1_IMAGE), ServiceRuntime.S1_IMAGE) == "https://modal.example.com/s1-image"
-    assert settings.endpoint_for(settings.provider_for(ServiceRuntime.S2_VIDEO), ServiceRuntime.S2_VIDEO) == "https://modal.example.com/s2-video"
+    assert settings.modal_app_name_for(ServiceRuntime.S1_IMAGE) == "vixenbliss-s1-image"
+    assert settings.modal_job_function_for(ServiceRuntime.S1_IMAGE) == "run_s1_image_job"
+    assert settings.modal_web_function_for(ServiceRuntime.S1_LLM) == "fastapi_app"
 
 
 def test_runtime_provider_settings_defaults_to_modal_for_all_services() -> None:
@@ -74,18 +72,51 @@ def test_beam_client_submits_and_fetches_result(monkeypatch: pytest.MonkeyPatch)
     assert get_calls[0] == "https://beam.example.com/s1-image/jobs/beam-job-1"
 
 
-def test_modal_client_healthcheck_uses_modal_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_modal_client_submits_jobs_via_remote_function(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = RuntimeProviderSettings(
+        modal_app_name_s1_image="vixenbliss-s1-image",
+        modal_job_function_s1_image="run_s1_image_job",
+    )
+
+    class FakeRemoteFunction:
+        def remote(self, payload: dict) -> dict:
+            assert payload["prompt"] == "hello"
+            return {"provider": "modal", "provider_job_id": "modal-job-1", "artifacts": [{"role": "base_image", "uri": "modal://base"}]}
+
+    monkeypatch.setattr("modal.Function.from_name", lambda app_name, function_name: FakeRemoteFunction())
+
+    client = ModalRuntimeProviderClient(settings)
+    handle = client.submit_job(ServiceRuntime.S1_IMAGE, {"prompt": "hello"})
+    result = client.fetch_result(handle)
+
+    assert handle.status == JobStatus.COMPLETED
+    assert result["provider"] == "modal"
+    assert result["artifacts"][0]["uri"] == "modal://base"
+
+
+def test_modal_client_derives_healthcheck_url_from_modal_web_function(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = RuntimeProviderSettings(
         modal_token_id="modal-id",
         modal_token_secret="modal-secret",
-        modal_endpoint_s1_llm="https://modal.example.com/s1-llm",
+        modal_app_name_s1_llm="vixenbliss-s1-llm",
+        modal_web_function_s1_llm="fastapi_app",
     )
+
+    class FakeWebFunction:
+        def get_web_url(self) -> str:
+            return "https://modal.example.com/s1-llm"
+
+    def fake_from_name(app_name: str, function_name: str):
+        assert app_name == "vixenbliss-s1-llm"
+        assert function_name == "fastapi_app"
+        return FakeWebFunction()
 
     def fake_get(url: str, timeout_seconds: int, headers: dict[str, str] | None = None) -> dict:
         assert url == "https://modal.example.com/s1-llm/healthcheck"
         assert headers == {"Modal-Key": "modal-id", "Modal-Secret": "modal-secret"}
         return {"ok": True}
 
+    monkeypatch.setattr("modal.Function.from_name", fake_from_name)
     monkeypatch.setattr("vixenbliss_creator.runtime_providers.adapters._json_get", fake_get)
 
     client = ModalRuntimeProviderClient(settings)
@@ -94,7 +125,7 @@ def test_modal_client_healthcheck_uses_modal_headers(monkeypatch: pytest.MonkeyP
     assert response == {"ok": True}
 
 
-def test_handle_defaults_progress_url_when_provider_does_not_return_one(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_defaults_progress_url_when_provider_uses_http_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = RuntimeProviderSettings(
         modal_endpoint_s1_image="https://modal.example.com/s1-image",
         modal_token_id="modal-id",

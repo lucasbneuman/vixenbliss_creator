@@ -164,15 +164,19 @@ Los bundles `runpod-*` quedan como baseline previo, no como direccion futura.
 - `BEAM_ENDPOINT_S2_VIDEO`
 - `MODAL_TOKEN_ID`
 - `MODAL_TOKEN_SECRET`
+- `S1_IMAGE_MODAL_APP_NAME`
+- `S1_IMAGE_MODAL_FUNCTION_NAME`
+- `S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME`
+- `S1_LORA_TRAIN_MODAL_APP_NAME`
+- `S1_LORA_TRAIN_MODAL_WEB_FUNCTION_NAME`
+- `S1_LLM_MODAL_APP_NAME`
+- `S1_LLM_MODAL_WEB_FUNCTION_NAME`
 - `MODAL_ENDPOINT_S1_IMAGE`
 - `MODAL_ENDPOINT_S1_LORA_TRAIN`
 - `MODAL_ENDPOINT_S1_LLM`
 - `MODAL_ENDPOINT_S2_IMAGE`
 - `MODAL_ENDPOINT_S2_VIDEO`
 - `S1_IMAGE_EXECUTION_BACKEND`
-- `S1_IMAGE_MODAL_APP_NAME`
-- `S1_IMAGE_MODAL_FUNCTION_NAME`
-- `S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME`
 - `S1_LLM_RUNTIME_BASE_URL`
 - `S1_LLM_RUNTIME_API_KEY`
 - `S1_LLM_RUNTIME_MODEL`
@@ -237,15 +241,18 @@ Mientras la DB no este lista, cada etapa de `S1` debe dejar manifests JSON persi
 Direccion recomendada de persistencia para `S1 image`:
 
 - `Modal Volume`: modelos, caches y staging efimero
-- `Directus Files` o storage `S3-compatible`: `dataset_manifest`, `dataset_package` y artifacts de QA
+- `Directus Files` o storage `S3-compatible`: solo imagenes y artifacts visuales
+- tablas de `Directus`: `dataset_manifest`, `dataset_package_path`, `seed_bundle` y metadata de QA
 
 Estado actual implementado:
 
 - `S1 image` sigue materializando localmente el handoff para compatibilidad
-- luego persiste `base_image`, `dataset_manifest` y `dataset_package` en `Directus Files`
+- luego persiste `base_image` en `Directus Files`
+- `dataset_manifest` y `dataset_package` quedan registrados en `s1_artifacts` y snapshots tecnicos, no como files binarios
 - el resultado del runtime expone metadata tecnica suficiente para trazabilidad y futuros consumers:
   - seed efectiva
   - `seed_bundle`
+  - `character_id`
   - workflow y version
   - modelo base
   - configuracion visual efectiva de `ip_adapter` y `face_detailer`

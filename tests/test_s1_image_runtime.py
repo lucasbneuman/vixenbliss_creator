@@ -10,6 +10,8 @@ from uuid import uuid4
 import modal
 from fastapi.testclient import TestClient
 
+from vixenbliss_creator.s1_control.support import tiny_png_bytes
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_PATH = ROOT / "infra" / "s1-image" / "runtime" / "app.py"
@@ -81,6 +83,13 @@ def test_s1_image_runtime_healthcheck_reports_identity_contract(tmp_path: Path, 
     assert payload["runtime_contract"]["lora_supported"] is False
 
 
+def test_s1_image_runtime_resolves_plus_face_to_ip_adapter_bin(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+
+    assert module._resolve_ip_adapter_model_name({"ip_adapter": {"model_name": "plus_face"}}) == "ip-adapter.bin"
+    assert module._cache_runtime_paths({"ip_adapter": {"model_name": "plus_face"}})["ip_adapter_flux"].name == "ip-adapter.bin"
+
+
 def test_s1_image_runtime_reports_reference_image_not_found(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
@@ -122,7 +131,26 @@ def test_s1_image_runtime_rejects_lora_usage(tmp_path: Path, monkeypatch) -> Non
     assert "must not consume a LoRA version" in result.json()["error_message"]
 
 
-def test_s1_image_runtime_reports_face_confidence_unavailable(tmp_path: Path, monkeypatch) -> None:
+def test_s1_image_runtime_reports_missing_artifacts_as_execution_failure(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
+    monkeypatch.setattr(module, "_submit_prompt", lambda *_args, **_kwargs: "prompt-1")
+    monkeypatch.setattr(
+        module,
+        "_poll_history",
+        lambda _prompt_id: {"outputs": {}},
+    )
+    _create_required_flux_assets(module)
+    client = TestClient(module.app)
+
+    submit = client.post("/jobs", json={"input": _base_job_input()})
+    result = client.get(submit.json()["result_url"])
+
+    assert result.json()["error_code"] == "COMFYUI_EXECUTION_FAILED"
+
+
+def test_s1_image_runtime_infers_face_confidence_when_detector_output_has_no_metric(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
@@ -134,19 +162,23 @@ def test_s1_image_runtime_reports_face_confidence_unavailable(tmp_path: Path, mo
             "outputs": {
                 "save_base_image": {
                     "images": [{"filename": "base.png", "subfolder": "vb", "type": "output"}],
-                }
+                },
+                "face_detector": {"detections": [{"label": "face"}]},
             }
         },
     )
     _create_required_flux_assets(module)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
-    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(b"png")
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
     client = TestClient(module.app)
 
     submit = client.post("/jobs", json={"input": _base_job_input()})
     result = client.get(submit.json()["result_url"])
+    payload = result.json()
 
-    assert result.json()["error_code"] == "FACE_CONFIDENCE_UNAVAILABLE"
+    assert payload.get("error_code") is None
+    assert payload["face_detection_confidence"] == 0.8
+    assert payload["metadata"]["face_detection_confidence_inferred"] is True
 
 
 def test_s1_image_runtime_base_render_exposes_checkpoint_and_progress(tmp_path: Path, monkeypatch) -> None:
@@ -168,7 +200,7 @@ def test_s1_image_runtime_base_render_exposes_checkpoint_and_progress(tmp_path: 
     )
     _create_required_flux_assets(module)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
-    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(b"png")
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
     client = TestClient(module.app)
 
     submit = client.post("/jobs", json={"input": _base_job_input()})
@@ -208,13 +240,23 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     )
     _create_required_flux_assets(module)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
-    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(b"png")
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
     client = TestClient(module.app)
 
     identity_id = str(uuid4())
     submit = client.post(
         "/jobs",
-        json={"input": _base_job_input(metadata={"identity_id": identity_id, "autopromote": True, "samples_target": 8})},
+        json={
+            "input": _base_job_input(
+                seed_bundle={"portrait_seed": 42, "variation_seed": 84, "dataset_seed": 126},
+                metadata={
+                    "identity_id": identity_id,
+                    "character_id": identity_id,
+                    "autopromote": True,
+                    "samples_target": 8,
+                },
+            )
+        },
     )
     payload = submit.json()["output"]
 
@@ -224,11 +266,17 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     assert payload["metadata"]["persisted_artifacts"] == []
     assert payload["metadata"]["seed"] == 42
     assert payload["metadata"]["seed_bundle"]["portrait_seed"] == 42
+    assert payload["metadata"]["seed_bundle"]["variation_seed"] == 84
+    assert payload["metadata"]["seed_bundle"]["dataset_seed"] == 126
+    assert payload["metadata"]["character_id"] == identity_id
     assert payload["metadata"]["workflow_id"] == "base-image-ipadapter-impact"
     assert payload["metadata"]["base_model_id"] == "flux-schnell-v1"
     assert payload["dataset_manifest"]["identity_id"] == identity_id
+    assert payload["dataset_manifest"]["character_id"] == identity_id
     assert payload["dataset_manifest"]["sample_count"] == 8
     assert payload["generation_manifest"]["seed_bundle"]["portrait_seed"] == 42
+    assert payload["generation_manifest"]["seed_bundle"]["variation_seed"] == 84
+    assert payload["generation_manifest"]["seed_bundle"]["dataset_seed"] == 126
     assert Path(payload["dataset_manifest"]["artifact_path"]).exists()
     assert Path(payload["dataset_package_path"]).exists()
     assert {artifact["artifact_type"] for artifact in payload["dataset_artifacts"]} == {
@@ -236,6 +284,8 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
         "dataset_manifest",
         "dataset_package",
     }
+    base_image_artifact = next(item for item in payload["dataset_artifacts"] if item["artifact_type"] == "base_image")
+    assert base_image_artifact["metadata_json"]["character_id"] == identity_id
     manifest_payload = json.loads(Path(payload["dataset_manifest"]["artifact_path"]).read_text(encoding="utf-8"))
     assert manifest_payload["checksum_sha256"] == payload["dataset_manifest"]["checksum_sha256"]
 
@@ -259,13 +309,13 @@ def test_s1_image_runtime_response_includes_directus_persistence_metadata(tmp_pa
     )
     _create_required_flux_assets(module)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
-    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(b"png")
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
 
     class FakeRecorder:
         def record_job(self, **kwargs) -> dict:
             result_payload = kwargs["result_payload"]
-            result_payload["metadata"]["dataset_storage_mode"] = "directus_files"
-            result_payload["metadata"]["persisted_artifacts"] = [{"role": "dataset_manifest", "file_id": "file-123"}]
+            result_payload["metadata"]["dataset_storage_mode"] = "directus_images_and_rows"
+            result_payload["metadata"]["persisted_artifacts"] = [{"role": "base_image", "file_id": "file-123"}]
             return {"id": "run-123"}
 
     module._directus_recorder = FakeRecorder()
@@ -278,7 +328,7 @@ def test_s1_image_runtime_response_includes_directus_persistence_metadata(tmp_pa
     )
     payload = response.json()["output"]
 
-    assert payload["metadata"]["dataset_storage_mode"] == "directus_files"
+    assert payload["metadata"]["dataset_storage_mode"] == "directus_images_and_rows"
     assert payload["metadata"]["directus_run_id"] == "run-123"
     assert payload["metadata"]["persisted_artifacts"][0]["file_id"] == "file-123"
 
@@ -302,7 +352,7 @@ def test_s1_image_runtime_exposes_directus_recording_failure(tmp_path: Path, mon
     )
     _create_required_flux_assets(module)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
-    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(b"png")
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
 
     class FailingRecorder:
         def record_job(self, **kwargs) -> dict:
@@ -341,7 +391,7 @@ def test_s1_image_runtime_skips_dataset_handoff_without_identity_id(tmp_path: Pa
     )
     _create_required_flux_assets(module)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
-    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(b"png")
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
     client = TestClient(module.app)
 
     submit = client.post("/jobs", json={"input": _base_job_input()})
@@ -402,7 +452,7 @@ def test_modal_runtime_provider_can_consume_s1_image_runtime_locally(tmp_path: P
     )
     _create_required_flux_assets(module)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
-    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(b"png")
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
     client = TestClient(module.app)
 
     def fake_post(url: str, payload: dict, timeout_seconds: int, headers: dict[str, str] | None = None) -> dict:
@@ -450,7 +500,7 @@ def test_s1_image_runtime_websocket_streams_recorded_progress_events(tmp_path: P
     )
     _create_required_flux_assets(module)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
-    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(b"png")
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
     client = TestClient(module.app)
 
     submit = client.post("/jobs", json={"input": _base_job_input()})

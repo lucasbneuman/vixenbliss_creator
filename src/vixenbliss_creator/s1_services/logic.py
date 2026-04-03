@@ -65,6 +65,8 @@ def build_generation_manifest(payload: GenerationServiceInput) -> GenerationMani
 def build_dataset_result(payload: DatasetServiceInput) -> dict:
     if payload.face_detection_confidence is None:
         raise ValueError("face_detection_confidence is required to validate dataset generation")
+    character_id = str(payload.metadata_json.get("character_id") or payload.identity_id)
+    seed_bundle = payload.generation_manifest.seed_bundle.model_dump(mode="json")
     digest = _stable_digest(
         {
             "identity_id": str(payload.identity_id),
@@ -91,7 +93,10 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
                 "storage_path": base_image_path,
                 "content_type": "image/png",
                 "metadata_json": {
+                    "identity_id": str(payload.identity_id),
+                    "character_id": character_id,
                     "seed": payload.generation_manifest.seed_bundle.portrait_seed,
+                    "seed_bundle": seed_bundle,
                     "face_detection_confidence": payload.face_detection_confidence,
                 },
             },
@@ -100,6 +105,9 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
                 "storage_path": manifest_path,
                 "content_type": "application/json",
                 "metadata_json": {
+                    "identity_id": str(payload.identity_id),
+                    "character_id": character_id,
+                    "seed_bundle": seed_bundle,
                     "samples_target": payload.samples_target,
                     "reference_face_image_url": payload.reference_face_image_url,
                     "source_manifest_path": payload.generation_manifest.artifact_path,
@@ -111,6 +119,9 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
                 "content_type": "application/zip",
                 "checksum_sha256": checksum,
                 "metadata_json": {
+                    "identity_id": str(payload.identity_id),
+                    "character_id": character_id,
+                    "seed_bundle": seed_bundle,
                     "samples_target": payload.samples_target,
                     "seed": payload.generation_manifest.seed_bundle.dataset_seed,
                 },
@@ -118,6 +129,7 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
         ],
         "dataset_manifest": {
             "identity_id": str(payload.identity_id),
+            "character_id": character_id,
             "artifact_path": manifest_path,
             "dataset_package_path": package_path,
             "sample_count": payload.samples_target,
@@ -126,7 +138,7 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
             "base_model_id": payload.generation_manifest.base_model_id,
             "prompt": payload.generation_manifest.prompt,
             "negative_prompt": payload.generation_manifest.negative_prompt,
-            "seed_bundle": payload.generation_manifest.seed_bundle.model_dump(mode="json"),
+            "seed_bundle": seed_bundle,
             "reference_face_image_url": payload.reference_face_image_url,
             "face_detection_confidence": payload.face_detection_confidence,
             "checksum_sha256": checksum,
