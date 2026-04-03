@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import mimetypes
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 from urllib import error, parse, request
+from uuid import uuid4
 
 from .config import S1ControlSettings
 
@@ -38,6 +41,61 @@ def _json_request(
     return {} if not raw else json.loads(raw)
 
 
+def _multipart_request(
+    url: str,
+    *,
+    token: str,
+    fields: dict[str, str],
+    file_field: str,
+    file_path: Path,
+    file_name: str | None = None,
+    content_type: str | None = None,
+    timeout_seconds: int = 30,
+) -> dict[str, Any]:
+    boundary = f"----VixenBliss{uuid4().hex}"
+    chunks: list[bytes] = []
+    for key, value in fields.items():
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode("utf-8"),
+                str(value).encode("utf-8"),
+                b"\r\n",
+            ]
+        )
+    upload_name = file_name or file_path.name
+    detected_content_type = content_type or mimetypes.guess_type(upload_name)[0] or "application/octet-stream"
+    chunks.extend(
+        [
+            f"--{boundary}\r\n".encode("utf-8"),
+            f'Content-Disposition: form-data; name="{file_field}"; filename="{upload_name}"\r\n'.encode("utf-8"),
+            f"Content-Type: {detected_content_type}\r\n\r\n".encode("utf-8"),
+            file_path.read_bytes(),
+            b"\r\n",
+            f"--{boundary}--\r\n".encode("utf-8"),
+        ]
+    )
+    req = request.Request(
+        url=url,
+        data=b"".join(chunks),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with request.urlopen(req, timeout=timeout_seconds) as response:
+            raw = response.read().decode("utf-8")
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP error calling {url}: {exc.code} {detail}") from exc
+    except error.URLError as exc:
+        raise RuntimeError(f"Network error calling {url}: {exc.reason}") from exc
+    return {} if not raw else json.loads(raw)
+
+
 class ControlPlanePort(Protocol):
     def create_item(self, collection: str, payload: dict[str, Any]) -> dict[str, Any]: ...
 
@@ -48,6 +106,16 @@ class ControlPlanePort(Protocol):
     def list_items(self, collection: str, *, params: dict[str, str] | None = None) -> list[dict[str, Any]]: ...
 
     def delete_many(self, collection: str, *, filter_payload: dict[str, Any]) -> None: ...
+
+    def upload_file(
+        self,
+        file_path: str | Path,
+        *,
+        storage: str | None = None,
+        file_name: str | None = None,
+        content_type: str | None = None,
+        title: str | None = None,
+    ) -> dict[str, Any]: ...
 
 
 @dataclass
@@ -104,6 +172,43 @@ class DirectusControlPlaneClient:
             timeout_seconds=self.settings.directus_timeout_seconds,
         )
 
+    def upload_file(
+        self,
+        file_path: str | Path,
+        *,
+        storage: str | None = None,
+        file_name: str | None = None,
+        content_type: str | None = None,
+        title: str | None = None,
+    ) -> dict[str, Any]:
+        source = Path(file_path)
+        fields = {"storage": storage or self.settings.directus_assets_storage}
+        if title:
+            fields["title"] = title
+        response = _multipart_request(
+            f"{self.settings.directus_base_url}/files",
+            token=self.settings.directus_token,
+            fields=fields,
+            file_field="file",
+            file_path=source,
+            file_name=file_name,
+            content_type=content_type,
+            timeout_seconds=self.settings.directus_timeout_seconds,
+        )
+        data = response["data"]
+        file_id = str(data["id"])
+        asset_url = f"{self.settings.directus_base_url}/assets/{file_id}"
+        return {
+            **data,
+            "id": file_id,
+            "storage": data.get("storage") or fields["storage"],
+            "filename_download": data.get("filename_download") or (file_name or source.name),
+            "type": data.get("type") or content_type or mimetypes.guess_type(source.name)[0] or "application/octet-stream",
+            "filesize": data.get("filesize") or source.stat().st_size,
+            "asset_url": data.get("asset_url") or asset_url,
+            "locator": data.get("asset_url") or asset_url,
+        }
+
 
 S1_DIRECTUS_SCHEMA: dict[str, dict[str, Any]] = {
     "s1_identities": {
@@ -121,6 +226,15 @@ S1_DIRECTUS_SCHEMA: dict[str, dict[str, Any]] = {
             {"field": "pipeline_state", "type": "string"},
             {"field": "source_prompt_request_id", "type": "string"},
             {"field": "last_run_id", "type": "string"},
+            {"field": "reference_face_image_id", "type": "uuid"},
+            {"field": "latest_generation_manifest_json", "type": "json"},
+            {"field": "latest_seed_bundle_json", "type": "json"},
+            {"field": "latest_visual_config_json", "type": "json"},
+            {"field": "latest_base_model_id", "type": "string"},
+            {"field": "latest_workflow_id", "type": "string"},
+            {"field": "latest_workflow_version", "type": "string"},
+            {"field": "latest_dataset_manifest_file_id", "type": "uuid"},
+            {"field": "latest_dataset_package_file_id", "type": "uuid"},
         ],
     },
     "s1_prompt_requests": {

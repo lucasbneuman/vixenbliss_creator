@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
+from urllib import request
 
 import pytest
 
-from vixenbliss_creator.s1_control import DirectusSchemaManager, S1ControlSettings
+from vixenbliss_creator.s1_control import DirectusControlPlaneClient, DirectusSchemaManager, S1ControlSettings
 
 
 class FakeSchemaManager(DirectusSchemaManager):
@@ -60,3 +63,43 @@ def test_schema_manager_creates_expected_s1_collections() -> None:
     assert "s1_events" in created
     assert "display_name" in manager.collections["s1_identities"]["fields"]
     assert "metadata_json" in manager.collections["s1_artifacts"]["fields"]
+    assert "latest_seed_bundle_json" in manager.collections["s1_identities"]["fields"]
+    assert "latest_dataset_package_file_id" in manager.collections["s1_identities"]["fields"]
+
+
+def test_directus_client_can_upload_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    uploaded: dict[str, Any] = {}
+    file_path = tmp_path / "dataset-manifest.json"
+    file_path.write_text('{"ok":true}', encoding="utf-8")
+
+    class FakeResponse:
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps({"data": {"id": "file-123", "storage": "directus", "filename_download": "dataset-manifest.json"}}).encode(
+                "utf-8"
+            )
+
+    def fake_urlopen(req: request.Request, timeout: int):
+        uploaded["url"] = req.full_url
+        uploaded["content_type"] = req.headers["Content-type"]
+        uploaded["body"] = req.data
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    client = DirectusControlPlaneClient(
+        S1ControlSettings(directus_base_url="https://directus.example.com", directus_token="secret")
+    )
+
+    payload = client.upload_file(file_path, content_type="application/json", title="dataset manifest")
+
+    assert uploaded["url"] == "https://directus.example.com/files"
+    assert "multipart/form-data" in uploaded["content_type"]
+    assert b'name="storage"' in uploaded["body"]
+    assert b'name="file"; filename="dataset-manifest.json"' in uploaded["body"]
+    assert payload["id"] == "file-123"
+    assert payload["asset_url"] == "https://directus.example.com/assets/file-123"

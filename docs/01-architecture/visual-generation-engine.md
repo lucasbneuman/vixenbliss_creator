@@ -239,6 +239,19 @@ Direccion recomendada de persistencia para `S1 image`:
 - `Modal Volume`: modelos, caches y staging efimero
 - `Directus Files` o storage `S3-compatible`: `dataset_manifest`, `dataset_package` y artifacts de QA
 
+Estado actual implementado:
+
+- `S1 image` sigue materializando localmente el handoff para compatibilidad
+- luego persiste `base_image`, `dataset_manifest` y `dataset_package` en `Directus Files`
+- el resultado del runtime expone metadata tecnica suficiente para trazabilidad y futuros consumers:
+  - seed efectiva
+  - `seed_bundle`
+  - workflow y version
+  - modelo base
+  - configuracion visual efectiva de `ip_adapter` y `face_detailer`
+  - referencia facial usada
+- `s1_identities` conserva el snapshot tecnico canonico por avatar para futuros flujos de `S1 Training` y `S2 Image`
+
 Direccion recomendada del handoff:
 
 1. `S1 image` produce `dataset_manifest`

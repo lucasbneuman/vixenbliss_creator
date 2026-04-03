@@ -508,6 +508,16 @@ def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _seed_bundle_from_job_input(job_input: dict) -> SeedBundle:
+    metadata = job_input.get("metadata") or {}
+    portrait_seed = int(job_input.get("seed", 42))
+    return SeedBundle(
+        portrait_seed=portrait_seed,
+        variation_seed=int(metadata.get("variation_seed", portrait_seed)),
+        dataset_seed=int(metadata.get("dataset_seed", portrait_seed)),
+    )
+
+
 def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
     identity_id = _resolve_identity_id(job_input)
     if identity_id is None:
@@ -526,15 +536,12 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
     samples_target = int(metadata.get("samples_target", job_input.get("samples_target", 12)))
     identity_root = ARTIFACT_ROOT / str(identity_id)
     identity_root.mkdir(parents=True, exist_ok=True)
+    seed_bundle = _seed_bundle_from_job_input(job_input)
     generation_manifest = GenerationManifest(
         identity_id=identity_id,
         prompt=str(job_input.get("prompt", "editorial portrait of a synthetic premium performer")),
         negative_prompt=str(job_input.get("negative_prompt", "low quality, anatomy drift, extra limbs, text, watermark")),
-        seed_bundle=SeedBundle(
-            portrait_seed=int(job_input.get("seed", 42)),
-            variation_seed=int(metadata.get("variation_seed", job_input.get("seed", 42))),
-            dataset_seed=int(metadata.get("dataset_seed", job_input.get("seed", 42))),
-        ),
+        seed_bundle=seed_bundle,
         workflow_id=str(job_input.get("workflow_id", COMFYUI_WORKFLOW_IMAGE_ID)),
         workflow_version=str(job_input.get("workflow_version", COMFYUI_WORKFLOW_IMAGE_VERSION)),
         base_model_id=str(job_input.get("base_model_id", "flux-schnell-v1")),
@@ -594,12 +601,14 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
 
     manifest["checksum_sha256"] = package_checksum
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    result["generation_manifest"] = generation_manifest.model_dump(mode="json")
     result["dataset_manifest"] = manifest
     result["dataset_package_path"] = package_path.as_posix()
     result["dataset_artifacts"] = materialized_artifacts
     result.setdefault("metadata", {})["dataset_handoff_ready"] = True
     result["metadata"]["dataset_storage_mode"] = "local_artifact_root"
     result["metadata"]["dataset_review_required"] = manifest["review_required"]
+    result["metadata"]["seed_bundle"] = seed_bundle.model_dump(mode="json")
     return result
 
 
@@ -659,6 +668,7 @@ def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = 
         "base_model_id": str(job_input.get("base_model_id", "flux-schnell-v1")),
         "model_family": "flux",
         "runtime_stage": RuntimeStage.IDENTITY_IMAGE.value,
+        "seed": int(job_input.get("seed", 42)),
         "service_runtime": "s1_image",
         "provider_job_id": prompt_id,
         "prompt_id": prompt_id,
@@ -677,6 +687,16 @@ def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = 
             "requested_threshold": job_input.get("face_confidence_threshold", COMFYUI_FACE_CONFIDENCE_THRESHOLD),
             "workflow_id": str(job_input.get("workflow_id", COMFYUI_WORKFLOW_IMAGE_ID)),
             "workflow_version": str(job_input.get("workflow_version", COMFYUI_WORKFLOW_IMAGE_VERSION)),
+            "base_model_id": str(job_input.get("base_model_id", "flux-schnell-v1")),
+            "seed": int(job_input.get("seed", 42)),
+            "seed_bundle": _seed_bundle_from_job_input(job_input).model_dump(mode="json"),
+            "prompt": str(job_input.get("prompt", "")),
+            "negative_prompt": str(job_input.get("negative_prompt", "")),
+            "width": int(job_input.get("width", 1024)),
+            "height": int(job_input.get("height", 1024)),
+            "ip_adapter": job_input.get("ip_adapter", {}),
+            "face_detailer": job_input.get("face_detailer", {}),
+            "reference_face_image_url": job_input.get("reference_face_image_url"),
             "flux_assets": {
                 "diffusion_model": job_input.get("flux_diffusion_model_name", COMFYUI_FLUX_DIFFUSION_MODEL_NAME),
                 "ae": job_input.get("flux_ae_name", COMFYUI_FLUX_AE_NAME),
@@ -853,7 +873,7 @@ def submit_job(payload: dict) -> dict:
     record = runtime.submit(job_input)
     if _directus_recorder is not None:
         try:
-            _directus_recorder.record_job(
+            run = _directus_recorder.record_job(
                 service_name="s1_image",
                 job_id=record.job_id,
                 status=record.status.value,
@@ -861,6 +881,9 @@ def submit_job(payload: dict) -> dict:
                 result_payload=record.result,
                 error_message=record.error_message,
             )
+            if record.result is not None and isinstance(run, dict):
+                record.result.setdefault("metadata", {})
+                record.result["metadata"]["directus_run_id"] = str(run.get("id"))
         except Exception:
             pass
     response = record.status_payload(
