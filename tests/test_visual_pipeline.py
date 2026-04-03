@@ -203,18 +203,17 @@ def test_settings_from_env_reads_visual_pipeline_defaults(monkeypatch: pytest.Mo
     monkeypatch.setenv("COMFYUI_FACE_CONFIDENCE_THRESHOLD", "0.85")
     monkeypatch.setenv("COMFYUI_RESUME_CACHE_MODE", "checkpoint")
     monkeypatch.setenv("COMFYUI_HTTP_TIMEOUT_SECONDS", "45")
-    monkeypatch.setenv("S1_IMAGE_PROVIDER", "beam")
+    monkeypatch.setenv("S1_IMAGE_PROVIDER", "modal")
     monkeypatch.setenv("S1_LORA_TRAIN_PROVIDER", "modal")
     monkeypatch.setenv("S1_LLM_PROVIDER", "modal")
-    monkeypatch.setenv("S2_IMAGE_PROVIDER", "beam")
+    monkeypatch.setenv("S2_IMAGE_PROVIDER", "modal")
     monkeypatch.setenv("S2_VIDEO_PROVIDER", "modal")
-    monkeypatch.setenv("BEAM_API_KEY", "beam-secret")
-    monkeypatch.setenv("BEAM_ENDPOINT_S1_IMAGE", "https://beam.example.com/s1-image")
-    monkeypatch.setenv("BEAM_ENDPOINT_S2_IMAGE", "https://beam.example.com/s2-image")
     monkeypatch.setenv("MODAL_TOKEN_ID", "modal-id")
     monkeypatch.setenv("MODAL_TOKEN_SECRET", "modal-secret")
+    monkeypatch.setenv("MODAL_ENDPOINT_S1_IMAGE", "https://modal.example.com/s1-image")
     monkeypatch.setenv("MODAL_ENDPOINT_S1_LORA_TRAIN", "https://modal.example.com/s1-lora-train")
     monkeypatch.setenv("MODAL_ENDPOINT_S1_LLM", "https://modal.example.com/s1-llm")
+    monkeypatch.setenv("MODAL_ENDPOINT_S2_IMAGE", "https://modal.example.com/s2-image")
     monkeypatch.setenv("MODAL_ENDPOINT_S2_VIDEO", "https://modal.example.com/s2-video")
     monkeypatch.setenv("PROVIDER_POLL_INTERVAL_SECONDS", "2")
     monkeypatch.setenv("PROVIDER_JOB_TIMEOUT_SECONDS", "120")
@@ -232,16 +231,30 @@ def test_settings_from_env_reads_visual_pipeline_defaults(monkeypatch: pytest.Mo
     assert settings.comfyui_face_confidence_threshold == pytest.approx(0.85)
     assert settings.comfyui_resume_cache_mode == "checkpoint"
     assert settings.comfyui_http_timeout_seconds == 45
-    assert settings.runtime_provider_settings.s1_image_provider == Provider.BEAM
+    assert settings.runtime_provider_settings.s1_image_provider == Provider.MODAL
     assert settings.runtime_provider_settings.s1_lora_train_provider == Provider.MODAL
     assert settings.runtime_provider_settings.s1_llm_provider == Provider.MODAL
-    assert settings.runtime_provider_settings.s2_image_provider == Provider.BEAM
+    assert settings.runtime_provider_settings.s2_image_provider == Provider.MODAL
     assert settings.runtime_provider_settings.s2_video_provider == Provider.MODAL
-    assert settings.runtime_provider_settings.beam_api_key == "beam-secret"
-    assert settings.runtime_provider_settings.beam_endpoint_s1_image == "https://beam.example.com/s1-image"
+    assert settings.runtime_provider_settings.modal_endpoint_s1_image == "https://modal.example.com/s1-image"
     assert settings.runtime_provider_settings.modal_endpoint_s1_lora_train == "https://modal.example.com/s1-lora-train"
+    assert settings.runtime_provider_settings.modal_endpoint_s2_image == "https://modal.example.com/s2-image"
     assert settings.runtime_provider_settings.provider_poll_interval_seconds == 2
     assert settings.runtime_provider_settings.provider_job_timeout_seconds == 120
+
+
+def test_runtime_provider_settings_preserve_beam_for_legacy_image_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("S1_IMAGE_PROVIDER", raising=False)
+    monkeypatch.delenv("S2_IMAGE_PROVIDER", raising=False)
+    monkeypatch.delenv("MODAL_ENDPOINT_S1_IMAGE", raising=False)
+    monkeypatch.delenv("MODAL_ENDPOINT_S2_IMAGE", raising=False)
+    monkeypatch.setenv("BEAM_ENDPOINT_S1_IMAGE", "https://beam.example.com/s1-image")
+    monkeypatch.setenv("BEAM_ENDPOINT_S2_IMAGE", "https://beam.example.com/s2-image")
+
+    settings = RuntimeProviderSettings.from_env()
+
+    assert settings.s1_image_provider == Provider.BEAM
+    assert settings.s2_image_provider == Provider.BEAM
 
 
 def test_build_visual_execution_client_selects_routed_by_default() -> None:
@@ -249,8 +262,8 @@ def test_build_visual_execution_client_selects_routed_by_default() -> None:
         VisualPipelineSettings(
             visual_execution_provider=Provider.ROUTED,
             runtime_provider_settings=RuntimeProviderSettings(
-                s1_image_provider=Provider.BEAM,
-                s2_image_provider=Provider.BEAM,
+                s1_image_provider=Provider.MODAL,
+                s2_image_provider=Provider.MODAL,
                 s2_video_provider=Provider.MODAL,
             ),
         )

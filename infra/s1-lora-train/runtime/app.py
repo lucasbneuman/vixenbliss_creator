@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
+from vixenbliss_creator.s1_control import S1ControlSettings, S1RuntimeDirectusRecorder
 from vixenbliss_creator.s1_services import InMemoryServiceRuntime, LoraTrainingServiceInput, build_lora_training_result
 
 
@@ -35,6 +36,11 @@ def _processor(payload: dict) -> dict:
 runtime = InMemoryServiceRuntime(processor=_processor)
 app = FastAPI(title="VixenBliss S1 LoRA Train Runtime", version="1.0.0")
 
+try:
+    _directus_recorder = S1RuntimeDirectusRecorder.from_settings(S1ControlSettings.from_env())
+except Exception:
+    _directus_recorder = None
+
 
 @app.get("/healthcheck")
 def healthcheck() -> dict:
@@ -43,7 +49,20 @@ def healthcheck() -> dict:
 
 @app.post("/jobs")
 def submit_job(payload: dict) -> dict:
-    record = runtime.submit(payload.get("input", payload))
+    job_input = payload.get("input", payload)
+    record = runtime.submit(job_input)
+    if _directus_recorder is not None:
+        try:
+            _directus_recorder.record_job(
+                service_name="s1_lora_train",
+                job_id=record.job_id,
+                status=record.status.value,
+                input_payload=job_input,
+                result_payload=record.result,
+                error_message=record.error_message,
+            )
+        except Exception:
+            pass
     return record.status_payload(
         progress_url=f"/ws/jobs/{record.job_id}",
         result_url=f"/jobs/{record.job_id}/result",

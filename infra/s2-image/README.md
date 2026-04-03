@@ -6,5 +6,4 @@ Comparte base de runtime con `S1 image`, pero cambia workflow y politicas de con
 
 Proveedor por defecto recomendado:
 
-- principal: `Beam`
-- secundario: `Modal`
+- activo: `Modal`

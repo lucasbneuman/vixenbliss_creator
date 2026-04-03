@@ -13,6 +13,9 @@ skills:
     - name: infra-bootstrap
       source: CHANGEME_LOCAL_OR_REMOTE_PATH
       purpose: Setup repetible de proveedores e integraciones
+    - name: runpodctl
+      source: https://github.com/runpod/skills
+      purpose: Referencia operativa para usar la CLI de Runpod en tareas de pods, serverless, templates y volumenes
   future:
     - name: system-5-orchestration
       source: CHANGEME_LOCAL_OR_REMOTE_PATH
