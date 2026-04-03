@@ -50,5 +50,6 @@ def test_s1_image_modal_wrapper_uses_volume_backed_cache() -> None:
     modal_app = (BUNDLE / "providers" / "modal" / "app.py").read_text(encoding="utf-8")
 
     assert 'modal.Volume.from_name("vixenbliss-s1-image-model-cache", create_if_missing=True)' in modal_app
-    assert '"MODEL_CACHE_ROOT": "/root/model-cache"' in modal_app
-    assert 'volumes={"/root/model-cache": model_cache_volume}' in modal_app
+    assert 'modal.Image.from_dockerfile(' in modal_app
+    assert '"MODEL_CACHE_ROOT": "/cache/models"' in modal_app
+    assert 'volumes={"/cache/models": model_cache_volume}' in modal_app

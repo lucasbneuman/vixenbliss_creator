@@ -9,8 +9,8 @@ COMFYUI_USER_DIR="${COMFYUI_USER_DIR:-${COMFYUI_HOME}/user/default}"
 COMFYUI_WORKFLOW_IMAGE_ID="${COMFYUI_WORKFLOW_IDENTITY_ID:-${COMFYUI_WORKFLOW_IMAGE_ID:-base-image-ipadapter-impact}}"
 RUNTIME_ROOT="${RUNTIME_ROOT:-/app/runtime}"
 
-"${RUNTIME_ROOT}/scripts/bootstrap.sh"
-"${RUNTIME_ROOT}/scripts/download_models.sh"
+/bin/bash "${RUNTIME_ROOT}/scripts/bootstrap.sh"
+/bin/bash "${RUNTIME_ROOT}/scripts/download_models.sh"
 
 mkdir -p "${COMFYUI_USER_DIR}/workflows"
 cp -f "${RUNTIME_ROOT}/workflows/${COMFYUI_WORKFLOW_IMAGE_ID}.json" "${COMFYUI_USER_DIR}/workflows/${COMFYUI_WORKFLOW_IMAGE_ID}.json"

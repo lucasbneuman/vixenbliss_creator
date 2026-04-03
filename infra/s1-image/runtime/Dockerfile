@@ -52,7 +52,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python-is-python3 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /tmp/s1-image-requirements.txt
+COPY infra/s1-image/runtime/requirements.txt /tmp/s1-image-requirements.txt
 RUN python -m pip install --upgrade pip setuptools wheel && \
     python -m pip install --index-url "${TORCH_INDEX_URL}" \
       "torch==${TORCH_VERSION}" \
@@ -85,7 +85,7 @@ RUN python -m pip install --index-url "${TORCH_INDEX_URL}" \
 
 WORKDIR /app
 
-COPY runtime /app/runtime
+COPY infra/s1-image/runtime /app/runtime
 COPY src /app/src
 
 RUN chmod +x /app/runtime/scripts/*.sh
