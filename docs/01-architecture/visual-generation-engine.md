@@ -58,7 +58,7 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
 
 ## Modos de ejecucion
 
-El contrato del motor visual ahora prioriza proveedores neutrales y portables por etapa. En el estado operativo actual, la implementacion activa es `Modal-only`.
+El contrato del motor visual ahora prioriza proveedores neutrales y portables por etapa. En el estado operativo actual, la implementacion activa usa `Coolify` como host del orquestador HTTP y `Modal` como worker GPU.
 
 ### `ComfyUI` HTTP directo
 
@@ -74,21 +74,21 @@ Configuracion manual esperada:
 
 ### `Modal`
 
-Se usa cuando el backend habla contra un runtime `Modal` por etapa y el worker encapsula a `ComfyUI` o al job runner del servicio.
+Se usa cuando el backend orquestado en `Coolify` necesita despertar un worker GPU para `ComfyUI`, entrenamiento o otra inferencia pesada.
 
 Configuracion manual esperada:
 
-1. publicar el contenedor comun del servicio
+1. publicar solo el worker GPU del servicio, no el HTTP publico
 2. usar `Modal Volumes` o `CloudBucketMount` segun la naturaleza del runtime
-3. exponer el mismo contrato neutral de `jobs`, `status`, `result` y `healthcheck`
-4. exponer `WebSocket` opcional por job para progreso en tiempo real
+3. invocarlo desde el runtime `FastAPI` alojado en `Coolify`
+4. dejar `WebSocket` y polling HTTP como responsabilidad del runtime/orquestador en `Coolify`
 5. consumirlo desde backend via `S1_IMAGE_PROVIDER=modal`, `S1_LORA_TRAIN_PROVIDER=modal`, `S1_LLM_PROVIDER=modal`, `S2_IMAGE_PROVIDER=modal` y `S2_VIDEO_PROVIDER=modal`
 
 Estado aterrizado en el repo:
 
-- `S1 image` ya corre con runtime visual real bajo `infra/s1-image/runtime/`
+- `S1 image` publica su `FastAPI` en `Coolify` y delega ejecucion pesada al worker de `Modal`
 - el bundle de `S1 image` embebe `ComfyUI`, `ComfyUI-IPAdapter-Flux` y `ComfyUI-Impact-Pack`
-- el wrapper de `Modal` usa `Volume` para cache de modelos
+- el wrapper de `Modal` usa `Volume` para cache de modelos y no debe exponerse como API publica
 - el servicio mantiene `runtime_stage=identity_image`, no consume `LoRA` y devuelve artifacts y errores normalizados compatibles con `visual_pipeline`
 
 ### `Beam` futuro
@@ -143,6 +143,7 @@ Los bundles `runpod-*` quedan como baseline previo, no como direccion futura.
 
 - dentro de `EPIC-3`, el front debera operar mediante un chatbot soportado por `LangGraph`
 - ese chatbot podra solicitar acciones de `S1` y `S2` usando el orquestador como capa de coordinacion
+- `LangGraph` y `FastAPI` viven en `Coolify`; no deben publicarse desde `Modal`
 - la comunicacion de progreso con la UI debera evolucionar hacia `WebSockets`
 - los serverless seguiran actuando como workers asincronos, mientras el orquestador centraliza estado, eventos y resultados
 - el contrato recomendado para progreso es `HTTP + WebSocket opcional`; el polling HTTP sigue siendo fallback operativo
@@ -168,6 +169,10 @@ Los bundles `runpod-*` quedan como baseline previo, no como direccion futura.
 - `MODAL_ENDPOINT_S1_LLM`
 - `MODAL_ENDPOINT_S2_IMAGE`
 - `MODAL_ENDPOINT_S2_VIDEO`
+- `S1_IMAGE_EXECUTION_BACKEND`
+- `S1_IMAGE_MODAL_APP_NAME`
+- `S1_IMAGE_MODAL_FUNCTION_NAME`
+- `S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME`
 - `S1_LLM_RUNTIME_BASE_URL`
 - `S1_LLM_RUNTIME_API_KEY`
 - `S1_LLM_RUNTIME_MODEL`

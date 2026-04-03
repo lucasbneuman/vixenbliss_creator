@@ -29,10 +29,17 @@ La capa nueva se separa en dos niveles:
 
 2. `service runtimes`
 - estructura `infra/` por servicio
-- contenedor comun por servicio
+- contenedor/orquestador por servicio alojado en `Coolify`
 - wrapper activo en `providers/modal/`
 - `providers/beam/` queda solo como placeholder futuro mientras `Beam` siga sin disponibilidad operativa
 - `LangGraph` sigue siendo el orquestador central y consume estos runtimes como workers externos
+
+## Regla operativa de despliegue
+
+- `FastAPI` y `LangGraph` viven en `Coolify`
+- `Modal` no debe exponer el HTTP publico del orquestador
+- `Modal` solo despierta workers GPU para `ComfyUI`, entrenamiento y otras tareas pesadas
+- si un servicio usa `Modal`, el endpoint publico sigue siendo el runtime publicado en `Coolify`
 
 ## Estado operativo S1
 

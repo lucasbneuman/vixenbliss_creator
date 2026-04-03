@@ -110,3 +110,31 @@ def test_handle_defaults_progress_url_when_provider_does_not_return_one(monkeypa
     handle = client.submit_job(ServiceRuntime.S1_IMAGE, {"prompt": "hello"})
 
     assert handle.progress_url == "wss://modal.example.com/s1-image/ws/jobs/modal-job-2"
+
+
+def test_modal_client_prefers_inline_output_over_result_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = RuntimeProviderSettings(
+        modal_endpoint_s1_image="https://modal.example.com/s1-image",
+        provider_poll_interval_seconds=0,
+        provider_job_timeout_seconds=5,
+    )
+
+    def fake_post(url: str, payload: dict, timeout_seconds: int, headers: dict[str, str] | None = None) -> dict:
+        return {
+            "job_id": "modal-job-inline",
+            "status": "completed",
+            "output": {"provider": "modal", "artifacts": [{"role": "base_image", "uri": "inline://base"}]},
+        }
+
+    def fail_get(url: str, timeout_seconds: int, headers: dict[str, str] | None = None) -> dict:
+        raise AssertionError(f"fetch_result should not call GET when inline output is available: {url}")
+
+    monkeypatch.setattr("vixenbliss_creator.runtime_providers.adapters._json_post", fake_post)
+    monkeypatch.setattr("vixenbliss_creator.runtime_providers.adapters._json_get", fail_get)
+
+    client = ModalRuntimeProviderClient(settings)
+    handle = client.submit_job(ServiceRuntime.S1_IMAGE, {"prompt": "hello"})
+    result = client.fetch_result(handle)
+
+    assert handle.status == JobStatus.COMPLETED
+    assert result["artifacts"][0]["uri"] == "inline://base"

@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
+import modal
 from fastapi.testclient import TestClient
 
 
@@ -63,7 +64,7 @@ def _base_job_input(**overrides: object) -> dict:
 
 def test_s1_image_runtime_healthcheck_reports_identity_contract(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
-    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda: None)
+    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_healthcheck", lambda timeout_seconds=2: True)
     _create_required_flux_assets(module)
     client = TestClient(module.app)
@@ -80,7 +81,7 @@ def test_s1_image_runtime_healthcheck_reports_identity_contract(tmp_path: Path, 
 
 def test_s1_image_runtime_reports_reference_image_not_found(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
-    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda: None)
+    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError("reference_face_image_url could not be resolved")))
     _create_required_flux_assets(module)
     client = TestClient(module.app)
@@ -95,7 +96,7 @@ def test_s1_image_runtime_reports_reference_image_not_found(tmp_path: Path, monk
 
 def test_s1_image_runtime_rejects_non_identity_stage(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
-    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda: None)
+    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     _create_required_flux_assets(module)
     client = TestClient(module.app)
 
@@ -108,7 +109,7 @@ def test_s1_image_runtime_rejects_non_identity_stage(tmp_path: Path, monkeypatch
 
 def test_s1_image_runtime_rejects_lora_usage(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
-    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda: None)
+    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     _create_required_flux_assets(module)
     client = TestClient(module.app)
 
@@ -121,7 +122,7 @@ def test_s1_image_runtime_rejects_lora_usage(tmp_path: Path, monkeypatch) -> Non
 
 def test_s1_image_runtime_reports_face_confidence_unavailable(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
-    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda: None)
+    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
     monkeypatch.setattr(module, "_submit_prompt", lambda *_args, **_kwargs: "prompt-1")
     monkeypatch.setattr(
@@ -148,7 +149,7 @@ def test_s1_image_runtime_reports_face_confidence_unavailable(tmp_path: Path, mo
 
 def test_s1_image_runtime_base_render_exposes_checkpoint_and_progress(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
-    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda: None)
+    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
     monkeypatch.setattr(module, "_submit_prompt", lambda *_args, **_kwargs: "prompt-1")
     monkeypatch.setattr(
@@ -171,6 +172,7 @@ def test_s1_image_runtime_base_render_exposes_checkpoint_and_progress(tmp_path: 
     submit = client.post("/jobs", json={"input": _base_job_input()})
     assert submit.status_code == 200
     assert submit.json()["progress_url"].endswith("/ws/jobs/" + submit.json()["job_id"])
+    assert submit.json()["output"]["provider"] == "modal"
     result = client.get(submit.json()["result_url"])
 
     payload = result.json()
@@ -179,11 +181,15 @@ def test_s1_image_runtime_base_render_exposes_checkpoint_and_progress(tmp_path: 
     assert payload["artifacts"][0]["role"] == "base_image"
     assert payload["resume_checkpoint"]["stage"] == "base_render"
     assert payload["resume_checkpoint"]["intermediate_artifacts"][0]["role"] == "base_image"
+    progress_stages = [event["stage"] for event in submit.json()["metadata"]["progress_events"]]
+    assert "building_workflow" in progress_stages
+    assert "submitting_prompt" in progress_stages
+    assert "base_render_complete" in progress_stages
 
 
 def test_s1_image_runtime_face_detail_fails_on_incomplete_resume_state(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
-    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda: None)
+    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
     _create_required_flux_assets(module)
     client = TestClient(module.app)
@@ -215,7 +221,7 @@ def test_s1_image_runtime_face_detail_fails_on_incomplete_resume_state(tmp_path:
 
 def test_modal_runtime_provider_can_consume_s1_image_runtime_locally(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
-    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda: None)
+    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
     monkeypatch.setattr(module, "_submit_prompt", lambda *_args, **_kwargs: "prompt-1")
     monkeypatch.setattr(
@@ -259,3 +265,105 @@ def test_modal_runtime_provider_can_consume_s1_image_runtime_locally(tmp_path: P
     assert result["provider"] == "modal"
     assert result["runtime_stage"] == "identity_image"
     assert result["artifacts"][0]["role"] == "base_image"
+
+
+def test_s1_image_runtime_websocket_streams_recorded_progress_events(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
+    monkeypatch.setattr(module, "_submit_prompt", lambda *_args, **_kwargs: "prompt-1")
+    monkeypatch.setattr(
+        module,
+        "_poll_history",
+        lambda _prompt_id: {
+            "outputs": {
+                "save_base_image": {
+                    "images": [{"filename": "base.png", "subfolder": "vb", "type": "output"}],
+                },
+                "face_detector": {"metrics": {"bbox_confidence": 0.84}},
+            }
+        },
+    )
+    _create_required_flux_assets(module)
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(b"png")
+    client = TestClient(module.app)
+
+    submit = client.post("/jobs", json={"input": _base_job_input()})
+    job_id = submit.json()["job_id"]
+
+    with client.websocket_connect(f"/ws/jobs/{job_id}") as websocket:
+        events = []
+        while True:
+            try:
+                events.append(websocket.receive_json())
+            except Exception:
+                break
+
+    stages = [event["stage"] for event in events]
+    assert "accepted" in stages
+    assert "submitting_prompt" in stages
+    assert "base_render_complete" in stages
+    assert stages[-1] == "completed"
+
+
+def test_s1_image_runtime_can_delegate_execution_to_modal_worker(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("S1_IMAGE_EXECUTION_BACKEND", "modal")
+    module = _load_runtime_module(tmp_path, monkeypatch)
+
+    class FakeRemoteFunction:
+        def remote(self, payload: dict) -> dict:
+            assert payload["runtime_stage"] == "identity_image"
+            return {
+                "provider": "modal",
+                "runtime_stage": "identity_image",
+                "artifacts": [{"role": "base_image", "uri": "modal://base.png", "content_type": "image/png", "metadata_json": {}}],
+                "metadata": {
+                    "modal_progress_events": [
+                        {"stage": "building_workflow", "message": "Preparing workflow", "progress": 0.42},
+                        {"stage": "base_render_complete", "message": "Base render finished", "progress": 0.94},
+                    ]
+                },
+            }
+
+    monkeypatch.setattr(modal.Function, "from_name", lambda *_args, **_kwargs: FakeRemoteFunction())
+    client = TestClient(module.app)
+
+    submit = client.post("/jobs", json={"input": _base_job_input()})
+
+    assert submit.status_code == 200
+    assert submit.json()["output"]["artifacts"][0]["uri"] == "modal://base.png"
+    stages = [event["stage"] for event in submit.json()["metadata"]["progress_events"]]
+    assert "dispatching_modal_job" in stages
+    assert "building_workflow" in stages
+    assert "modal_job_completed" in stages
+
+
+def test_s1_image_runtime_healthcheck_can_delegate_to_modal_worker(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("S1_IMAGE_EXECUTION_BACKEND", "modal")
+    module = _load_runtime_module(tmp_path, monkeypatch)
+
+    class FakeHealthcheckFunction:
+        def remote(self, *, deep: bool) -> dict:
+            assert deep is True
+            return {
+                "ok": True,
+                "provider_ready": True,
+                "service": "s1_image",
+                "provider": "modal",
+                "progress_transport": "websocket_optional",
+                "runtime_checks": {"workflow_baked": True},
+                "runtime_contract": {"runtime_stage": "identity_image"},
+                "comfyui_reachable": True,
+            }
+
+    monkeypatch.setattr(modal.Function, "from_name", lambda *_args, **_kwargs: FakeHealthcheckFunction())
+    client = TestClient(module.app)
+
+    response = client.get("/healthcheck?deep=true")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["orchestrator_host"] == "coolify"
+    assert payload["startup_mode"] == "remote_gpu_worker"

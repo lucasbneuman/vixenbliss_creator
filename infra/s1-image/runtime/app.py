@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
 import subprocess
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from urllib import error, parse, request
 
@@ -57,9 +59,15 @@ MODEL_CACHE_ROOT = Path(
 MODEL_BOOTSTRAP_WAIT_SECONDS = int(os.getenv("MODEL_BOOTSTRAP_WAIT_SECONDS", "45"))
 WORKFLOW_TEMPLATE = RUNTIME_ROOT / "workflows" / f"{COMFYUI_WORKFLOW_IMAGE_ID}.json"
 ENTRYPOINT_SCRIPT = RUNTIME_ROOT / "scripts" / "entrypoint.sh"
+S1_IMAGE_EXECUTION_BACKEND = os.getenv("S1_IMAGE_EXECUTION_BACKEND", "local").strip().lower()
+S1_IMAGE_MODAL_APP_NAME = os.getenv("S1_IMAGE_MODAL_APP_NAME", "vixenbliss-s1-image")
+S1_IMAGE_MODAL_FUNCTION_NAME = os.getenv("S1_IMAGE_MODAL_FUNCTION_NAME", "run_s1_image_job")
+S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME = os.getenv("S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME", "runtime_healthcheck")
 
 ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
 _COMFYUI_PROCESS: subprocess.Popen[str] | None = None
+
+ProgressEmitter = Callable[[str, str, float], None]
 
 
 def _resolve_ip_adapter_model_name(job_input: dict | None = None) -> str:
@@ -123,11 +131,18 @@ def _healthcheck(timeout_seconds: int = 2) -> bool:
     return isinstance(payload, dict)
 
 
-def _ensure_comfyui_running() -> None:
+def _emit_progress(emit_progress: ProgressEmitter | None, *, stage: str, message: str, progress: float) -> None:
+    if emit_progress is not None:
+        emit_progress(stage, message, progress)
+
+
+def _ensure_comfyui_running(*, emit_progress: ProgressEmitter | None = None) -> None:
     global _COMFYUI_PROCESS
     if _healthcheck():
+        _emit_progress(emit_progress, stage="comfyui_ready", message="ComfyUI already responding", progress=0.26)
         return
 
+    _emit_progress(emit_progress, stage="starting_comfyui", message="Starting embedded ComfyUI runtime", progress=0.18)
     _copy_workflow()
 
     if _COMFYUI_PROCESS is None or _COMFYUI_PROCESS.poll() is not None:
@@ -141,6 +156,7 @@ def _ensure_comfyui_running() -> None:
     deadline = time.time() + 120
     while time.time() < deadline:
         if _healthcheck():
+            _emit_progress(emit_progress, stage="comfyui_ready", message="ComfyUI became healthy", progress=0.26)
             return
         if _COMFYUI_PROCESS and _COMFYUI_PROCESS.poll() is not None:
             output = ""
@@ -458,26 +474,43 @@ def _build_resume_checkpoint(*, job_input: dict, artifacts: list[dict], prompt_i
     return checkpoint.model_dump(mode="json")
 
 
-def _run_generation(job_input: dict) -> dict:
-    _ensure_comfyui_running()
+def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = None) -> dict:
+    _emit_progress(emit_progress, stage="validating_runtime_contract", message="Validating S1 image runtime contract", progress=0.16)
     _assert_s1_runtime_contract(job_input)
+    _emit_progress(emit_progress, stage="starting_runtime", message="Preparing ComfyUI runtime", progress=0.2)
+    _ensure_comfyui_running(emit_progress=emit_progress)
+    _emit_progress(emit_progress, stage="validating_runtime_assets", message="Checking FLUX and IP Adapter assets", progress=0.32)
     _assert_required_runtime_inputs(job_input)
 
     mode = str(job_input.get("mode", ResumeStage.BASE_RENDER.value))
+    _emit_progress(emit_progress, stage="building_workflow", message=f"Preparing {mode} workflow payload", progress=0.42)
     workflow = _build_workflow_payload(job_input)
+    _emit_progress(emit_progress, stage="submitting_prompt", message="Submitting prompt to ComfyUI", progress=0.54)
     prompt_id = _submit_prompt(workflow, mode=mode)
+    _emit_progress(emit_progress, stage="awaiting_history", message=f"Waiting for ComfyUI prompt {prompt_id}", progress=0.7)
     history = _poll_history(prompt_id)
+    _emit_progress(emit_progress, stage="collecting_artifacts", message="Collecting generated artifacts", progress=0.84)
     artifacts = _extract_artifacts(history, mode=mode)
     if not artifacts:
         raise RuntimeError("COMFYUI_EXECUTION_FAILED: ComfyUI execution did not expose any artifacts")
 
     face_detection_confidence = _extract_face_confidence(history, job_input)
     if mode == ResumeStage.BASE_RENDER.value and face_detection_confidence is None:
+        _emit_progress(emit_progress, stage="face_confidence_missing", message="Face detector did not return a usable score", progress=0.92)
         return _response_error(
             "FACE_CONFIDENCE_UNAVAILABLE",
             "face detector did not return a usable confidence score",
             {"prompt_id": prompt_id},
         )
+    if mode == ResumeStage.BASE_RENDER.value:
+        _emit_progress(
+            emit_progress,
+            stage="base_render_complete",
+            message=f"Base render finished with face confidence {face_detection_confidence:.2f}",
+            progress=0.94,
+        )
+    else:
+        _emit_progress(emit_progress, stage="face_detail_complete", message="Face detail stage completed", progress=0.94)
 
     successful_node_ids = list(history.get("outputs", {}).keys())
     checkpoint_stage = ResumeStage.BASE_RENDER if mode == ResumeStage.BASE_RENDER.value else ResumeStage.COMPLETED
@@ -526,12 +559,34 @@ def _run_generation(job_input: dict) -> dict:
     }
 
 
-def _processor(payload: dict) -> dict:
+def _run_generation_via_modal(job_input: dict, *, emit_progress: ProgressEmitter | None = None) -> dict:
+    try:
+        import modal
+    except Exception as exc:
+        raise RuntimeError(f"COMFYUI_EXECUTION_FAILED: modal backend is not available in this runtime ({exc})") from exc
+
+    _emit_progress(emit_progress, stage="dispatching_modal_job", message="Dispatching S1 image job to Modal GPU worker", progress=0.2)
+    modal_function = modal.Function.from_name(S1_IMAGE_MODAL_APP_NAME, S1_IMAGE_MODAL_FUNCTION_NAME)
+    result = modal_function.remote(job_input)
+    metadata = result.get("metadata", {})
+    remote_events = metadata.pop("modal_progress_events", []) if isinstance(metadata, dict) else []
+    for event in remote_events:
+        stage = str(event.get("stage", "modal_worker"))
+        message = str(event.get("message", stage))
+        progress = float(event.get("progress", 0.5))
+        _emit_progress(emit_progress, stage=stage, message=message, progress=progress)
+    _emit_progress(emit_progress, stage="modal_job_completed", message="Modal GPU worker finished S1 image job", progress=0.96)
+    return result
+
+
+def _processor(payload: dict, *, emit_progress: ProgressEmitter | None = None) -> dict:
     try:
         action = str(payload.get("action", "generate"))
         if action != "generate":
             return _response_error("COMFYUI_EXECUTION_FAILED", f"unsupported action {action}")
-        return _run_generation(payload)
+        if S1_IMAGE_EXECUTION_BACKEND == "modal":
+            return _run_generation_via_modal(payload, emit_progress=emit_progress)
+        return _run_generation(payload, emit_progress=emit_progress)
     except FileNotFoundError as exc:
         return _response_error("REFERENCE_IMAGE_NOT_FOUND", str(exc))
     except RuntimeError as exc:
@@ -555,24 +610,98 @@ except Exception:
 
 
 @app.get("/healthcheck")
-def healthcheck() -> dict:
-    provider_ready = False
+def healthcheck(deep: bool = False) -> dict:
+    if S1_IMAGE_EXECUTION_BACKEND == "modal":
+        try:
+            import modal
+        except Exception as exc:
+            return {
+                "ok": False,
+                "provider_ready": False,
+                "service": "s1_image",
+                "provider": Provider.MODAL.value,
+                "progress_transport": "websocket_optional",
+                "startup_mode": "remote_gpu_worker",
+                "deep_healthcheck": deep,
+                "comfyui_reachable": False,
+                "workflow_id": COMFYUI_WORKFLOW_IMAGE_ID,
+                "workflow_version": COMFYUI_WORKFLOW_IMAGE_VERSION,
+                "ip_adapter_model": COMFYUI_IP_ADAPTER_MODEL,
+                "runtime_checks": {},
+                "runtime_contract": {
+                    "model_family": "flux",
+                    "runtime_stage": RuntimeStage.IDENTITY_IMAGE.value,
+                    "workflow_scope": "s1_image",
+                    "supabase_required": False,
+                    "reference_face_image_url_required": True,
+                    "lora_supported": False,
+                    "model_cache_root": str(MODEL_CACHE_ROOT),
+                },
+                "startup_error": f"modal backend is not available in this runtime ({exc})",
+            }
+
+        modal_function = modal.Function.from_name(S1_IMAGE_MODAL_APP_NAME, S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME)
+        payload = modal_function.remote(deep=deep)
+        payload["startup_mode"] = "remote_gpu_worker"
+        payload["orchestrator_host"] = "coolify"
+        payload["gpu_worker_provider"] = Provider.MODAL.value
+        return payload
+
+    runtime_checks = _runtime_checks({})
+    asset_ready = all(
+        runtime_checks[key]
+        for key in (
+            "flux_diffusion_model_present",
+            "flux_ae_present",
+            "flux_clip_l_present",
+            "flux_t5xxl_present",
+            "ip_adapter_present",
+            "workflow_baked",
+            "comfyui_baked",
+            "impact_pack_baked",
+            "ipadapter_flux_baked",
+        )
+    )
+    provider_ready = asset_ready
     startup_error = None
+    comfyui_reachable = _healthcheck()
+    provider_ready = provider_ready or comfyui_reachable
     try:
-        _ensure_comfyui_running()
-        provider_ready = _healthcheck()
+        if deep:
+            _ensure_comfyui_running()
+            runtime_checks = _runtime_checks({})
+            asset_ready = all(
+                runtime_checks[key]
+                for key in (
+                    "flux_diffusion_model_present",
+                    "flux_ae_present",
+                    "flux_clip_l_present",
+                    "flux_t5xxl_present",
+                    "ip_adapter_present",
+                    "workflow_baked",
+                    "comfyui_baked",
+                    "impact_pack_baked",
+                    "ipadapter_flux_baked",
+                )
+            )
+            comfyui_reachable = _healthcheck()
+            provider_ready = (asset_ready or comfyui_reachable) and comfyui_reachable
     except Exception as exc:
         startup_error = str(exc)
+        provider_ready = False
     return {
         "ok": provider_ready,
         "provider_ready": provider_ready,
         "service": "s1_image",
         "provider": Provider.MODAL.value,
         "progress_transport": "websocket_optional",
+        "startup_mode": "lazy",
+        "deep_healthcheck": deep,
+        "comfyui_reachable": comfyui_reachable,
         "workflow_id": COMFYUI_WORKFLOW_IMAGE_ID,
         "workflow_version": COMFYUI_WORKFLOW_IMAGE_VERSION,
         "ip_adapter_model": COMFYUI_IP_ADAPTER_MODEL,
-        "runtime_checks": _runtime_checks({}),
+        "runtime_checks": runtime_checks,
         "runtime_contract": {
             "model_family": "flux",
             "runtime_stage": RuntimeStage.IDENTITY_IMAGE.value,
@@ -602,10 +731,13 @@ def submit_job(payload: dict) -> dict:
             )
         except Exception:
             pass
-    return record.status_payload(
+    response = record.status_payload(
         progress_url=f"/ws/jobs/{record.job_id}",
         result_url=f"/jobs/{record.job_id}/result",
     )
+    if record.result is not None:
+        response["output"] = record.result
+    return response
 
 
 @app.get("/jobs/{job_id}")
@@ -640,8 +772,16 @@ async def stream_job(job_id: str, websocket: WebSocket) -> None:
         await websocket.close(code=4404)
         return
     try:
-        for event in record.progress_events:
-            await websocket.send_json(event.model_dump(mode="json"))
+        sent = 0
+        while True:
+            record = runtime.status(job_id)
+            pending_events = record.progress_events[sent:]
+            for event in pending_events:
+                await websocket.send_json(event.model_dump(mode="json"))
+                sent += 1
+            if record.status.value in {"completed", "failed"}:
+                break
+            await asyncio.sleep(0.1)
     except WebSocketDisconnect:
         return
     await websocket.close()

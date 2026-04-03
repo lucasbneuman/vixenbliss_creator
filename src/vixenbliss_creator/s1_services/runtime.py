@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from inspect import signature
 from typing import Callable
 from uuid import uuid4
 
@@ -10,6 +11,7 @@ from .models import ProgressEvent
 
 
 Processor = Callable[[dict], dict]
+ProgressReporter = Callable[[str, str, float], None]
 
 
 @dataclass
@@ -40,19 +42,34 @@ class InMemoryServiceRuntime:
     processor: Processor
     jobs: dict[str, JobRecord] = field(default_factory=dict)
 
+    def _append_event(self, record: JobRecord, *, stage: str, message: str, progress: float) -> None:
+        record.progress_events.append(
+            ProgressEvent(job_id=record.job_id, stage=stage, message=message, progress=progress)
+        )
+
+    def _invoke_processor(self, payload: dict, emit_progress: ProgressReporter) -> dict:
+        params = signature(self.processor).parameters
+        if "emit_progress" in params:
+            return self.processor(payload, emit_progress=emit_progress)
+        return self.processor(payload)
+
     def submit(self, payload: dict) -> JobRecord:
         job_id = f"job-{uuid4().hex[:12]}"
         record = JobRecord(job_id=job_id, status=JobStatus.IN_PROGRESS)
-        record.progress_events.append(ProgressEvent(job_id=job_id, stage="accepted", message="job accepted", progress=0.05))
+        self._append_event(record, stage="accepted", message="job accepted", progress=0.05)
         self.jobs[job_id] = record
+
+        def emit_progress(stage: str, message: str, progress: float) -> None:
+            self._append_event(record, stage=stage, message=message, progress=progress)
+
         try:
-            record.progress_events.append(ProgressEvent(job_id=job_id, stage="running", message="job running", progress=0.45))
-            record.result = self.processor(payload)
-            record.progress_events.append(ProgressEvent(job_id=job_id, stage="completed", message="job completed", progress=1.0))
+            self._append_event(record, stage="running", message="job running", progress=0.12)
+            record.result = self._invoke_processor(payload, emit_progress)
+            self._append_event(record, stage="completed", message="job completed", progress=1.0)
             record.status = JobStatus.COMPLETED
         except Exception as exc:
             record.error_message = str(exc)
-            record.progress_events.append(ProgressEvent(job_id=job_id, stage="failed", message=str(exc), progress=1.0))
+            self._append_event(record, stage="failed", message=str(exc), progress=1.0)
             record.status = JobStatus.FAILED
         return record
 

@@ -30,6 +30,7 @@ class HTTPPollingRuntimeProviderClient:
             handle = self._handle_for(endpoint=endpoint, service_runtime=service_runtime, payload=response)
             handle.status = JobStatus.COMPLETED
             handle.result_url = f"{endpoint}/jobs/{handle.job_id}/result"
+            handle.metadata_json = {**handle.metadata_json, "_inline_output": output}
             return handle
         return self._handle_for(endpoint=endpoint, service_runtime=service_runtime, payload=response)
 
@@ -52,6 +53,10 @@ class HTTPPollingRuntimeProviderClient:
         )
 
     def fetch_result(self, handle: JobHandle) -> dict:
+        inline_output = handle.metadata_json.get("_inline_output")
+        if handle.status == JobStatus.COMPLETED and isinstance(inline_output, dict):
+            return inline_output
+
         if handle.status == JobStatus.COMPLETED and handle.result_url:
             return _json_get(
                 handle.result_url,
@@ -64,6 +69,9 @@ class HTTPPollingRuntimeProviderClient:
         while time.time() < deadline:
             current = self.get_job_status(current)
             if current.status == JobStatus.COMPLETED:
+                inline_output = current.metadata_json.get("_inline_output")
+                if isinstance(inline_output, dict):
+                    return inline_output
                 result_url = current.result_url or f"{self._endpoint_for(current.service_runtime)}/jobs/{current.job_id}/result"
                 return _json_get(
                     result_url,
