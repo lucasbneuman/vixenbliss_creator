@@ -2,20 +2,23 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import os
 import subprocess
 import time
 import uuid
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from urllib import error, parse, request
+from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
 from vixenbliss_creator.provider import Provider
 from vixenbliss_creator.s1_control import S1ControlSettings, S1RuntimeDirectusRecorder
-from vixenbliss_creator.s1_services import InMemoryServiceRuntime
+from vixenbliss_creator.s1_services import DatasetServiceInput, GenerationManifest, InMemoryServiceRuntime, SeedBundle, build_dataset_result
 from vixenbliss_creator.visual_pipeline import ResumeCheckpoint, ResumeStage, RuntimeStage, VisualArtifact, VisualArtifactRole
 
 
@@ -474,6 +477,132 @@ def _build_resume_checkpoint(*, job_input: dict, artifacts: list[dict], prompt_i
     return checkpoint.model_dump(mode="json")
 
 
+def _resolve_identity_id(job_input: dict) -> UUID | None:
+    raw = job_input.get("identity_id")
+    if raw is None:
+        metadata = job_input.get("metadata") or {}
+        raw = metadata.get("identity_id")
+    if raw in {None, ""}:
+        return None
+    try:
+        return UUID(str(raw))
+    except (ValueError, TypeError):
+        return None
+
+
+def _resolve_base_image_bytes(artifacts: list[dict]) -> bytes | None:
+    for artifact in artifacts:
+        if artifact.get("role") != VisualArtifactRole.BASE_IMAGE.value:
+            continue
+        metadata = artifact.get("metadata_json") or {}
+        inline_data = metadata.get("inline_data_base64")
+        if inline_data:
+            return base64.b64decode(inline_data)
+        artifact_uri = artifact.get("uri")
+        if artifact_uri and Path(artifact_uri).exists():
+            return Path(artifact_uri).read_bytes()
+    return None
+
+
+def _sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
+    identity_id = _resolve_identity_id(job_input)
+    if identity_id is None:
+        result.setdefault("metadata", {})["dataset_handoff_ready"] = False
+        result["metadata"]["dataset_handoff_reason"] = "identity_id was not provided"
+        return result
+
+    artifacts = result.get("artifacts") or []
+    base_image_bytes = _resolve_base_image_bytes(artifacts)
+    if base_image_bytes is None:
+        result.setdefault("metadata", {})["dataset_handoff_ready"] = False
+        result["metadata"]["dataset_handoff_reason"] = "base_image artifact is not materializable"
+        return result
+
+    metadata = job_input.get("metadata") or {}
+    samples_target = int(metadata.get("samples_target", job_input.get("samples_target", 12)))
+    identity_root = ARTIFACT_ROOT / str(identity_id)
+    identity_root.mkdir(parents=True, exist_ok=True)
+    generation_manifest = GenerationManifest(
+        identity_id=identity_id,
+        prompt=str(job_input.get("prompt", "editorial portrait of a synthetic premium performer")),
+        negative_prompt=str(job_input.get("negative_prompt", "low quality, anatomy drift, extra limbs, text, watermark")),
+        seed_bundle=SeedBundle(
+            portrait_seed=int(job_input.get("seed", 42)),
+            variation_seed=int(metadata.get("variation_seed", job_input.get("seed", 42))),
+            dataset_seed=int(metadata.get("dataset_seed", job_input.get("seed", 42))),
+        ),
+        workflow_id=str(job_input.get("workflow_id", COMFYUI_WORKFLOW_IMAGE_ID)),
+        workflow_version=str(job_input.get("workflow_version", COMFYUI_WORKFLOW_IMAGE_VERSION)),
+        base_model_id=str(job_input.get("base_model_id", "flux-schnell-v1")),
+        comfy_parameters={
+            "width": int(job_input.get("width", 1024)),
+            "height": int(job_input.get("height", 1024)),
+            "reference_face_image_url": job_input.get("reference_face_image_url"),
+            "ip_adapter": job_input.get("ip_adapter", {}),
+            "face_detailer": job_input.get("face_detailer", {}),
+        },
+        artifact_path=(identity_root / "generation-manifest.json").as_posix(),
+    )
+    dataset_input = DatasetServiceInput(
+        identity_id=identity_id,
+        generation_manifest=generation_manifest,
+        reference_face_image_url=job_input.get("reference_face_image_url"),
+        samples_target=samples_target,
+        face_detection_confidence=result.get("face_detection_confidence"),
+        artifact_root=ARTIFACT_ROOT.as_posix(),
+        metadata_json={
+            "provider_job_id": result.get("provider_job_id"),
+            "workflow_scope": "s1_image",
+            "autopromote_candidate": bool(metadata.get("autopromote", False)),
+        },
+    )
+    dataset_result = build_dataset_result(dataset_input)
+    manifest = dataset_result["dataset_manifest"]
+    manifest_path = Path(manifest["artifact_path"])
+    package_path = Path(manifest["dataset_package_path"])
+    base_image_path = identity_root / "base-image.png"
+    base_image_path.write_bytes(base_image_bytes)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    package_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest["generated_samples"] = 1
+    manifest["review_required"] = not bool(metadata.get("autopromote", False))
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.write(base_image_path, arcname="images/base-image.png")
+        archive.write(manifest_path, arcname="dataset-manifest.json")
+    package_bytes = package_path.read_bytes()
+    package_checksum = _sha256_bytes(package_bytes)
+
+    materialized_artifacts = []
+    for artifact in dataset_result["artifacts"]:
+        artifact_copy = dict(artifact)
+        if artifact_copy["artifact_type"] == "base_image":
+            artifact_copy["storage_path"] = base_image_path.as_posix()
+            artifact_copy["size_bytes"] = len(base_image_bytes)
+        elif artifact_copy["artifact_type"] == "dataset_manifest":
+            artifact_copy["storage_path"] = manifest_path.as_posix()
+            artifact_copy["size_bytes"] = manifest_path.stat().st_size
+        elif artifact_copy["artifact_type"] == "dataset_package":
+            artifact_copy["storage_path"] = package_path.as_posix()
+            artifact_copy["checksum_sha256"] = package_checksum
+            artifact_copy["size_bytes"] = package_path.stat().st_size
+        materialized_artifacts.append(artifact_copy)
+
+    manifest["checksum_sha256"] = package_checksum
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    result["dataset_manifest"] = manifest
+    result["dataset_package_path"] = package_path.as_posix()
+    result["dataset_artifacts"] = materialized_artifacts
+    result.setdefault("metadata", {})["dataset_handoff_ready"] = True
+    result["metadata"]["dataset_storage_mode"] = "local_artifact_root"
+    result["metadata"]["dataset_review_required"] = manifest["review_required"]
+    return result
+
+
 def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = None) -> dict:
     _emit_progress(emit_progress, stage="validating_runtime_contract", message="Validating S1 image runtime contract", progress=0.16)
     _assert_s1_runtime_contract(job_input)
@@ -523,7 +652,7 @@ def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = 
         face_detection_confidence=face_detection_confidence,
     )
 
-    return {
+    result = {
         "provider": Provider.MODAL.value,
         "workflow_id": str(job_input.get("workflow_id", COMFYUI_WORKFLOW_IMAGE_ID)),
         "workflow_version": str(job_input.get("workflow_version", COMFYUI_WORKFLOW_IMAGE_VERSION)),
@@ -557,6 +686,9 @@ def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = 
             },
         },
     }
+    if mode == ResumeStage.BASE_RENDER.value:
+        result = _maybe_attach_dataset_handoff(job_input, result)
+    return result
 
 
 def _run_generation_via_modal(job_input: dict, *, emit_progress: ProgressEmitter | None = None) -> dict:
