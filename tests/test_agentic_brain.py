@@ -267,6 +267,7 @@ def test_agentic_settings_reads_s1_llm_runtime_env(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("S1_LLM_PROVIDER", "modal")
     monkeypatch.setenv("S1_LLM_RUNTIME_BASE_URL", "https://modal.example.com/s1-llm")
     monkeypatch.setenv("S1_LLM_RUNTIME_API_KEY", "runtime-secret")
+    monkeypatch.setenv("S1_LLM_RUNTIME_MODEL", "qwen2.5:7b")
     monkeypatch.setenv("S1_LLM_RUNTIME_TIMEOUT_SECONDS", "45")
 
     settings = AgenticSettings.from_env()
@@ -274,7 +275,77 @@ def test_agentic_settings_reads_s1_llm_runtime_env(monkeypatch: pytest.MonkeyPat
     assert settings.s1_llm_provider == "modal"
     assert settings.s1_llm_runtime_base_url == "https://modal.example.com/s1-llm"
     assert settings.s1_llm_runtime_api_key == "runtime-secret"
+    assert settings.s1_llm_runtime_model == "qwen2.5:7b"
     assert settings.s1_llm_runtime_timeout_seconds == 45
+    assert settings.resolved_llm_base_url == "https://modal.example.com/s1-llm/v1"
+    assert settings.resolved_llm_api_key == "runtime-secret"
+    assert settings.resolved_llm_model == "qwen2.5:7b"
+
+
+def test_agentic_settings_can_fallback_to_repo_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("S1_LLM_RUNTIME_BASE_URL", raising=False)
+    monkeypatch.delenv("S1_LLM_RUNTIME_MODEL", raising=False)
+    monkeypatch.delenv("S1_LLM_RUNTIME_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.setattr(
+        "vixenbliss_creator.agentic.config._read_repo_dotenv",
+        lambda: {
+            "S1_LLM_RUNTIME_BASE_URL": "https://modal.example.com/runtime",
+            "S1_LLM_RUNTIME_MODEL": "gpt-4.1-mini",
+            "S1_LLM_RUNTIME_TIMEOUT_SECONDS": "120",
+        },
+    )
+
+    settings = AgenticSettings.from_env()
+
+    assert settings.s1_llm_runtime_base_url == "https://modal.example.com/runtime"
+    assert settings.s1_llm_runtime_model == "gpt-4.1-mini"
+    assert settings.s1_llm_runtime_timeout_seconds == 120
+    assert settings.resolved_llm_base_url == "https://modal.example.com/runtime/v1"
+
+
+def test_agentic_settings_ignores_placeholder_runtime_envs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("S1_LLM_RUNTIME_BASE_URL", "CHANGEME")
+    monkeypatch.setenv("S1_LLM_RUNTIME_MODEL", "CHANGEME")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-4.1-mini")
+    monkeypatch.setattr("vixenbliss_creator.agentic.config._read_repo_dotenv", lambda: {})
+
+    settings = AgenticSettings.from_env()
+
+    assert settings.s1_llm_runtime_base_url is None
+    assert settings.s1_llm_runtime_model is None
+    assert settings.resolved_llm_base_url == "https://api.openai.com/v1"
+    assert settings.resolved_llm_model == "gpt-4.1-mini"
+
+
+def test_openai_client_uses_runtime_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_json_post(url: str, payload: dict, headers: dict[str, str], *, timeout_seconds: int = 30) -> dict:
+        captured["timeout_seconds"] = timeout_seconds
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(build_expansion_payload(with_hard_limits=True)),
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr("vixenbliss_creator.agentic.adapters._json_post", fake_json_post)
+    client = OpenAICompatibleLLMClient(
+        AgenticSettings(
+            s1_llm_runtime_base_url="https://modal.example.com/s1-llm",
+            s1_llm_runtime_model="qwen2.5:3b",
+            s1_llm_runtime_timeout_seconds=120,
+        )
+    )
+
+    result = client.generate_expansion("Crea un avatar lifestyle premium", critique_history=[], attempt_count=1)
+
+    assert captured["timeout_seconds"] == 120
+    assert result.identity_draft.metadata.vertical == "lifestyle"
 
 
 def test_runner_returns_succeeded_graph_state() -> None:
@@ -474,7 +545,7 @@ def test_openai_adapter_parses_openai_compatible_payload(monkeypatch: pytest.Mon
 
     captured: dict[str, object] = {}
 
-    def fake_post(url: str, payload: dict, headers: dict[str, str]) -> dict:
+    def fake_post(url: str, payload: dict, headers: dict[str, str], **kwargs) -> dict:
         assert url == "https://example.com/v1/chat/completions"
         assert payload["model"] == "test-model"
         assert headers["Authorization"] == "Bearer secret"
@@ -506,6 +577,10 @@ def test_settings_can_resolve_openai_env(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.delenv("LLM_SERVERLESS_BASE_URL", raising=False)
     monkeypatch.delenv("LLM_SERVERLESS_API_KEY", raising=False)
     monkeypatch.delenv("LLM_SERVERLESS_MODEL", raising=False)
+    monkeypatch.delenv("S1_LLM_RUNTIME_BASE_URL", raising=False)
+    monkeypatch.delenv("S1_LLM_RUNTIME_MODEL", raising=False)
+    monkeypatch.delenv("S1_LLM_RUNTIME_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.setattr("vixenbliss_creator.agentic.config._read_repo_dotenv", lambda: {})
     monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
     monkeypatch.setenv("OPENAI_MODEL", "gpt-4o-mini")
 
@@ -524,7 +599,7 @@ def test_openai_adapter_uses_openai_fallback_when_serverless_is_missing(monkeypa
 
     captured: dict[str, object] = {}
 
-    def fake_post(url: str, payload: dict, headers: dict[str, str]) -> dict:
+    def fake_post(url: str, payload: dict, headers: dict[str, str], **kwargs) -> dict:
         captured["url"] = url
         captured["payload"] = payload
         captured["headers"] = headers
@@ -561,7 +636,7 @@ def test_copilot_adapter_parses_http_payload(monkeypatch: pytest.MonkeyPatch) ->
 
     captured: dict[str, object] = {}
 
-    def fake_post(url: str, payload: dict, headers: dict[str, str]) -> dict:
+    def fake_post(url: str, payload: dict, headers: dict[str, str], **kwargs) -> dict:
         captured["url"] = url
         captured["headers"] = headers
         captured["payload"] = payload

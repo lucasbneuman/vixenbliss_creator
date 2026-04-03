@@ -28,11 +28,11 @@ from vixenbliss_creator.contracts.identity import (
 )
 
 
-def _json_post(url: str, payload: dict, headers: dict[str, str]) -> dict:
+def _json_post(url: str, payload: dict, headers: dict[str, str], *, timeout_seconds: int = 30) -> dict:
     body = json.dumps(payload).encode("utf-8")
     req = request.Request(url=url, data=body, headers=headers, method="POST")
     try:
-        with request.urlopen(req, timeout=30) as response:
+        with request.urlopen(req, timeout=timeout_seconds) as response:
             raw = response.read().decode("utf-8")
     except error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
@@ -393,7 +393,7 @@ class OpenAICompatibleLLMClient:
         if llm_api_key:
             headers["Authorization"] = f"Bearer {llm_api_key}"
         url = llm_base_url.rstrip("/") + "/chat/completions"
-        response_payload = _json_post(url, payload, headers)
+        response_payload = _json_post(url, payload, headers, timeout_seconds=self.settings.s1_llm_runtime_timeout_seconds)
         content = response_payload["choices"][0]["message"]["content"]
         return ExpansionResult.model_validate(_coerce_expansion_payload(json.loads(content), self.settings, idea))
 
@@ -421,6 +421,7 @@ class ComfyUICopilotHTTPClient:
                 "technical_sheet_payload": expansion.technical_sheet_payload.model_dump(mode="json"),
             },
             headers,
+            timeout_seconds=self.settings.s1_llm_runtime_timeout_seconds,
         )
         return CopilotRecommendation.model_validate(response_payload)
 
