@@ -7,6 +7,7 @@ Definir el contrato canonico y versionado de `Identity` y `technical_sheet_json`
 Contrato fuente:
 
 - `src/vixenbliss_creator/contracts/identity.py`
+- ensamblado canonico desde `LangGraph`: `src/vixenbliss_creator/s1_control/identity_service.py`
 
 ## Cambios relevantes del contrato
 
@@ -105,6 +106,18 @@ Orígenes soportados:
   - que infirio el sistema
   - que autocompleto el LLM
 - `vertical`, `category`, `style` y `occupation_or_content_basis` deben ser coherentes con la personalidad y la narrativa
+
+## Materializacion del payload persistible
+
+El repo ahora define un ensamblado canonico `GraphState -> Identity` para evitar que cada caller reconstruya la entidad final con reglas propias.
+
+Reglas actuales:
+
+- solo se materializa una `Identity` cuando `GraphState.completion_status = succeeded`
+- `base_model_id` se toma desde `CopilotRecommendation` salvo override explicito
+- `alias` se deriva de `identity_core.display_name` con normalizacion ASCII y formato `snake_case`
+- el estado inicial por defecto queda en `pipeline_state = identity_created`
+- el resultado queda listo para persistirse sin transformaciones adicionales
 
 ## Slots listos para Sistema 5
 
