@@ -60,6 +60,39 @@ Estado implementado en el repo:
 - la respuesta del runtime de `S1 image` expone `metadata.directus_run_id`, `metadata.dataset_storage_mode` y `metadata.persisted_artifacts`
 - el snapshot de `s1_identities` replica `dataset_storage_mode` y el resumen de `persisted_artifacts` dentro de `latest_visual_config_json`
 
+## Persistencia canonica de identidad creada
+
+`s1_identities` ahora tambien puede guardar la entidad durable `Identity` creada al cerrar el generador estructurado.
+
+Campos canonicos persistidos:
+
+- `identity_schema_version`
+- `alias`
+- `status`
+- `pipeline_state`
+- `allowed_content_modes`
+- `reference_face_image_url`
+- `base_image_urls`
+- `dataset_storage_path`
+- `dataset_status`
+- `base_model_id`
+- `lora_model_path`
+- `lora_version`
+- `technical_sheet_json`
+- `created_at`
+- `updated_at`
+
+Uso recomendado:
+
+- crear la `Identity` canonica desde `LangGraph` usando `src/vixenbliss_creator/s1_control/identity_service.py`
+- persistirla con `src/vixenbliss_creator/s1_control/identity_store.py`
+- consultar por `avatar_id = Identity.id` para rehidratar la entidad completa sin reconstrucciones manuales
+
+Estado inicial esperado:
+
+- `pipeline_state = identity_created`
+- `latest_base_model_id` se inicializa con `base_model_id` para dejar listo el handoff hacia jobs y artifacts futuros
+
 ## Snapshot tecnico canonico por avatar
 
 `s1_identities` pasa a funcionar tambien como snapshot tecnico reutilizable del avatar para consistency downstream.

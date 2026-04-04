@@ -50,6 +50,10 @@ def build_identity_from_technical_sheet(
     updated_at: datetime | None = None,
 ) -> Identity:
     resolved_id = identity_id or _coerce_identity_id(technical_sheet.identity_metadata.avatar_id) or uuid4()
+    if technical_sheet.identity_metadata.avatar_id != str(resolved_id):
+        technical_sheet_payload = technical_sheet.model_dump(mode="json")
+        technical_sheet_payload["identity_metadata"]["avatar_id"] = str(resolved_id)
+        technical_sheet = TechnicalSheet.model_validate(technical_sheet_payload)
     resolved_alias = alias or build_identity_alias(
         technical_sheet.identity_core.display_name,
         avatar_id=technical_sheet.identity_metadata.avatar_id,
