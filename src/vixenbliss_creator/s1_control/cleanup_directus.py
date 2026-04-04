@@ -12,6 +12,7 @@ from .support import load_local_env
 
 S1_COLLECTIONS = (
     "s1_events",
+    "s1_model_registry",
     "s1_model_assets",
     "s1_artifacts",
     "s1_generation_runs",

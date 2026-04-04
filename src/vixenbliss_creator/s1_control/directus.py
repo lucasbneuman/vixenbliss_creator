@@ -328,6 +328,28 @@ S1_DIRECTUS_SCHEMA: dict[str, dict[str, Any]] = {
             {"field": "metadata_json", "type": "json"},
         ],
     },
+    "s1_model_registry": {
+        "meta": {"icon": "category", "note": "Catalogo canonico de modelos base y compatibilidades", "accountability": "all"},
+        "fields": [
+            {"field": "model_id", "type": "string"},
+            {"field": "model_registry_schema_version", "type": "string"},
+            {"field": "model_family", "type": "string"},
+            {"field": "model_role", "type": "string"},
+            {"field": "provider", "type": "string"},
+            {"field": "version_name", "type": "string"},
+            {"field": "display_name", "type": "string"},
+            {"field": "base_model_id", "type": "string"},
+            {"field": "storage_path", "type": "string"},
+            {"field": "parent_model_id", "type": "uuid"},
+            {"field": "compatibility_notes", "type": "text"},
+            {"field": "quantization", "type": "string"},
+            {"field": "is_active", "type": "boolean"},
+            {"field": "metadata_json", "type": "json"},
+            {"field": "created_at", "type": "timestamp"},
+            {"field": "updated_at", "type": "timestamp"},
+            {"field": "deprecated_at", "type": "timestamp"},
+        ],
+    },
     "s1_events": {
         "meta": {"icon": "receipt_long", "note": "Auditoria operativa simple de S1", "accountability": "all"},
         "fields": [

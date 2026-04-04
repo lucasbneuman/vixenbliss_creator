@@ -60,6 +60,7 @@ def test_schema_manager_creates_expected_s1_collections() -> None:
     assert "s1_generation_runs" in created
     assert "s1_artifacts" in created
     assert "s1_model_assets" in created
+    assert "s1_model_registry" in created
     assert "s1_events" in created
     assert "display_name" in manager.collections["s1_identities"]["fields"]
     assert "metadata_json" in manager.collections["s1_artifacts"]["fields"]
@@ -72,6 +73,10 @@ def test_schema_manager_creates_expected_s1_collections() -> None:
     assert "latest_base_image_file_id" in manager.collections["s1_identities"]["fields"]
     assert "latest_dataset_manifest_json" in manager.collections["s1_identities"]["fields"]
     assert "latest_dataset_package_file_id" in manager.collections["s1_identities"]["fields"]
+    assert "base_model_id" in manager.collections["s1_model_registry"]["fields"]
+    assert "model_id" in manager.collections["s1_model_registry"]["fields"]
+    assert "compatibility_notes" in manager.collections["s1_model_registry"]["fields"]
+    assert "metadata_json" in manager.collections["s1_model_registry"]["fields"]
 
 
 def test_directus_client_can_upload_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

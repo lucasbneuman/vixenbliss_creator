@@ -4,14 +4,17 @@ from .bridge import S1RuntimeDirectusRecorder
 from .directus import DirectusControlPlaneClient, DirectusSchemaManager, S1_DIRECTUS_SCHEMA
 from .identity_service import build_identity_alias, build_identity_from_graph_state, build_identity_from_technical_sheet
 from .identity_store import DirectusIdentityStore
+from .model_registry_store import DirectusModelRegistryStore, default_model_catalog
 
 __all__ = [
     "bootstrap_directus_schema",
     "build_identity_alias",
     "build_identity_from_graph_state",
     "build_identity_from_technical_sheet",
+    "default_model_catalog",
     "DirectusControlPlaneClient",
     "DirectusIdentityStore",
+    "DirectusModelRegistryStore",
     "DirectusSchemaManager",
     "S1RuntimeDirectusRecorder",
     "S1ControlSettings",

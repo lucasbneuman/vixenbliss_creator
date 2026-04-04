@@ -33,6 +33,7 @@ No se adopta el flujo viejo de orquestacion remota como fuente principal de `S1`
 - `s1_generation_runs`
 - `s1_artifacts`
 - `s1_model_assets`
+- `s1_model_registry`
 - `s1_events`
 
 ## Rol recomendado para artifacts de `S1 image`
@@ -92,6 +93,20 @@ Estado inicial esperado:
 
 - `pipeline_state = identity_created`
 - `latest_base_model_id` se inicializa con `base_model_id` para dejar listo el handoff hacia jobs y artifacts futuros
+
+## Catalogo canonico de modelos base
+
+`s1_model_registry` conserva el catalogo versionado de `ModelRegistry` para que las identidades no dependan de strings sueltos sin control de compatibilidad.
+
+Estado inicial seed:
+
+- `flux-schnell-v1` como modelo base de imagen activo
+- `future-video-placeholder-v1` como placeholder de video activo
+
+Compatibilidades declaradas:
+
+- `flux-schnell-v1`: `ComfyUI`, `LoRA`, `IP-Adapter`, `ControlNet`
+- placeholder de video: contrato preparado para `S2 video` sin binario persistido todavia
 
 ## Snapshot tecnico canonico por avatar
 

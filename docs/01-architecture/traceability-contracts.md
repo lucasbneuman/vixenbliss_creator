@@ -152,6 +152,27 @@ Este documento fija:
 - `video_placeholder` no persiste binario todavia y requiere `model_family=future_video`
 - `base_model_id` siempre debe persistirse para poder validar compatibilidad entre `S1`, `training` y `S2`
 
+## Catalogo inicial registrado
+
+El repositorio ahora define un seed minimo reusable en `src/vixenbliss_creator/s1_control/model_registry_store.py`.
+
+Entradas iniciales:
+
+- `flux-schnell-v1`
+  - rol: `base_model`
+  - familia: `flux`
+  - compatibilidades declaradas: `ComfyUI`, `LoRA`, `IP-Adapter`, `ControlNet`
+- `future-video-placeholder-v1`
+  - rol: `video_placeholder`
+  - familia: `future_video`
+  - objetivo: reservar contrato de video sin persistir binario todavia
+
+Politica de versionado inicial:
+
+- modelos base: `version_name` inmutable por familia y proveedor
+- LoRAs: version derivada de `base_model_id` y del entrenamiento efectivo
+- placeholders de video: contrato versionado hasta reemplazo por runtime real
+
 ## Regla de persistencia para `S1 image`
 
 Para el handoff `S1 image -> S1 lora train`:
