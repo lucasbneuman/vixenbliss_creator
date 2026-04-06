@@ -226,18 +226,34 @@ class S1BaseImageRegistry:
             return
         dataset_manifest = result_payload.get("dataset_manifest") or {}
         seed_bundle = dict(runtime_metadata.get("seed_bundle") or dataset_manifest.get("seed_bundle") or {})
+        dataset_package_artifact = next(
+            (item for item in result_payload.get("artifacts", []) if _artifact_role(item) == "dataset_package"),
+            None,
+        )
+        dataset_package_locator = result_payload.get("dataset_package_path") or (
+            _artifact_uri(dataset_package_artifact) if isinstance(dataset_package_artifact, dict) else None
+        )
+        has_dataset_handoff = bool(
+            dataset_package_locator
+            or dataset_manifest.get("dataset_package_path")
+            or any(_artifact_role(item) == "dataset_package" for item in result_payload.get("artifacts", []))
+        )
         self.client.update_item(
             "s1_identities",
             str(identity_item["id"]),
             {
                 "avatar_id": identity_id,
                 "last_run_id": run_id,
-                "pipeline_state": PipelineState.BASE_IMAGES_REGISTERED.value,
+                "pipeline_state": PipelineState.DATASET_READY.value if has_dataset_handoff else PipelineState.BASE_IMAGES_REGISTERED.value,
                 "base_image_urls": base_image_urls,
                 "reference_face_image_url": primary_row["uri"],
                 "reference_face_image_id": primary_row.get("file"),
                 "latest_base_image_file_id": primary_row.get("file"),
                 "latest_seed_bundle_json": seed_bundle,
+                "dataset_storage_path": dataset_package_locator,
+                "dataset_status": "ready" if has_dataset_handoff else identity_item.get("dataset_status"),
+                "latest_dataset_manifest_json": dataset_manifest,
+                "latest_dataset_package_uri": dataset_package_locator,
                 "latest_base_model_id": runtime_metadata.get("base_model_id") or result_payload.get("base_model_id"),
                 "latest_workflow_id": runtime_metadata.get("workflow_id") or result_payload.get("workflow_id"),
                 "latest_workflow_version": runtime_metadata.get("workflow_version") or result_payload.get("workflow_version"),

@@ -139,7 +139,9 @@ def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:
     assert package_artifact["metadata_json"]["checksum_sha256"] == "abc123"
     assert package_artifact["file"] is None
     assert len(fake.files) == 1
-    assert identity["pipeline_state"] == "base_images_registered"
+    assert identity["pipeline_state"] == "dataset_ready"
+    assert identity["dataset_status"] == "ready"
+    assert identity["dataset_storage_path"] == str(package_path)
     assert identity["base_image_urls"][0].startswith("https://directus.example.com/assets/file-")
     assert identity["reference_face_image_url"].startswith("https://directus.example.com/assets/file-")
     assert identity["reference_face_image_id"].startswith("file-")

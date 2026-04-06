@@ -18,6 +18,52 @@ def _seed_from_digest(digest: str, offset: int) -> int:
     return int(digest[start : start + 8], 16) % (2**31 - 1)
 
 
+def _dataset_version_from_digest(digest: str) -> str:
+    return f"dataset-{digest[:12]}"
+
+
+def _dataset_sample_seed(dataset_seed: int, *, index: int) -> int:
+    return (dataset_seed + (index * 104_729)) % (2**31 - 1)
+
+
+def _build_dataset_files(
+    *,
+    identity_id: str,
+    character_id: str,
+    dataset_version: str,
+    sample_count: int,
+    dataset_seed: int,
+) -> tuple[list[dict], dict]:
+    if sample_count < 4:
+        raise ValueError("samples_target must be at least 4 to build a balanced dataset")
+    if sample_count % 2 != 0:
+        raise ValueError("samples_target must be even to satisfy the 50/50 dataset balance policy")
+
+    half = sample_count // 2
+    composition = {
+        "policy": "balanced_50_50",
+        "with_clothes": half,
+        "without_clothes": half,
+    }
+    files: list[dict] = []
+    sample_index = 0
+    for class_name, count in (("with_clothes", half), ("without_clothes", half)):
+        for class_offset in range(count):
+            sample_index += 1
+            files.append(
+                {
+                    "sample_id": f"{dataset_version}-{sample_index:03d}",
+                    "identity_id": identity_id,
+                    "character_id": character_id,
+                    "class_name": class_name,
+                    "path": f"images/{class_name}/sample-{class_offset + 1:03d}.png",
+                    "origin": "generated_base_image",
+                    "seed": _dataset_sample_seed(dataset_seed, index=sample_index),
+                }
+            )
+    return files, composition
+
+
 def build_generation_manifest(payload: GenerationServiceInput) -> GenerationManifest:
     digest = _stable_digest(
         {
@@ -75,10 +121,18 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
             "metadata_json": payload.metadata_json,
         }
     )
-    identity_root = PurePosixPath(payload.artifact_root) / str(payload.identity_id)
-    manifest_path = str(identity_root / f"dataset-manifest-{digest[:12]}.json")
-    package_path = str(identity_root / f"dataset-package-{digest[:12]}.zip")
-    base_image_path = str(identity_root / f"base-image-{digest[:12]}.png")
+    dataset_version = _dataset_version_from_digest(digest)
+    identity_root = PurePosixPath(payload.artifact_root) / str(payload.identity_id) / dataset_version
+    manifest_path = str(identity_root / "dataset-manifest.json")
+    package_path = str(identity_root / "dataset-package.zip")
+    base_image_path = str(identity_root / "base-image.png")
+    files, composition = _build_dataset_files(
+        identity_id=str(payload.identity_id),
+        character_id=character_id,
+        dataset_version=dataset_version,
+        sample_count=payload.samples_target,
+        dataset_seed=payload.generation_manifest.seed_bundle.dataset_seed,
+    )
     checksum = _stable_digest({"dataset_package_path": package_path, "digest": digest})
     return {
         "provider": "modal",
@@ -130,9 +184,13 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
         "dataset_manifest": {
             "identity_id": str(payload.identity_id),
             "character_id": character_id,
+            "dataset_version": dataset_version,
             "artifact_path": manifest_path,
             "dataset_package_path": package_path,
             "sample_count": payload.samples_target,
+            "generated_samples": payload.samples_target,
+            "composition": composition,
+            "files": files,
             "workflow_id": payload.generation_manifest.workflow_id,
             "workflow_version": payload.generation_manifest.workflow_version,
             "base_model_id": payload.generation_manifest.base_model_id,
@@ -141,6 +199,7 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
             "seed_bundle": seed_bundle,
             "reference_face_image_url": payload.reference_face_image_url,
             "face_detection_confidence": payload.face_detection_confidence,
+            "review_required": True,
             "checksum_sha256": checksum,
         },
     }
@@ -150,6 +209,7 @@ def build_lora_training_result(payload: LoraTrainingServiceInput) -> dict:
     if payload.model_family != "flux":
         raise ValueError("lora training only supports the flux model family")
     dataset_locator = payload.dataset_package_path or json.dumps(payload.dataset_manifest, sort_keys=True)
+    handoff_mode = "dataset_package_path" if payload.dataset_package_path else "dataset_manifest"
     digest = _stable_digest(
         {
             "identity_id": str(payload.identity_id),
@@ -187,6 +247,10 @@ def build_lora_training_result(payload: LoraTrainingServiceInput) -> dict:
             "base_model_id": payload.base_model_id,
             "dataset_package_path": payload.dataset_package_path,
             "dataset_manifest": payload.dataset_manifest,
+            "dataset_source": {
+                "handoff_mode": handoff_mode,
+                "dataset_locator": dataset_locator,
+            },
             "training_steps": steps,
             "trigger_word": trigger_word,
             "result_manifest_path": manifest_path,

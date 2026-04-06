@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from vixenbliss_creator.contracts.identity import PipelineState
+from vixenbliss_creator.contracts.identity import DatasetStatus, PipelineState
 
 from .base_image_registry import S1BaseImageRegistry
 from .config import S1ControlSettings
@@ -490,10 +490,12 @@ class S1RuntimeDirectusRecorder:
         snapshot_payload = {
             "avatar_id": identity_id,
             "last_run_id": run_id,
-            "pipeline_state": PipelineState.BASE_IMAGES_GENERATED.value,
+            "pipeline_state": PipelineState.DATASET_READY.value,
             "reference_face_image_id": _stringify(_input_value(input_payload, "reference_face_image_id")),
             "reference_face_image_url": visual_config["reference_face_image_url"],
             "base_image_urls": base_image_urls or ([base_image_uri] if base_image_uri else []),
+            "dataset_storage_path": _artifact_uri(dataset_package_artifact) if isinstance(dataset_package_artifact, dict) else result_payload.get("dataset_package_path"),
+            "dataset_status": DatasetStatus.READY.value,
             "latest_generation_manifest_json": generation_manifest,
             "latest_seed_bundle_json": seed_bundle,
             "latest_visual_config_json": visual_config,

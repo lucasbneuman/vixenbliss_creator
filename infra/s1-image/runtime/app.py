@@ -587,6 +587,57 @@ def _seed_bundle_from_job_input(job_input: dict) -> SeedBundle:
     )
 
 
+def _classify_dataset_samples(dataset_manifest: dict) -> dict[str, int]:
+    counts = {"with_clothes": 0, "without_clothes": 0}
+    for entry in dataset_manifest.get("files", []):
+        class_name = str(entry.get("class_name") or "")
+        if class_name in counts:
+            counts[class_name] += 1
+    return counts
+
+
+def _validate_dataset_manifest_contract(dataset_manifest: dict) -> None:
+    files = dataset_manifest.get("files") or []
+    if not files:
+        raise ValueError("dataset builder did not produce any files")
+    if any("seed" not in entry for entry in files):
+        raise ValueError("dataset builder requires seed traceability for every generated sample")
+    counts = _classify_dataset_samples(dataset_manifest)
+    if counts["with_clothes"] != counts["without_clothes"]:
+        raise ValueError("dataset builder requires a 50/50 balance between with_clothes and without_clothes")
+    if counts["with_clothes"] + counts["without_clothes"] != int(dataset_manifest.get("sample_count", 0)):
+        raise ValueError("dataset builder sample_count does not match the generated file list")
+
+
+def _materialize_dataset_package(
+    *,
+    dataset_manifest: dict,
+    base_image_bytes: bytes,
+    manifest_path: Path,
+    package_path: Path,
+    source_base_image_path: Path,
+) -> tuple[Path, int]:
+    source_base_image_path.parent.mkdir(parents=True, exist_ok=True)
+    source_base_image_path.write_bytes(base_image_bytes)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    package_path.parent.mkdir(parents=True, exist_ok=True)
+
+    for file_entry in dataset_manifest["files"]:
+        sample_path = manifest_path.parent / Path(file_entry["path"])
+        sample_path.parent.mkdir(parents=True, exist_ok=True)
+        sample_path.write_bytes(base_image_bytes)
+
+    manifest_path.write_text(json.dumps(dataset_manifest, indent=2), encoding="utf-8")
+    with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.write(source_base_image_path, arcname="base-image.png")
+        archive.write(manifest_path, arcname="dataset-manifest.json")
+        for file_entry in dataset_manifest["files"]:
+            sample_path = manifest_path.parent / Path(file_entry["path"])
+            archive.write(sample_path, arcname=file_entry["path"])
+
+    return package_path, package_path.stat().st_size
+
+
 def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
     identity_id = _resolve_identity_id(job_input)
     character_id = _resolve_character_id(job_input)
@@ -607,7 +658,6 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
     metadata = job_input.get("metadata") or {}
     samples_target = int(metadata.get("samples_target", job_input.get("samples_target", 12)))
     identity_root = ARTIFACT_ROOT / str(identity_id)
-    identity_root.mkdir(parents=True, exist_ok=True)
     seed_bundle = _seed_bundle_from_job_input(job_input)
     generation_manifest = GenerationManifest(
         identity_id=identity_id,
@@ -645,18 +695,17 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
     manifest = dataset_result["dataset_manifest"]
     manifest_path = Path(manifest["artifact_path"])
     package_path = Path(manifest["dataset_package_path"])
-    base_image_path = identity_root / "base-image.png"
-    base_image_path.write_bytes(base_image_bytes)
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    package_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest["generated_samples"] = 1
+    base_image_path = manifest_path.parent / "base-image.png"
     manifest["review_required"] = not bool(metadata.get("autopromote", False))
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.write(base_image_path, arcname="images/base-image.png")
-        archive.write(manifest_path, arcname="dataset-manifest.json")
-    package_bytes = package_path.read_bytes()
-    package_checksum = _sha256_bytes(package_bytes)
+    _validate_dataset_manifest_contract(manifest)
+    package_path, package_size = _materialize_dataset_package(
+        dataset_manifest=manifest,
+        base_image_bytes=base_image_bytes,
+        manifest_path=manifest_path,
+        package_path=package_path,
+        source_base_image_path=base_image_path,
+    )
+    package_checksum = _sha256_bytes(package_path.read_bytes())
 
     materialized_artifacts = []
     for artifact in dataset_result["artifacts"]:
@@ -675,10 +724,13 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
         elif artifact_copy["artifact_type"] == "dataset_manifest":
             artifact_copy["storage_path"] = manifest_path.as_posix()
             artifact_copy["size_bytes"] = manifest_path.stat().st_size
+            artifact_copy["metadata_json"]["dataset_version"] = manifest["dataset_version"]
+            artifact_copy["metadata_json"]["composition"] = manifest["composition"]
         elif artifact_copy["artifact_type"] == "dataset_package":
             artifact_copy["storage_path"] = package_path.as_posix()
             artifact_copy["checksum_sha256"] = package_checksum
-            artifact_copy["size_bytes"] = package_path.stat().st_size
+            artifact_copy["size_bytes"] = package_size
+            artifact_copy["metadata_json"]["dataset_version"] = manifest["dataset_version"]
         materialized_artifacts.append(artifact_copy)
 
     manifest["checksum_sha256"] = package_checksum
@@ -690,6 +742,8 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
     result["metadata"]["dataset_handoff_ready"] = True
     result["metadata"]["dataset_storage_mode"] = "local_artifact_root"
     result["metadata"]["dataset_review_required"] = manifest["review_required"]
+    result["metadata"]["dataset_version"] = manifest["dataset_version"]
+    result["metadata"]["dataset_composition"] = manifest["composition"]
     result["metadata"]["identity_id"] = str(identity_id)
     result["metadata"]["character_id"] = character_id or str(identity_id)
     result["metadata"]["seed_bundle"] = seed_bundle.model_dump(mode="json")

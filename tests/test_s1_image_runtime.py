@@ -3,14 +3,28 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
 
-import modal
 from fastapi.testclient import TestClient
 
 from vixenbliss_creator.s1_control.support import tiny_png_bytes
+
+try:
+    import modal
+except ImportError:  # pragma: no cover - local fallback for contract tests without the modal package
+    class _ModalFunctionStub:
+        @staticmethod
+        def from_name(*_args, **_kwargs):
+            raise RuntimeError("modal package is not installed")
+
+    class _ModalStub:
+        Function = _ModalFunctionStub
+
+    modal = _ModalStub()
+    sys.modules.setdefault("modal", modal)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -264,6 +278,12 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     assert payload["metadata"]["dataset_review_required"] is False
     assert payload["metadata"]["dataset_storage_mode"] == "local_artifact_root"
     assert payload["metadata"]["persisted_artifacts"] == []
+    assert payload["metadata"]["dataset_version"].startswith("dataset-")
+    assert payload["metadata"]["dataset_composition"] == {
+        "policy": "balanced_50_50",
+        "with_clothes": 4,
+        "without_clothes": 4,
+    }
     assert payload["metadata"]["seed"] == 42
     assert payload["metadata"]["seed_bundle"]["portrait_seed"] == 42
     assert payload["metadata"]["seed_bundle"]["variation_seed"] == 84
@@ -274,6 +294,15 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     assert payload["dataset_manifest"]["identity_id"] == identity_id
     assert payload["dataset_manifest"]["character_id"] == identity_id
     assert payload["dataset_manifest"]["sample_count"] == 8
+    assert payload["dataset_manifest"]["generated_samples"] == 8
+    assert payload["dataset_manifest"]["composition"] == {
+        "policy": "balanced_50_50",
+        "with_clothes": 4,
+        "without_clothes": 4,
+    }
+    assert len(payload["dataset_manifest"]["files"]) == 8
+    assert payload["dataset_manifest"]["files"][0]["path"].startswith("images/with_clothes/")
+    assert payload["dataset_manifest"]["files"][-1]["path"].startswith("images/without_clothes/")
     assert payload["generation_manifest"]["seed_bundle"]["portrait_seed"] == 42
     assert payload["generation_manifest"]["seed_bundle"]["variation_seed"] == 84
     assert payload["generation_manifest"]["seed_bundle"]["dataset_seed"] == 126
@@ -288,6 +317,11 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     assert base_image_artifact["metadata_json"]["character_id"] == identity_id
     manifest_payload = json.loads(Path(payload["dataset_manifest"]["artifact_path"]).read_text(encoding="utf-8"))
     assert manifest_payload["checksum_sha256"] == payload["dataset_manifest"]["checksum_sha256"]
+    with zipfile.ZipFile(payload["dataset_package_path"]) as archive:
+        archive_names = set(archive.namelist())
+    assert "dataset-manifest.json" in archive_names
+    assert "images/with_clothes/sample-001.png" in archive_names
+    assert "images/without_clothes/sample-004.png" in archive_names
 
 
 def test_s1_image_runtime_response_includes_directus_persistence_metadata(tmp_path: Path, monkeypatch) -> None:
@@ -399,6 +433,38 @@ def test_s1_image_runtime_skips_dataset_handoff_without_identity_id(tmp_path: Pa
 
     assert payload["metadata"]["dataset_handoff_ready"] is False
     assert "dataset_manifest" not in payload
+
+
+def test_s1_image_runtime_fails_dataset_builder_when_balance_cannot_be_satisfied(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
+    monkeypatch.setattr(module, "_submit_prompt", lambda *_args, **_kwargs: "prompt-1")
+    monkeypatch.setattr(
+        module,
+        "_poll_history",
+        lambda _prompt_id: {
+            "outputs": {
+                "save_base_image": {
+                    "images": [{"filename": "base.png", "subfolder": "vb", "type": "output"}],
+                },
+                "face_detector": {"metrics": {"bbox_confidence": 0.88}},
+            }
+        },
+    )
+    _create_required_flux_assets(module)
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
+    client = TestClient(module.app)
+
+    submit = client.post(
+        "/jobs",
+        json={"input": _base_job_input(metadata={"identity_id": str(uuid4()), "samples_target": 7})},
+    )
+    payload = submit.json()["output"]
+
+    assert payload["error_code"] == "COMFYUI_EXECUTION_FAILED"
+    assert "samples_target must be even" in payload["error_message"]
 
 
 def test_s1_image_runtime_face_detail_fails_on_incomplete_resume_state(tmp_path: Path, monkeypatch) -> None:

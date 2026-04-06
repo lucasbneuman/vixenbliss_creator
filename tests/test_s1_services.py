@@ -79,12 +79,46 @@ def test_dataset_generation_returns_manifest_and_package() -> None:
     )
 
     assert result["dataset_manifest"]["sample_count"] == 16
+    assert result["dataset_manifest"]["generated_samples"] == 16
     assert result["dataset_manifest"]["character_id"] == str(manifest.identity_id)
+    assert result["dataset_manifest"]["dataset_version"].startswith("dataset-")
+    assert result["dataset_manifest"]["composition"] == {
+        "policy": "balanced_50_50",
+        "with_clothes": 8,
+        "without_clothes": 8,
+    }
+    assert len(result["dataset_manifest"]["files"]) == 16
+    assert result["dataset_manifest"]["files"][0]["class_name"] == "with_clothes"
+    assert result["dataset_manifest"]["files"][-1]["class_name"] == "without_clothes"
     artifact_types = {artifact["artifact_type"] for artifact in result["artifacts"]}
     assert {"base_image", "dataset_manifest", "dataset_package"} <= artifact_types
     base_image_artifact = next(item for item in result["artifacts"] if item["artifact_type"] == "base_image")
     assert base_image_artifact["metadata_json"]["character_id"] == str(manifest.identity_id)
     assert base_image_artifact["metadata_json"]["seed_bundle"]["portrait_seed"] == manifest.seed_bundle.portrait_seed
+
+
+def test_dataset_generation_requires_even_samples_for_balanced_policy() -> None:
+    manifest = build_generation_manifest(
+        GenerationServiceInput(
+            identity_id=uuid4(),
+            identity_context={"identity_summary": "Operator-ready profile"},
+            workflow_id="s1-identity-v1",
+            workflow_version="2026-04-02",
+            base_model_id="flux-schnell-v1",
+            reference_face_image_url="https://example.com/ref.png",
+        )
+    )
+
+    with pytest.raises(ValueError, match="samples_target must be even"):
+        build_dataset_result(
+            DatasetServiceInput(
+                identity_id=manifest.identity_id,
+                generation_manifest=manifest,
+                reference_face_image_url="https://example.com/ref.png",
+                samples_target=15,
+                metadata_json={"character_id": str(manifest.identity_id)},
+            )
+        )
 
 
 def test_lora_training_requires_dataset_source() -> None:
@@ -104,6 +138,7 @@ def test_lora_training_returns_lora_artifact_and_manifest() -> None:
     )
 
     assert result["training_manifest"]["training_steps"] == 1500
+    assert result["training_manifest"]["dataset_source"]["handoff_mode"] == "dataset_package_path"
     assert result["artifacts"][0]["artifact_type"] == "lora_model"
     assert result["artifacts"][0]["checksum_sha256"]
 
