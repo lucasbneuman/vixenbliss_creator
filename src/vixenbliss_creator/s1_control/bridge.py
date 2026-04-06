@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from vixenbliss_creator.contracts.identity import PipelineState
+
 from .config import S1ControlSettings
 from .directus import ControlPlanePort, DirectusControlPlaneClient
 
@@ -462,13 +464,18 @@ class S1RuntimeDirectusRecorder:
             "dataset_storage_mode": runtime_metadata.get("dataset_storage_mode"),
             "persisted_artifacts": runtime_metadata.get("persisted_artifacts", []),
         }
+        base_image_uri = _artifact_uri(base_image_artifact) if isinstance(base_image_artifact, dict) else None
         snapshot_payload = {
             "avatar_id": identity_id,
             "last_run_id": run_id,
+            "pipeline_state": PipelineState.BASE_IMAGES_GENERATED.value,
             "reference_face_image_id": _stringify(_input_value(input_payload, "reference_face_image_id")),
+            "reference_face_image_url": visual_config["reference_face_image_url"],
+            "base_image_urls": [base_image_uri] if base_image_uri else [],
             "latest_generation_manifest_json": generation_manifest,
             "latest_seed_bundle_json": seed_bundle,
             "latest_visual_config_json": visual_config,
+            "base_model_id": runtime_metadata.get("base_model_id") or result_payload.get("base_model_id") or input_payload.get("base_model_id"),
             "latest_base_model_id": runtime_metadata.get("base_model_id") or result_payload.get("base_model_id") or input_payload.get("base_model_id"),
             "latest_workflow_id": runtime_metadata.get("workflow_id") or result_payload.get("workflow_id") or input_payload.get("workflow_id"),
             "latest_workflow_version": runtime_metadata.get("workflow_version") or result_payload.get("workflow_version") or input_payload.get("workflow_version"),

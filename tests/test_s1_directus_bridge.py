@@ -139,6 +139,10 @@ def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:
     assert package_artifact["metadata_json"]["checksum_sha256"] == "abc123"
     assert package_artifact["file"] is None
     assert len(fake.files) == 1
+    assert identity["pipeline_state"] == "base_images_generated"
+    assert identity["base_image_urls"][0].startswith("https://directus.example.com/assets/file-")
+    assert identity["reference_face_image_url"] == "https://example.com/ref.png"
+    assert identity["base_model_id"] == "flux-schnell-v1"
     assert identity["latest_seed_bundle_json"]["portrait_seed"] == 11
     assert identity["latest_visual_config_json"]["dataset_storage_mode"] == "directus_images_and_rows"
     assert len(identity["latest_visual_config_json"]["persisted_artifacts"]) == 3
@@ -313,6 +317,7 @@ def test_recorder_materializes_base_image_from_runtime_artifact_inline_payload()
     assert base_artifact["file"].startswith("file-")
     assert base_artifact["metadata_json"]["materialized_from_runtime_artifact"] is True
     assert len(fake.files) == 1
+    assert identity["pipeline_state"] == "base_images_generated"
     assert identity["latest_base_image_file_id"] == base_artifact["file"]
     assert result_payload["metadata"]["persisted_artifacts"][0]["persistence_target"] == "directus_file"
 

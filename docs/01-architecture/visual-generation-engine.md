@@ -249,6 +249,8 @@ Estado actual implementado:
 - `S1 image` sigue materializando localmente el handoff para compatibilidad
 - luego persiste `base_image` en `Directus Files`
 - `dataset_manifest` y `dataset_package` quedan registrados en `s1_artifacts` y snapshots tecnicos, no como files binarios
+- cuando `s1_image` termina bien y existe `identity_id`, `s1_control.bridge` promueve `s1_identities.pipeline_state` a `base_images_generated`
+- la identidad tambien conserva `base_image_urls`, `latest_base_image_file_id`, `latest_workflow_id`, `latest_workflow_version` y `latest_base_model_id`
 - el resultado del runtime expone metadata tecnica suficiente para trazabilidad y futuros consumers:
   - seed efectiva
   - `seed_bundle`
