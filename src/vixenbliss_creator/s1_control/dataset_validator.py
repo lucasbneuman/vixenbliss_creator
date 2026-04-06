@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import os
+import tempfile
+from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 import zipfile
 
 from vixenbliss_creator.contracts.identity import DatasetStatus, PipelineState
@@ -65,6 +69,32 @@ def _local_path(locator: str | None) -> Path | None:
     return None
 
 
+def _remote_path(locator: str | None) -> Path | None:
+    if not locator:
+        return None
+    parts = urlsplit(locator)
+    if parts.scheme not in {"http", "https"}:
+        return None
+    headers: dict[str, str] = {}
+    directus_base_url = os.getenv("DIRECTUS_BASE_URL")
+    directus_token = os.getenv("DIRECTUS_API_TOKEN")
+    if directus_base_url and directus_token:
+        directus_parts = urlsplit(directus_base_url)
+        if parts.scheme == directus_parts.scheme and parts.netloc == directus_parts.netloc:
+            headers["Authorization"] = f"Bearer {directus_token}"
+    request = Request(locator, headers=headers, method="GET")
+    try:
+        with urlopen(request, timeout=20) as response:
+            payload = response.read()
+    except Exception:
+        return None
+    fd, raw_path = tempfile.mkstemp(prefix="vb-dataset-verify-", suffix=".zip")
+    os.close(fd)
+    path = Path(raw_path)
+    path.write_bytes(payload)
+    return path
+
+
 def validate_s1_dataset(
     *,
     identity_id: str,
@@ -89,7 +119,7 @@ def validate_s1_dataset(
         if isinstance(dataset_package_artifact, dict)
         else _stringify(result_payload.get("dataset_package_path") or manifest.get("dataset_package_path"))
     )
-    dataset_package_path = _local_path(dataset_package_locator)
+    dataset_package_path = _local_path(dataset_package_locator) or _remote_path(dataset_package_locator)
     files = manifest.get("files") if isinstance(manifest.get("files"), list) else []
     sample_count = int(manifest.get("sample_count") or 0)
     generated_samples = int(manifest.get("generated_samples") or 0)
@@ -248,6 +278,8 @@ def validate_s1_dataset(
                     reasons.append(_reason("dataset_package_missing_manifest", "dataset_package must include dataset-manifest.json"))
         else:
             reasons.append(_reason("dataset_package_not_verifiable", "dataset_package could not be verified against manifest file declarations"))
+    if dataset_package_path is not None and dataset_package_path.name.startswith("vb-dataset-verify-"):
+        dataset_package_path.unlink(missing_ok=True)
 
     validation_status = "apto" if not reasons else "no_apto"
     dataset_status = DatasetStatus.READY.value if not reasons else DatasetStatus.REJECTED.value

@@ -6,7 +6,8 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
-from vixenbliss_creator.s1_control import S1ControlSettings, S1RuntimeDirectusRecorder
+from vixenbliss_creator.contracts.identity import DatasetStatus, PipelineState
+from vixenbliss_creator.s1_control import DirectusControlPlaneClient, S1ControlSettings, S1RuntimeDirectusRecorder
 from vixenbliss_creator.s1_services import InMemoryServiceRuntime, LoraTrainingServiceInput, build_lora_training_result
 
 
@@ -23,7 +24,39 @@ def _persist_training_manifest(result: dict) -> dict:
     return result
 
 
+def _resolve_identity_snapshot(identity_id: str) -> dict | None:
+    if _directus_client is None:
+        return None
+    matches = _directus_client.list_items(
+        "s1_identities",
+        params={"filter[avatar_id][_eq]": identity_id, "limit": "1"},
+    )
+    if matches:
+        return matches[0]
+    try:
+        return _directus_client.read_item("s1_identities", identity_id)
+    except Exception:
+        return None
+
+
+def _assert_training_allowed(payload: dict) -> None:
+    identity_id = str(payload.get("identity_id") or "")
+    dataset_status = payload.get("dataset_status")
+    pipeline_state = payload.get("pipeline_state")
+    identity_snapshot = _resolve_identity_snapshot(identity_id) if identity_id else None
+    if identity_snapshot is not None:
+        dataset_status = identity_snapshot.get("dataset_status")
+        pipeline_state = identity_snapshot.get("pipeline_state")
+    if dataset_status is None and pipeline_state is None:
+        return
+    if dataset_status != DatasetStatus.READY.value:
+        raise ValueError("lora training requires dataset_status=ready")
+    if pipeline_state not in {PipelineState.DATASET_READY.value, PipelineState.LORA_TRAINING_PENDING.value}:
+        raise ValueError("lora training requires dataset_ready or lora_training_pending pipeline_state")
+
+
 def _processor(payload: dict) -> dict:
+    _assert_training_allowed(payload)
     request = LoraTrainingServiceInput.model_validate(
         {
             **payload,
@@ -37,9 +70,13 @@ runtime = InMemoryServiceRuntime(processor=_processor)
 app = FastAPI(title="VixenBliss S1 LoRA Train Runtime", version="1.0.0")
 
 try:
-    _directus_recorder = S1RuntimeDirectusRecorder.from_settings(S1ControlSettings.from_env())
+    _control_settings = S1ControlSettings.from_env()
+    _directus_recorder = S1RuntimeDirectusRecorder.from_settings(_control_settings)
+    _directus_client = DirectusControlPlaneClient(_control_settings)
 except Exception:
+    _control_settings = None
     _directus_recorder = None
+    _directus_client = None
 
 
 @app.get("/healthcheck")
