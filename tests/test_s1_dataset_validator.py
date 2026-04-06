@@ -18,7 +18,7 @@ def _build_manifest(identity_id: str, package_path: Path, *, sample_count: int =
     pose_cycle = ("front", "three_quarter", "profile")
     half = sample_count // 2
     sample_index = 0
-    for class_name, count in (("with_clothes", half), ("without_clothes", half)):
+    for class_name, count in (("SFW", half), ("NSFW", half)):
         for class_offset in range(count):
             sample_index += 1
             variation_group = variation_cycle[(sample_index - 1) % len(variation_cycle)]
@@ -37,7 +37,7 @@ def _build_manifest(identity_id: str, package_path: Path, *, sample_count: int =
         "generated_samples": sample_count,
         "dataset_package_path": str(package_path),
         "files": files,
-        "composition": {"policy": "balanced_50_50", "with_clothes": half, "without_clothes": half},
+        "composition": {"policy": "balanced_50_50", "SFW": half, "NSFW": half},
         "seed_bundle": {"portrait_seed": 1, "variation_seed": 2, "dataset_seed": 3},
         "workflow_id": "base-image-ipadapter-impact",
         "workflow_version": "2026-04-02",
@@ -88,7 +88,7 @@ def test_validator_rejects_missing_manifest_version_and_package_files(tmp_path: 
         "identity_id": "42",
         "sample_count": 12,
         "generated_samples": 12,
-        "files": [{"path": "images/with_clothes/sample-001.png", "class_name": "with_clothes"}],
+            "files": [{"path": "images/SFW/sample-001.png", "class_name": "SFW"}],
         "seed_bundle": {"portrait_seed": 1, "variation_seed": 2},
     }
     with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:

@@ -281,8 +281,8 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     assert payload["metadata"]["dataset_version"].startswith("dataset-")
     assert payload["metadata"]["dataset_composition"] == {
         "policy": "balanced_50_50",
-        "with_clothes": 4,
-        "without_clothes": 4,
+        "SFW": 4,
+        "NSFW": 4,
     }
     assert payload["metadata"]["seed"] == 42
     assert payload["metadata"]["seed_bundle"]["portrait_seed"] == 42
@@ -297,12 +297,12 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     assert payload["dataset_manifest"]["generated_samples"] == 8
     assert payload["dataset_manifest"]["composition"] == {
         "policy": "balanced_50_50",
-        "with_clothes": 4,
-        "without_clothes": 4,
+        "SFW": 4,
+        "NSFW": 4,
     }
     assert len(payload["dataset_manifest"]["files"]) == 8
-    assert payload["dataset_manifest"]["files"][0]["path"].startswith("images/with_clothes/")
-    assert payload["dataset_manifest"]["files"][-1]["path"].startswith("images/without_clothes/")
+    assert payload["dataset_manifest"]["files"][0]["path"].startswith("images/SFW/")
+    assert payload["dataset_manifest"]["files"][-1]["path"].startswith("images/NSFW/")
     assert payload["generation_manifest"]["seed_bundle"]["portrait_seed"] == 42
     assert payload["generation_manifest"]["seed_bundle"]["variation_seed"] == 84
     assert payload["generation_manifest"]["seed_bundle"]["dataset_seed"] == 126
@@ -320,8 +320,8 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     with zipfile.ZipFile(payload["dataset_package_path"]) as archive:
         archive_names = set(archive.namelist())
     assert "dataset-manifest.json" in archive_names
-    assert "images/with_clothes/sample-001.png" in archive_names
-    assert "images/without_clothes/sample-004.png" in archive_names
+    assert "images/SFW/sample-001.png" in archive_names
+    assert "images/NSFW/sample-004.png" in archive_names
 
 
 def test_s1_image_runtime_response_includes_directus_persistence_metadata(tmp_path: Path, monkeypatch) -> None:

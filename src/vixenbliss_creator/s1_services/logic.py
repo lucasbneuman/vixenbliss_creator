@@ -42,14 +42,14 @@ def _build_dataset_files(
     half = sample_count // 2
     composition = {
         "policy": "balanced_50_50",
-        "with_clothes": half,
-        "without_clothes": half,
+            "SFW": half,
+            "NSFW": half,
     }
     files: list[dict] = []
     sample_index = 0
     framing_cycle = ("close_up", "medium", "full_body")
     pose_cycle = ("front", "three_quarter", "profile")
-    for class_name, count in (("with_clothes", half), ("without_clothes", half)):
+    for class_name, count in (("SFW", half), ("NSFW", half)):
         for class_offset in range(count):
             sample_index += 1
             variation_group = framing_cycle[(sample_index - 1) % len(framing_cycle)]

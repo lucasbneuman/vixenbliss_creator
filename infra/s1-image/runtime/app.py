@@ -588,7 +588,7 @@ def _seed_bundle_from_job_input(job_input: dict) -> SeedBundle:
 
 
 def _classify_dataset_samples(dataset_manifest: dict) -> dict[str, int]:
-    counts = {"with_clothes": 0, "without_clothes": 0}
+    counts = {"SFW": 0, "NSFW": 0}
     for entry in dataset_manifest.get("files", []):
         class_name = str(entry.get("class_name") or "")
         if class_name in counts:
@@ -603,9 +603,9 @@ def _validate_dataset_manifest_contract(dataset_manifest: dict) -> None:
     if any("seed" not in entry for entry in files):
         raise ValueError("dataset builder requires seed traceability for every generated sample")
     counts = _classify_dataset_samples(dataset_manifest)
-    if counts["with_clothes"] != counts["without_clothes"]:
-        raise ValueError("dataset builder requires a 50/50 balance between with_clothes and without_clothes")
-    if counts["with_clothes"] + counts["without_clothes"] != int(dataset_manifest.get("sample_count", 0)):
+    if counts["SFW"] != counts["NSFW"]:
+        raise ValueError("dataset builder requires a 50/50 balance between SFW and NSFW")
+    if counts["SFW"] + counts["NSFW"] != int(dataset_manifest.get("sample_count", 0)):
         raise ValueError("dataset builder sample_count does not match the generated file list")
 
 

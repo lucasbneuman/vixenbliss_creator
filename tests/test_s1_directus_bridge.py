@@ -77,7 +77,7 @@ def _build_dataset_manifest(identity_id: str, *, package_path: Path, sample_coun
     pose_cycle = ("front", "three_quarter", "profile")
     half = sample_count // 2
     sample_index = 0
-    for class_name, count in (("with_clothes", half), ("without_clothes", half)):
+    for class_name, count in (("SFW", half), ("NSFW", half)):
         for class_offset in range(count):
             sample_index += 1
             variation_group = variation_cycle[(sample_index - 1) % len(variation_cycle)]
@@ -102,7 +102,7 @@ def _build_dataset_manifest(identity_id: str, *, package_path: Path, sample_coun
         "dataset_package_path": str(package_path),
         "sample_count": sample_count,
         "generated_samples": sample_count,
-        "composition": {"policy": "balanced_50_50", "with_clothes": half, "without_clothes": half},
+        "composition": {"policy": "balanced_50_50", "SFW": half, "NSFW": half},
         "files": files,
         "workflow_id": "base-image-ipadapter-impact",
         "workflow_version": "2026-04-02",
@@ -447,7 +447,7 @@ def test_recorder_blocks_training_when_dataset_validation_fails(tmp_path: Path) 
         "identity_id": "blocked",
         "sample_count": 8,
         "generated_samples": 8,
-        "files": [{"path": "images/with_clothes/sample-001.png", "class_name": "with_clothes"}],
+            "files": [{"path": "images/SFW/sample-001.png", "class_name": "SFW"}],
         "seed_bundle": {"portrait_seed": 1, "variation_seed": 2},
     }
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
