@@ -115,6 +115,7 @@ Usar este bloque en el archivo local derivado desde la plantilla:
 Notas operativas:
 
 - definir `DIRECTUS_MCP_URL` como la URL base de `Directus` terminada en `/mcp`
+- definir `DIRECTUS_BASE_URL` como la URL HTTP base de la misma instancia, sin `/mcp`; esa es la que usa el codigo Python del repo
 - reutilizar `DIRECTUS_API_TOKEN` si el mismo token tiene permisos suficientes para la superficie MCP
 - si el entorno de `Directus` separa token operativo y token MCP, documentarlo fuera del repo y no hardcodearlo en la plantilla
 - usar este MCP cuando la tarea requiera inspeccionar o administrar colecciones, files, schema o configuracion de `S1` sin salir del flujo del agente
@@ -224,6 +225,12 @@ Un agente esta listo si puede:
 - confirmar que `DIRECTUS_MCP_URL` apunta al endpoint `/mcp` de la instancia activa
 - validar que el token usado por `Authorization: Bearer ...` tenga permisos sobre la superficie que se quiere administrar
 - si el MCP responde pero las operaciones de files o schema fallan, revisar la configuracion interna de `Directus` antes de culpar al cliente MCP
+
+### Smoke check sugerido para `Directus HTTP`
+
+- confirmar que `DIRECTUS_BASE_URL` responde en `GET /server/health`
+- esperar `403` o `401` al consultar `/items/...` sin token; eso sigue siendo senal valida de conectividad HTTP
+- validar lecturas autenticadas solo cuando `DIRECTUS_API_TOKEN` este cargado localmente
 
 ## Si algo falla
 
