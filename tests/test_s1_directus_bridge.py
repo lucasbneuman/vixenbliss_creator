@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import json
 from pathlib import Path
 from typing import Any
+import zipfile
 
 from vixenbliss_creator.s1_control import S1RuntimeDirectusRecorder
 from vixenbliss_creator.s1_control.support import tiny_png_bytes
@@ -69,15 +71,65 @@ class FakeControlPlane:
         return payload
 
 
+def _build_dataset_manifest(identity_id: str, *, package_path: Path, sample_count: int = 12) -> dict[str, Any]:
+    files: list[dict[str, Any]] = []
+    variation_cycle = ("close_up", "medium", "full_body")
+    pose_cycle = ("front", "three_quarter", "profile")
+    half = sample_count // 2
+    sample_index = 0
+    for class_name, count in (("with_clothes", half), ("without_clothes", half)):
+        for class_offset in range(count):
+            sample_index += 1
+            variation_group = variation_cycle[(sample_index - 1) % len(variation_cycle)]
+            files.append(
+                {
+                    "sample_id": f"dataset-{identity_id}-{sample_index:03d}",
+                    "identity_id": identity_id,
+                    "character_id": identity_id,
+                    "class_name": class_name,
+                    "variation_group": variation_group,
+                    "framing": variation_group,
+                    "pose": pose_cycle[(sample_index - 1) % len(pose_cycle)],
+                    "path": f"images/{class_name}/sample-{class_offset + 1:03d}.png",
+                    "seed": sample_index * 111,
+                }
+            )
+    return {
+        "schema_version": "1.0.0",
+        "identity_id": identity_id,
+        "character_id": identity_id,
+        "dataset_version": f"dataset-{identity_id}",
+        "dataset_package_path": str(package_path),
+        "sample_count": sample_count,
+        "generated_samples": sample_count,
+        "composition": {"policy": "balanced_50_50", "with_clothes": half, "without_clothes": half},
+        "files": files,
+        "workflow_id": "base-image-ipadapter-impact",
+        "workflow_version": "2026-04-02",
+        "base_model_id": "flux-schnell-v1",
+        "prompt": "test prompt",
+        "negative_prompt": "bad anatomy",
+        "seed_bundle": {"portrait_seed": 11, "variation_seed": 22, "dataset_seed": 33},
+    }
+
+
+def _write_dataset_package(package_path: Path, manifest: dict[str, Any]) -> None:
+    with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("dataset-manifest.json", json.dumps(manifest))
+        for file_entry in manifest["files"]:
+            archive.writestr(file_entry["path"], tiny_png_bytes())
+
+
 def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:
     fake = FakeControlPlane()
     identity = fake.create_item("s1_identities", {"avatar_id": "42", "status": "draft"})
-    manifest_path = tmp_path / "manifest.json"
-    manifest_path.write_text('{"sample_count": 12}', encoding="utf-8")
     base_path = tmp_path / "base.png"
     base_path.write_bytes(tiny_png_bytes())
     package_path = tmp_path / "dataset.zip"
-    package_path.write_bytes(b"zip")
+    manifest = _build_dataset_manifest("42", package_path=package_path)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    _write_dataset_package(package_path, manifest)
     recorder = S1RuntimeDirectusRecorder(client=fake)
 
     recorder.record_job(
@@ -91,10 +143,7 @@ def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:
             "workflow_id": "base-image-ipadapter-impact",
             "workflow_version": "2026-04-02",
             "face_detection_confidence": 0.91,
-            "dataset_manifest": {
-                "identity_id": "42",
-                "seed_bundle": {"portrait_seed": 11, "variation_seed": 22, "dataset_seed": 33},
-            },
+            "dataset_manifest": manifest,
             "metadata": {
                 "seed_bundle": {"portrait_seed": 11, "variation_seed": 22, "dataset_seed": 33},
                 "prompt": "test prompt",
@@ -138,6 +187,8 @@ def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:
     package_artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "dataset_package")
     assert package_artifact["metadata_json"]["checksum_sha256"] == "abc123"
     assert package_artifact["file"] is None
+    validation_artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "dataset_validation_report")
+    assert validation_artifact["metadata_json"]["validation_status"] == "apto"
     assert len(fake.files) == 1
     assert identity["pipeline_state"] == "dataset_ready"
     assert identity["dataset_status"] == "ready"
@@ -155,9 +206,11 @@ def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:
     assert identity["latest_dataset_package_file_id"] is None
     assert identity["latest_dataset_package_uri"] == str(package_path)
     assert identity["latest_visual_config_json"]["reference_face_image_url"] == "https://example.com/ref.png"
+    assert identity["latest_visual_config_json"]["dataset_validation_status"] == "apto"
     base_artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "base_image")
     assert base_artifact["metadata_json"]["registration_status"] == "registered"
     assert base_artifact["metadata_json"]["source_job_id"] == "job-123"
+    assert any(event["event_type"] == "dataset_validation_passed" for event in fake.store["s1_events"])
 
 
 def test_recorder_persists_model_asset_for_training_results() -> None:
@@ -236,6 +289,7 @@ def test_recorder_falls_back_when_upload_fails(tmp_path: Path) -> None:
     assert fake.store["s1_artifacts"][0]["file"] is None
     assert fake.store["s1_artifacts"][0]["uri"] == str(artifact_path)
     assert all(event["event_type"] != "runtime_artifact_upload_failed" for event in fake.store["s1_events"])
+    assert any(event["event_type"] == "dataset_validation_failed" for event in fake.store["s1_events"])
 
 
 def test_recorder_publishes_persisted_artifacts_metadata(tmp_path: Path) -> None:
@@ -271,21 +325,25 @@ def test_recorder_publishes_persisted_artifacts_metadata(tmp_path: Path) -> None
     assert result_payload["metadata"]["persisted_artifacts"][0]["file_id"] is None
 
 
-def test_recorder_materializes_base_image_from_runtime_artifact_inline_payload() -> None:
+def test_recorder_materializes_base_image_from_runtime_artifact_inline_payload(tmp_path: Path) -> None:
     fake = FakeControlPlane()
     identity = fake.create_item("s1_identities", {"avatar_id": "99", "status": "draft"})
     recorder = S1RuntimeDirectusRecorder(client=fake)
     png_payload = tiny_png_bytes()
+    package_path = tmp_path / "dataset-99.zip"
+    manifest = _build_dataset_manifest("99", package_path=package_path)
     result_payload = {
         "provider": "modal",
         "workflow_id": "base-image-ipadapter-impact",
         "workflow_version": "2026-04-03",
-        "dataset_manifest": {
-            "identity_id": "99",
-            "seed_bundle": {"portrait_seed": 1, "variation_seed": 2, "dataset_seed": 3},
-        },
+        "dataset_manifest": manifest,
         "metadata": {
             "seed_bundle": {"portrait_seed": 1, "variation_seed": 2, "dataset_seed": 3},
+            "prompt": "real modal image",
+            "negative_prompt": "bad anatomy",
+            "workflow_id": "base-image-ipadapter-impact",
+            "workflow_version": "2026-04-03",
+            "base_model_id": "flux-schnell-v1",
         },
         "artifacts": [
             {
@@ -307,8 +365,29 @@ def test_recorder_materializes_base_image_from_runtime_artifact_inline_payload()
                     "character_id": "99",
                 },
             }
-        ],
+        ]
     }
+    tmp_package = tmp_path / "dataset-99-materialized.zip"
+    manifest["dataset_package_path"] = str(tmp_package)
+    _write_dataset_package(tmp_package, manifest)
+    result_payload["artifacts"].extend(
+        [
+            {
+                "artifact_type": "dataset_manifest",
+                "storage_path": str(tmp_package.with_suffix(".json")),
+                "content_type": "application/json",
+                "metadata_json": {},
+            },
+            {
+                "artifact_type": "dataset_package",
+                "storage_path": str(tmp_package),
+                "content_type": "application/zip",
+                "checksum_sha256": "abc123",
+                "metadata_json": {},
+            },
+        ]
+    )
+    tmp_package.with_suffix(".json").write_text(json.dumps(manifest), encoding="utf-8")
 
     recorder.record_job(
         service_name="s1_image",
@@ -323,10 +402,13 @@ def test_recorder_materializes_base_image_from_runtime_artifact_inline_payload()
     assert base_artifact["file"].startswith("file-")
     assert base_artifact["metadata_json"]["materialized_from_runtime_artifact"] is True
     assert len(fake.files) == 1
-    assert identity["pipeline_state"] == "base_images_registered"
+    assert identity["pipeline_state"] == "dataset_ready"
+    assert identity["dataset_status"] == "ready"
     assert identity["latest_base_image_file_id"] == base_artifact["file"]
     assert result_payload["metadata"]["persisted_artifacts"][0]["persistence_target"] == "directus_file"
     assert base_artifact["metadata_json"]["registration_status"] == "registered"
+    tmp_package.unlink(missing_ok=True)
+    tmp_package.with_suffix(".json").unlink(missing_ok=True)
 
 
 def test_recorder_reads_identity_id_from_metadata(tmp_path: Path) -> None:
@@ -355,3 +437,45 @@ def test_recorder_reads_identity_id_from_metadata(tmp_path: Path) -> None:
     )
 
     assert fake.store["s1_generation_runs"][0]["identity_id"] == "meta-identity"
+
+
+def test_recorder_blocks_training_when_dataset_validation_fails(tmp_path: Path) -> None:
+    fake = FakeControlPlane()
+    identity = fake.create_item("s1_identities", {"avatar_id": "blocked", "status": "draft", "pipeline_state": "base_images_registered"})
+    manifest_path = tmp_path / "manifest.json"
+    manifest = {
+        "identity_id": "blocked",
+        "sample_count": 8,
+        "generated_samples": 8,
+        "files": [{"path": "images/with_clothes/sample-001.png", "class_name": "with_clothes"}],
+        "seed_bundle": {"portrait_seed": 1, "variation_seed": 2},
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    recorder = S1RuntimeDirectusRecorder(client=fake)
+
+    recorder.record_job(
+        service_name="s1_image",
+        job_id="job-blocked",
+        status="completed",
+        input_payload={"identity_id": "blocked", "prompt": "test prompt"},
+        result_payload={
+            "provider": "modal",
+            "workflow_version": "2026-04-02",
+            "dataset_manifest": manifest,
+            "metadata": {},
+            "artifacts": [
+                {
+                    "artifact_type": "dataset_manifest",
+                    "storage_path": str(manifest_path),
+                    "content_type": "application/json",
+                    "metadata_json": {},
+                }
+            ],
+        },
+    )
+
+    validation_artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "dataset_validation_report")
+    assert validation_artifact["metadata_json"]["validation_status"] == "no_apto"
+    assert identity["dataset_status"] == "rejected"
+    assert identity["pipeline_state"] == "base_images_generated"
+    assert any(event["event_type"] == "dataset_validation_failed" for event in fake.store["s1_events"])

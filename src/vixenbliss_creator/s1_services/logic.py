@@ -47,9 +47,12 @@ def _build_dataset_files(
     }
     files: list[dict] = []
     sample_index = 0
+    framing_cycle = ("close_up", "medium", "full_body")
+    pose_cycle = ("front", "three_quarter", "profile")
     for class_name, count in (("with_clothes", half), ("without_clothes", half)):
         for class_offset in range(count):
             sample_index += 1
+            variation_group = framing_cycle[(sample_index - 1) % len(framing_cycle)]
             files.append(
                 {
                     "sample_id": f"{dataset_version}-{sample_index:03d}",
@@ -58,6 +61,9 @@ def _build_dataset_files(
                     "class_name": class_name,
                     "path": f"images/{class_name}/sample-{class_offset + 1:03d}.png",
                     "origin": "generated_base_image",
+                    "variation_group": variation_group,
+                    "framing": variation_group,
+                    "pose": pose_cycle[(sample_index - 1) % len(pose_cycle)],
                     "seed": _dataset_sample_seed(dataset_seed, index=sample_index),
                 }
             )
@@ -182,6 +188,7 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
             },
         ],
         "dataset_manifest": {
+            "schema_version": "1.0.0",
             "identity_id": str(payload.identity_id),
             "character_id": character_id,
             "dataset_version": dataset_version,

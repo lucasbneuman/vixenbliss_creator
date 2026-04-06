@@ -80,6 +80,7 @@ def test_dataset_generation_returns_manifest_and_package() -> None:
 
     assert result["dataset_manifest"]["sample_count"] == 16
     assert result["dataset_manifest"]["generated_samples"] == 16
+    assert result["dataset_manifest"]["schema_version"] == "1.0.0"
     assert result["dataset_manifest"]["character_id"] == str(manifest.identity_id)
     assert result["dataset_manifest"]["dataset_version"].startswith("dataset-")
     assert result["dataset_manifest"]["composition"] == {
@@ -89,6 +90,7 @@ def test_dataset_generation_returns_manifest_and_package() -> None:
     }
     assert len(result["dataset_manifest"]["files"]) == 16
     assert result["dataset_manifest"]["files"][0]["class_name"] == "with_clothes"
+    assert result["dataset_manifest"]["files"][0]["variation_group"] == "close_up"
     assert result["dataset_manifest"]["files"][-1]["class_name"] == "without_clothes"
     artifact_types = {artifact["artifact_type"] for artifact in result["artifacts"]}
     assert {"base_image", "dataset_manifest", "dataset_package"} <= artifact_types

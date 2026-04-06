@@ -14,6 +14,7 @@ from vixenbliss_creator.contracts.identity import DatasetStatus, PipelineState
 
 from .base_image_registry import S1BaseImageRegistry
 from .config import S1ControlSettings
+from .dataset_validator import validate_s1_dataset
 from .directus import ControlPlanePort, DirectusControlPlaneClient
 from .support import sha256_hex
 
@@ -169,6 +170,13 @@ class S1RuntimeDirectusRecorder:
                 runtime_metadata=runtime_metadata,
                 uploaded_artifacts=uploaded_artifacts,
                 artifact_rows=artifact_rows,
+            )
+            self._record_dataset_validation(
+                identity_id=identity_id,
+                run_id=run_id,
+                result_payload=result_payload,
+                runtime_metadata=runtime_metadata,
+                uploaded_artifacts=uploaded_artifacts,
             )
         training_manifest = result_payload.get("training_manifest")
         if isinstance(training_manifest, dict):
@@ -487,15 +495,18 @@ class S1RuntimeDirectusRecorder:
         }
         base_image_uri = _artifact_uri(base_image_artifact) if isinstance(base_image_artifact, dict) else None
         base_image_urls = [_artifact_uri(item) for item in base_image_artifacts if _artifact_uri(item)]
+        has_dataset_handoff = bool(
+            _artifact_uri(dataset_package_artifact) if isinstance(dataset_package_artifact, dict) else result_payload.get("dataset_package_path")
+        )
         snapshot_payload = {
             "avatar_id": identity_id,
             "last_run_id": run_id,
-            "pipeline_state": PipelineState.DATASET_READY.value,
+            "pipeline_state": PipelineState.BASE_IMAGES_GENERATED.value,
             "reference_face_image_id": _stringify(_input_value(input_payload, "reference_face_image_id")),
             "reference_face_image_url": visual_config["reference_face_image_url"],
             "base_image_urls": base_image_urls or ([base_image_uri] if base_image_uri else []),
             "dataset_storage_path": _artifact_uri(dataset_package_artifact) if isinstance(dataset_package_artifact, dict) else result_payload.get("dataset_package_path"),
-            "dataset_status": DatasetStatus.READY.value,
+            "dataset_status": DatasetStatus.IN_PROGRESS.value if has_dataset_handoff else DatasetStatus.NOT_STARTED.value,
             "latest_generation_manifest_json": generation_manifest,
             "latest_seed_bundle_json": seed_bundle,
             "latest_visual_config_json": visual_config,
@@ -510,6 +521,69 @@ class S1RuntimeDirectusRecorder:
             "latest_dataset_package_file_id": dataset_package_artifact.get("directus_file_id") if isinstance(dataset_package_artifact, dict) else None,
         }
         identity_item = self._resolve_identity_item(identity_id)
+        if identity_item is None:
+            self.client.create_item("s1_identities", snapshot_payload)
+            return
+        self.client.update_item("s1_identities", str(identity_item["id"]), snapshot_payload)
+
+    def _record_dataset_validation(
+        self,
+        *,
+        identity_id: str,
+        run_id: str,
+        result_payload: dict[str, Any],
+        runtime_metadata: dict[str, Any],
+        uploaded_artifacts: list[dict[str, Any]],
+    ) -> None:
+        identity_item = self._resolve_identity_item(identity_id)
+        current_pipeline_state = _stringify((identity_item or {}).get("pipeline_state")) or PipelineState.BASE_IMAGES_GENERATED.value
+        # Validation owns the dataset_ready promotion. Recording artifacts or
+        # registering base images is not enough to unlock training anymore.
+        validation = validate_s1_dataset(
+            identity_id=identity_id,
+            run_id=run_id,
+            result_payload=result_payload,
+            runtime_metadata=runtime_metadata,
+            uploaded_artifacts=uploaded_artifacts,
+            identity_snapshot=identity_item,
+            current_pipeline_state=current_pipeline_state,
+        )
+        result_payload["dataset_validation"] = validation.report
+        self.client.create_item(
+            "s1_artifacts",
+            {
+                "identity_id": identity_id,
+                "run_id": run_id,
+                "role": "dataset_validation_report",
+                "file": None,
+                "uri": f"dataset-validation://{identity_id}/{run_id}",
+                "content_type": "application/json",
+                "version": result_payload.get("workflow_version") or runtime_metadata.get("workflow_version"),
+                "metadata_json": validation.report,
+            },
+        )
+        self.client.create_item(
+            "s1_events",
+            {
+                "identity_id": identity_id,
+                "run_id": run_id,
+                "event_type": "dataset_validation_passed" if validation.is_ready else "dataset_validation_failed",
+                "message": "Dataset validation passed" if validation.is_ready else "Dataset validation failed",
+                "payload_json": validation.report,
+                "created_by": "dataset_validator",
+            },
+        )
+        snapshot_payload = {
+            "avatar_id": identity_id,
+            "dataset_status": validation.dataset_status,
+            "pipeline_state": validation.pipeline_state,
+            "last_run_id": run_id,
+            "latest_visual_config_json": {
+                **((identity_item or {}).get("latest_visual_config_json") or {}),
+                "dataset_validation_status": validation.validation_status,
+                "dataset_validation_report_uri": f"dataset-validation://{identity_id}/{run_id}",
+            },
+        }
         if identity_item is None:
             self.client.create_item("s1_identities", snapshot_payload)
             return
