@@ -12,8 +12,10 @@ from typing import Any
 
 from vixenbliss_creator.contracts.identity import PipelineState
 
+from .base_image_registry import S1BaseImageRegistry
 from .config import S1ControlSettings
 from .directus import ControlPlanePort, DirectusControlPlaneClient
+from .support import sha256_hex
 
 
 DIRECTUS_FILE_ARTIFACT_ROLES = {"base_image", "generated_image", "thumbnail"}
@@ -115,6 +117,7 @@ class S1RuntimeDirectusRecorder:
             result_payload=result_payload,
         )
         runtime_metadata = result_payload.get("metadata", {}) if isinstance(result_payload, dict) else {}
+        artifact_rows: list[dict[str, Any]] = []
         self.client.create_item(
             "s1_events",
             {
@@ -129,18 +132,21 @@ class S1RuntimeDirectusRecorder:
         if not isinstance(result_payload, dict):
             return run
         for artifact in uploaded_artifacts:
-            self.client.create_item(
-                "s1_artifacts",
-                {
-                    "identity_id": identity_id,
-                    "run_id": run_id,
-                    "role": _artifact_role(artifact),
-                    "file": artifact.get("directus_file_id"),
-                    "uri": _artifact_uri(artifact),
-                    "content_type": artifact.get("content_type"),
-                    "version": result_payload.get("workflow_version") or result_payload.get("training_manifest", {}).get("version"),
-                    "metadata_json": self._artifact_metadata(artifact),
-                },
+            artifact_rows.append(
+                self.client.create_item(
+                    "s1_artifacts",
+                    {
+                        "identity_id": identity_id,
+                        "run_id": run_id,
+                        "role": _artifact_role(artifact),
+                        "file": artifact.get("directus_file_id"),
+                        "uri": _artifact_uri(artifact),
+                        "content_type": artifact.get("content_type"),
+                        "version": result_payload.get("workflow_version")
+                        or result_payload.get("training_manifest", {}).get("version"),
+                        "metadata_json": self._artifact_metadata(artifact),
+                    },
+                )
             )
         self._update_identity_snapshot(
             identity_id=identity_id,
@@ -151,6 +157,19 @@ class S1RuntimeDirectusRecorder:
             uploaded_artifacts=uploaded_artifacts,
             runtime_metadata=runtime_metadata,
         )
+        if identity_id and service_name == "s1_image":
+            # Runtime persistence marks the identity as base_images_generated first.
+            # Formal registration happens afterwards once we have recoverable assets,
+            # checksums, and traceability metadata for the uploaded base images.
+            S1BaseImageRegistry(client=self.client).register(
+                identity_id=identity_id,
+                run_id=run_id,
+                source_job_id=job_id,
+                result_payload=result_payload,
+                runtime_metadata=runtime_metadata,
+                uploaded_artifacts=uploaded_artifacts,
+                artifact_rows=artifact_rows,
+            )
         training_manifest = result_payload.get("training_manifest")
         if isinstance(training_manifest, dict):
             self.client.create_item(
@@ -235,6 +254,7 @@ class S1RuntimeDirectusRecorder:
                     "original_storage_path": storage_path,
                     "size_bytes": source.stat().st_size,
                     "artifact_kind": _artifact_role(artifact_copy),
+                    "checksum_sha256": artifact_copy.get("checksum_sha256") or sha256_hex(source.read_bytes()),
                 }
             )
             if not _artifact_persists_as_file(artifact_copy):
@@ -445,6 +465,7 @@ class S1RuntimeDirectusRecorder:
         if service_name != "s1_image" or not identity_id or not isinstance(result_payload, dict):
             return
         base_image_artifact = next((item for item in uploaded_artifacts if _artifact_role(item) == "base_image"), None)
+        base_image_artifacts = [item for item in uploaded_artifacts if _artifact_role(item) == "base_image"]
         dataset_manifest_artifact = next((item for item in uploaded_artifacts if _artifact_role(item) == "dataset_manifest"), None)
         dataset_package_artifact = next((item for item in uploaded_artifacts if _artifact_role(item) == "dataset_package"), None)
         generation_manifest = result_payload.get("generation_manifest") or result_payload.get("dataset_manifest") or {}
@@ -465,13 +486,14 @@ class S1RuntimeDirectusRecorder:
             "persisted_artifacts": runtime_metadata.get("persisted_artifacts", []),
         }
         base_image_uri = _artifact_uri(base_image_artifact) if isinstance(base_image_artifact, dict) else None
+        base_image_urls = [_artifact_uri(item) for item in base_image_artifacts if _artifact_uri(item)]
         snapshot_payload = {
             "avatar_id": identity_id,
             "last_run_id": run_id,
             "pipeline_state": PipelineState.BASE_IMAGES_GENERATED.value,
             "reference_face_image_id": _stringify(_input_value(input_payload, "reference_face_image_id")),
             "reference_face_image_url": visual_config["reference_face_image_url"],
-            "base_image_urls": [base_image_uri] if base_image_uri else [],
+            "base_image_urls": base_image_urls or ([base_image_uri] if base_image_uri else []),
             "latest_generation_manifest_json": generation_manifest,
             "latest_seed_bundle_json": seed_bundle,
             "latest_visual_config_json": visual_config,

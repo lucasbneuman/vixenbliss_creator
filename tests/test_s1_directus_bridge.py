@@ -139,9 +139,10 @@ def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:
     assert package_artifact["metadata_json"]["checksum_sha256"] == "abc123"
     assert package_artifact["file"] is None
     assert len(fake.files) == 1
-    assert identity["pipeline_state"] == "base_images_generated"
+    assert identity["pipeline_state"] == "base_images_registered"
     assert identity["base_image_urls"][0].startswith("https://directus.example.com/assets/file-")
-    assert identity["reference_face_image_url"] == "https://example.com/ref.png"
+    assert identity["reference_face_image_url"].startswith("https://directus.example.com/assets/file-")
+    assert identity["reference_face_image_id"].startswith("file-")
     assert identity["base_model_id"] == "flux-schnell-v1"
     assert identity["latest_seed_bundle_json"]["portrait_seed"] == 11
     assert identity["latest_visual_config_json"]["dataset_storage_mode"] == "directus_images_and_rows"
@@ -152,6 +153,9 @@ def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:
     assert identity["latest_dataset_package_file_id"] is None
     assert identity["latest_dataset_package_uri"] == str(package_path)
     assert identity["latest_visual_config_json"]["reference_face_image_url"] == "https://example.com/ref.png"
+    base_artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "base_image")
+    assert base_artifact["metadata_json"]["registration_status"] == "registered"
+    assert base_artifact["metadata_json"]["source_job_id"] == "job-123"
 
 
 def test_recorder_persists_model_asset_for_training_results() -> None:
@@ -317,9 +321,10 @@ def test_recorder_materializes_base_image_from_runtime_artifact_inline_payload()
     assert base_artifact["file"].startswith("file-")
     assert base_artifact["metadata_json"]["materialized_from_runtime_artifact"] is True
     assert len(fake.files) == 1
-    assert identity["pipeline_state"] == "base_images_generated"
+    assert identity["pipeline_state"] == "base_images_registered"
     assert identity["latest_base_image_file_id"] == base_artifact["file"]
     assert result_payload["metadata"]["persisted_artifacts"][0]["persistence_target"] == "directus_file"
+    assert base_artifact["metadata_json"]["registration_status"] == "registered"
 
 
 def test_recorder_reads_identity_id_from_metadata(tmp_path: Path) -> None:
