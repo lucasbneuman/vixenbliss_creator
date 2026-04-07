@@ -103,7 +103,8 @@ WORKDIR /app
 COPY infra/s1-image/runtime /app/runtime
 COPY src /app/src
 
-RUN chmod +x /app/runtime/scripts/*.sh
+RUN sed -i 's/\r$//' /app/runtime/scripts/*.sh && \
+    chmod +x /app/runtime/scripts/*.sh
 
 EXPOSE 8000
 

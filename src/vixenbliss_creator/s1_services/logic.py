@@ -128,7 +128,7 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
         }
     )
     dataset_version = _dataset_version_from_digest(digest)
-    identity_root = PurePosixPath(payload.artifact_root) / str(payload.identity_id) / dataset_version
+    identity_root = PurePosixPath(payload.artifact_root) / str(payload.identity_id) / "datasets" / dataset_version
     manifest_path = str(identity_root / "dataset-manifest.json")
     package_path = str(identity_root / "dataset-package.zip")
     base_image_path = str(identity_root / "base-image.png")
@@ -140,6 +140,7 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
         dataset_seed=payload.generation_manifest.seed_bundle.dataset_seed,
     )
     checksum = _stable_digest({"dataset_package_path": package_path, "digest": digest})
+    workflow_extensions = ["ComfyUI-BatchingNodes", "ComfyPack"]
     return {
         "provider": "modal",
         "service": "s1_image",
@@ -171,6 +172,7 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
                     "samples_target": payload.samples_target,
                     "reference_face_image_url": payload.reference_face_image_url,
                     "source_manifest_path": payload.generation_manifest.artifact_path,
+                    "workflow_extensions": workflow_extensions,
                 },
             },
             {
@@ -184,6 +186,7 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
                     "seed_bundle": seed_bundle,
                     "samples_target": payload.samples_target,
                     "seed": payload.generation_manifest.seed_bundle.dataset_seed,
+                    "workflow_extensions": workflow_extensions,
                 },
             },
         ],
@@ -198,6 +201,7 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
             "generated_samples": payload.samples_target,
             "composition": composition,
             "files": files,
+            "workflow_extensions": workflow_extensions,
             "workflow_id": payload.generation_manifest.workflow_id,
             "workflow_version": payload.generation_manifest.workflow_version,
             "base_model_id": payload.generation_manifest.base_model_id,
@@ -208,6 +212,7 @@ def build_dataset_result(payload: DatasetServiceInput) -> dict:
             "face_detection_confidence": payload.face_detection_confidence,
             "review_required": True,
             "checksum_sha256": checksum,
+            "storage_path": identity_root.as_posix(),
         },
     }
 
@@ -269,6 +274,7 @@ def build_lora_training_result(payload: LoraTrainingServiceInput) -> dict:
                 "base_model_id": payload.base_model_id,
                 "storage_path": lora_path,
                 "provider": "modal",
+                "compatibility_notes": "Flux.1 Schnell compliant",
             },
         },
     }

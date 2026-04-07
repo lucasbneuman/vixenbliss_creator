@@ -55,9 +55,9 @@ class DatasetServiceInput(ContractBaseModel):
     identity_id: UUID
     generation_manifest: GenerationManifest
     reference_face_image_url: str | None = Field(default=None, min_length=8, max_length=500)
-    samples_target: int = Field(default=12, ge=4, le=128)
+    samples_target: int = Field(default=24, ge=20, le=50)
     face_detection_confidence: float | None = Field(default=0.91, ge=0.0, le=1.0)
-    artifact_root: str = Field(default="artifacts/s1-image", min_length=3, max_length=255)
+    artifact_root: str = Field(default="identities", min_length=3, max_length=255)
     metadata_json: JsonObject = Field(default_factory=dict)
 
     @model_validator(mode="after")

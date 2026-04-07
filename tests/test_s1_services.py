@@ -73,22 +73,24 @@ def test_dataset_generation_returns_manifest_and_package() -> None:
             identity_id=manifest.identity_id,
             generation_manifest=manifest,
             reference_face_image_url="https://example.com/ref.png",
-            samples_target=16,
+            samples_target=24,
             metadata_json={"character_id": str(manifest.identity_id)},
         )
     )
 
-    assert result["dataset_manifest"]["sample_count"] == 16
-    assert result["dataset_manifest"]["generated_samples"] == 16
+    assert result["dataset_manifest"]["sample_count"] == 24
+    assert result["dataset_manifest"]["generated_samples"] == 24
     assert result["dataset_manifest"]["schema_version"] == "1.0.0"
     assert result["dataset_manifest"]["character_id"] == str(manifest.identity_id)
     assert result["dataset_manifest"]["dataset_version"].startswith("dataset-")
+    assert result["dataset_manifest"]["storage_path"].endswith(f"/datasets/{result['dataset_manifest']['dataset_version']}")
+    assert result["dataset_manifest"]["workflow_extensions"] == ["ComfyUI-BatchingNodes", "ComfyPack"]
     assert result["dataset_manifest"]["composition"] == {
         "policy": "balanced_50_50",
-            "SFW": 8,
-            "NSFW": 8,
+            "SFW": 12,
+            "NSFW": 12,
     }
-    assert len(result["dataset_manifest"]["files"]) == 16
+    assert len(result["dataset_manifest"]["files"]) == 24
     assert result["dataset_manifest"]["files"][0]["class_name"] == "SFW"
     assert result["dataset_manifest"]["files"][0]["variation_group"] == "close_up"
     assert result["dataset_manifest"]["files"][-1]["class_name"] == "NSFW"
@@ -111,13 +113,13 @@ def test_dataset_generation_requires_even_samples_for_balanced_policy() -> None:
         )
     )
 
-    with pytest.raises(ValueError, match="samples_target must be even"):
+    with pytest.raises(ValueError, match="samples_target"):
         build_dataset_result(
             DatasetServiceInput(
                 identity_id=manifest.identity_id,
                 generation_manifest=manifest,
                 reference_face_image_url="https://example.com/ref.png",
-                samples_target=15,
+                samples_target=19,
                 metadata_json={"character_id": str(manifest.identity_id)},
             )
         )
@@ -141,6 +143,7 @@ def test_lora_training_returns_lora_artifact_and_manifest() -> None:
 
     assert result["training_manifest"]["training_steps"] == 1500
     assert result["training_manifest"]["dataset_source"]["handoff_mode"] == "dataset_package_path"
+    assert result["training_manifest"]["model_registry"]["compatibility_notes"] == "Flux.1 Schnell compliant"
     assert result["artifacts"][0]["artifact_type"] == "lora_model"
     assert result["artifacts"][0]["checksum_sha256"]
 

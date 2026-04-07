@@ -656,7 +656,7 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
         return result
 
     metadata = job_input.get("metadata") or {}
-    samples_target = int(metadata.get("samples_target", job_input.get("samples_target", 12)))
+    samples_target = int(metadata.get("samples_target", job_input.get("samples_target", 24)))
     identity_root = ARTIFACT_ROOT / str(identity_id)
     seed_bundle = _seed_bundle_from_job_input(job_input)
     generation_manifest = GenerationManifest(
@@ -689,6 +689,7 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
             "autopromote_candidate": bool(metadata.get("autopromote", False)),
             "character_id": character_id or str(identity_id),
             "seed_bundle": seed_bundle.model_dump(mode="json"),
+            "workflow_extensions": ["ComfyUI-BatchingNodes", "ComfyPack"],
         },
     )
     dataset_result = build_dataset_result(dataset_input)

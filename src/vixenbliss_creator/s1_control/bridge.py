@@ -9,17 +9,20 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from vixenbliss_creator.contracts.identity import DatasetStatus, PipelineState
+from vixenbliss_creator.contracts.model_registry import ModelFamily, ModelProvider, ModelRegistry, ModelRole
 
 from .base_image_registry import S1BaseImageRegistry
 from .config import S1ControlSettings
 from .dataset_validator import validate_s1_dataset
 from .directus import ControlPlanePort, DirectusControlPlaneClient
+from .model_registry_store import DirectusModelRegistryStore
 from .support import sha256_hex
 
 
-DIRECTUS_FILE_ARTIFACT_ROLES = {"base_image", "generated_image", "thumbnail"}
+DIRECTUS_FILE_ARTIFACT_ROLES = {"base_image", "generated_image", "thumbnail", "dataset_manifest", "dataset_package"}
 
 
 def _stringify(value: Any) -> str | None:
@@ -193,6 +196,12 @@ class S1RuntimeDirectusRecorder:
                     "metadata_json": training_manifest,
                 },
             )
+            self._register_lora_model(
+                identity_id=identity_id,
+                run_id=run_id,
+                result_payload=result_payload,
+                training_manifest=training_manifest,
+            )
         if isinstance(result_payload, dict):
             self.client.update_item(
                 "s1_generation_runs",
@@ -204,6 +213,85 @@ class S1RuntimeDirectusRecorder:
                 },
             )
         return run
+
+    def _register_lora_model(
+        self,
+        *,
+        identity_id: str | None,
+        run_id: str,
+        result_payload: dict[str, Any],
+        training_manifest: dict[str, Any],
+    ) -> None:
+        if not identity_id:
+            return
+        base_model_id = str(training_manifest.get("base_model_id") or result_payload.get("base_model_id") or "").strip()
+        if not base_model_id:
+            return
+
+        registry_store = DirectusModelRegistryStore(client=self.client)
+        base_model = registry_store.find_active_base_model(base_model_id)
+        if base_model is None:
+            registry_store.seed_default_catalog()
+            base_model = registry_store.find_active_base_model(base_model_id)
+        if base_model is None:
+            return
+
+        registry_metadata = dict(training_manifest.get("model_registry") or {})
+        version_name = str(registry_metadata.get("version_name") or f"lora-{str(uuid4())[:8]}")
+        display_name = str(registry_metadata.get("display_name") or f"S1 LoRA {identity_id[:8]}")
+        lora_model = ModelRegistry.model_validate(
+            {
+                "id": str(uuid4()),
+                "model_family": ModelFamily.CUSTOM_LORA,
+                "model_role": ModelRole.LORA,
+                "provider": ModelProvider.MODAL,
+                "version_name": version_name,
+                "display_name": display_name,
+                "base_model_id": base_model.base_model_id or base_model_id,
+                "storage_path": training_manifest.get("lora_model_path"),
+                "parent_model_id": str(base_model.id),
+                "compatibility_notes": registry_metadata.get("compatibility_notes") or "Flux.1 Schnell compliant",
+                "metadata_json": {
+                    "identity_id": identity_id,
+                    "run_id": run_id,
+                    "trigger_word": training_manifest.get("trigger_word"),
+                    "training_steps": training_manifest.get("training_steps"),
+                    "dataset_source": training_manifest.get("dataset_source") or {},
+                },
+            }
+        )
+        registry_store.upsert_model(lora_model)
+
+        identity_item = self._resolve_identity_item(identity_id)
+        snapshot_payload = {
+            "avatar_id": identity_id,
+            "last_run_id": run_id,
+            "pipeline_state": PipelineState.LORA_TRAINED.value,
+            "dataset_status": (identity_item or {}).get("dataset_status") or DatasetStatus.READY.value,
+            "base_model_id": base_model_id,
+            "latest_base_model_id": base_model_id,
+            "lora_model_path": training_manifest.get("lora_model_path"),
+            "lora_version": version_name,
+        }
+        if identity_item is None:
+            self.client.create_item("s1_identities", snapshot_payload)
+        else:
+            self.client.update_item("s1_identities", str(identity_item["id"]), snapshot_payload)
+        self.client.create_item(
+            "s1_events",
+            {
+                "identity_id": identity_id,
+                "run_id": run_id,
+                "event_type": "lora_registered",
+                "message": "LoRA model registered in Directus model registry",
+                "payload_json": {
+                    "version_name": version_name,
+                    "storage_path": training_manifest.get("lora_model_path"),
+                    "base_model_id": base_model_id,
+                },
+                "created_by": "s1_lora_train",
+            },
+        )
 
     @staticmethod
     def _persisted_artifact_summary(artifact: dict[str, Any]) -> dict[str, Any]:
@@ -298,6 +386,7 @@ class S1RuntimeDirectusRecorder:
                 continue
             artifact_copy["directus_file_id"] = upload["id"]
             artifact_copy["directus_asset_url"] = upload.get("asset_url") or upload.get("locator")
+            artifact_copy["locator"] = upload.get("locator") or upload.get("asset_url")
             artifact_copy["directus_storage"] = upload.get("storage")
             artifact_copy["storage_path"] = str(upload.get("locator") or upload.get("asset_url") or storage_path)
             artifact_copy["persistence_target"] = "directus_file"
@@ -305,6 +394,7 @@ class S1RuntimeDirectusRecorder:
                 {
                     "directus_file_id": upload["id"],
                     "directus_asset_url": upload.get("asset_url") or upload.get("locator"),
+                    "directus_locator": upload.get("locator") or upload.get("asset_url"),
                     "directus_storage": upload.get("storage"),
                     "size_bytes": upload.get("filesize") or source.stat().st_size,
                 }

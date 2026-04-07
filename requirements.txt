@@ -3,7 +3,6 @@ colorama==0.4.6
 fastapi>=0.115,<1
 iniconfig==2.3.0
 langgraph>=0.2,<0.4
-modal>=0.73,<1
 packaging==26.0
 pluggy==1.6.0
 pydantic==2.12.5

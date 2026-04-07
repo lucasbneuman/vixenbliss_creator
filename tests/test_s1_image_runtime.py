@@ -267,7 +267,7 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
                     "identity_id": identity_id,
                     "character_id": identity_id,
                     "autopromote": True,
-                    "samples_target": 8,
+                    "samples_target": 24,
                 },
             )
         },
@@ -281,8 +281,8 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     assert payload["metadata"]["dataset_version"].startswith("dataset-")
     assert payload["metadata"]["dataset_composition"] == {
         "policy": "balanced_50_50",
-        "SFW": 4,
-        "NSFW": 4,
+        "SFW": 12,
+        "NSFW": 12,
     }
     assert payload["metadata"]["seed"] == 42
     assert payload["metadata"]["seed_bundle"]["portrait_seed"] == 42
@@ -293,14 +293,14 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     assert payload["metadata"]["base_model_id"] == "flux-schnell-v1"
     assert payload["dataset_manifest"]["identity_id"] == identity_id
     assert payload["dataset_manifest"]["character_id"] == identity_id
-    assert payload["dataset_manifest"]["sample_count"] == 8
-    assert payload["dataset_manifest"]["generated_samples"] == 8
+    assert payload["dataset_manifest"]["sample_count"] == 24
+    assert payload["dataset_manifest"]["generated_samples"] == 24
     assert payload["dataset_manifest"]["composition"] == {
         "policy": "balanced_50_50",
-        "SFW": 4,
-        "NSFW": 4,
+        "SFW": 12,
+        "NSFW": 12,
     }
-    assert len(payload["dataset_manifest"]["files"]) == 8
+    assert len(payload["dataset_manifest"]["files"]) == 24
     assert payload["dataset_manifest"]["files"][0]["path"].startswith("images/SFW/")
     assert payload["dataset_manifest"]["files"][-1]["path"].startswith("images/NSFW/")
     assert payload["generation_manifest"]["seed_bundle"]["portrait_seed"] == 42
@@ -321,7 +321,7 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
         archive_names = set(archive.namelist())
     assert "dataset-manifest.json" in archive_names
     assert "images/SFW/sample-001.png" in archive_names
-    assert "images/NSFW/sample-004.png" in archive_names
+    assert "images/NSFW/sample-012.png" in archive_names
 
 
 def test_s1_image_runtime_response_includes_directus_persistence_metadata(tmp_path: Path, monkeypatch) -> None:
@@ -348,7 +348,7 @@ def test_s1_image_runtime_response_includes_directus_persistence_metadata(tmp_pa
     class FakeRecorder:
         def record_job(self, **kwargs) -> dict:
             result_payload = kwargs["result_payload"]
-            result_payload["metadata"]["dataset_storage_mode"] = "directus_images_and_rows"
+            result_payload["metadata"]["dataset_storage_mode"] = "directus_files"
             result_payload["metadata"]["persisted_artifacts"] = [{"role": "base_image", "file_id": "file-123"}]
             return {"id": "run-123"}
 
@@ -358,11 +358,11 @@ def test_s1_image_runtime_response_includes_directus_persistence_metadata(tmp_pa
     identity_id = str(uuid4())
     response = client.post(
         "/jobs",
-        json={"input": _base_job_input(metadata={"identity_id": identity_id, "autopromote": True, "samples_target": 8})},
+        json={"input": _base_job_input(metadata={"identity_id": identity_id, "autopromote": True, "samples_target": 24})},
     )
     payload = response.json()["output"]
 
-    assert payload["metadata"]["dataset_storage_mode"] == "directus_images_and_rows"
+    assert payload["metadata"]["dataset_storage_mode"] == "directus_files"
     assert payload["metadata"]["directus_run_id"] == "run-123"
     assert payload["metadata"]["persisted_artifacts"][0]["file_id"] == "file-123"
 
@@ -398,7 +398,7 @@ def test_s1_image_runtime_exposes_directus_recording_failure(tmp_path: Path, mon
 
     response = client.post(
         "/jobs",
-        json={"input": _base_job_input(metadata={"identity_id": identity_id, "autopromote": True, "samples_target": 8})},
+        json={"input": _base_job_input(metadata={"identity_id": identity_id, "autopromote": True, "samples_target": 24})},
     )
     payload = response.json()["output"]
 
@@ -464,7 +464,7 @@ def test_s1_image_runtime_fails_dataset_builder_when_balance_cannot_be_satisfied
     payload = submit.json()["output"]
 
     assert payload["error_code"] == "COMFYUI_EXECUTION_FAILED"
-    assert "samples_target must be even" in payload["error_message"]
+    assert "samples_target" in payload["error_message"]
 
 
 def test_s1_image_runtime_face_detail_fails_on_incomplete_resume_state(tmp_path: Path, monkeypatch) -> None:

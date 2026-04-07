@@ -41,7 +41,7 @@ def _artifact_role(artifact: dict[str, Any]) -> str | None:
 
 
 def _artifact_uri(artifact: dict[str, Any]) -> str | None:
-    uri = artifact.get("directus_asset_url") or artifact.get("storage_path") or artifact.get("uri")
+    uri = artifact.get("locator") or artifact.get("directus_asset_url") or artifact.get("storage_path") or artifact.get("uri")
     return str(uri) if uri is not None else None
 
 

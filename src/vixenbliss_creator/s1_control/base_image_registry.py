@@ -115,6 +115,7 @@ class S1BaseImageRegistry:
             primary_row=primary_row,
             result_payload=result_payload,
             runtime_metadata=runtime_metadata,
+            uploaded_artifacts=uploaded_artifacts,
         )
         self.client.create_item(
             "s1_events",
@@ -217,6 +218,7 @@ class S1BaseImageRegistry:
         primary_row: dict[str, Any],
         result_payload: dict[str, Any],
         runtime_metadata: dict[str, Any],
+        uploaded_artifacts: list[dict[str, Any]],
     ) -> None:
         identity_item = self._resolve_identity_item(identity_id)
         if identity_item is None:
@@ -227,11 +229,11 @@ class S1BaseImageRegistry:
         dataset_manifest = result_payload.get("dataset_manifest") or {}
         seed_bundle = dict(runtime_metadata.get("seed_bundle") or dataset_manifest.get("seed_bundle") or {})
         dataset_package_artifact = next(
-            (item for item in result_payload.get("artifacts", []) if _artifact_role(item) == "dataset_package"),
+            (item for item in uploaded_artifacts if _artifact_role(item) == "dataset_package"),
             None,
         )
-        dataset_package_locator = result_payload.get("dataset_package_path") or (
-            _artifact_uri(dataset_package_artifact) if isinstance(dataset_package_artifact, dict) else None
+        dataset_package_locator = (
+            _artifact_uri(dataset_package_artifact) if isinstance(dataset_package_artifact, dict) else result_payload.get("dataset_package_path")
         )
         self.client.update_item(
             "s1_identities",
