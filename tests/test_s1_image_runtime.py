@@ -315,6 +315,7 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     }
     base_image_artifact = next(item for item in payload["dataset_artifacts"] if item["artifact_type"] == "base_image")
     assert base_image_artifact["metadata_json"]["character_id"] == identity_id
+    assert isinstance(base_image_artifact["metadata_json"]["inline_data_base64"], str)
     manifest_payload = json.loads(Path(payload["dataset_manifest"]["artifact_path"]).read_text(encoding="utf-8"))
     assert manifest_payload["checksum_sha256"] == payload["dataset_manifest"]["checksum_sha256"]
     with zipfile.ZipFile(payload["dataset_package_path"]) as archive:

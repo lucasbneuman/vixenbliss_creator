@@ -150,6 +150,7 @@ class S1BaseImageRegistry:
         content_type = _stringify(artifact.get("content_type") or row.get("content_type"))
         metadata = dict(row.get("metadata_json") or {})
         metadata.update(artifact.get("metadata_json") or {})
+        metadata.pop("inline_data_base64", None)
         checksum = _stringify(metadata.get("checksum_sha256")) or self._checksum_from_source(artifact)
         size_bytes = metadata.get("size_bytes")
         if size_bytes is None:

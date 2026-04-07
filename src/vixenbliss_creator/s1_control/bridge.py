@@ -23,6 +23,7 @@ from .support import sha256_hex
 
 
 DIRECTUS_FILE_ARTIFACT_ROLES = {"base_image", "generated_image", "thumbnail", "dataset_manifest", "dataset_package"}
+CRITICAL_DIRECTUS_FILE_ARTIFACT_ROLES = {"base_image", "dataset_manifest", "dataset_package"}
 
 
 def _stringify(value: Any) -> str | None:
@@ -46,7 +47,7 @@ def _artifact_role(artifact: dict[str, Any]) -> str | None:
 
 
 def _artifact_uri(artifact: dict[str, Any]) -> str | None:
-    uri = artifact.get("directus_asset_url") or artifact.get("storage_path") or artifact.get("uri")
+    uri = artifact.get("directus_asset_url") or artifact.get("locator") or artifact.get("storage_path") or artifact.get("uri")
     return str(uri) if uri is not None else None
 
 
@@ -340,8 +341,23 @@ class S1RuntimeDirectusRecorder:
             artifact_copy = dict(artifact)
             artifact_copy.setdefault("metadata_json", {})
             storage_path = artifact_copy.get("storage_path") or artifact_copy.get("uri")
+            role = _artifact_role(artifact_copy)
             source, cleanup_path = self._materialize_artifact_source(artifact_copy, result_payload)
             if source is None:
+                if role in CRITICAL_DIRECTUS_FILE_ARTIFACT_ROLES:
+                    artifact_copy["metadata_json"]["artifact_persistence_error"] = "failed_to_materialize_directus_file"
+                    self.client.create_item(
+                        "s1_events",
+                        {
+                            "identity_id": identity_id,
+                            "run_id": run_id,
+                            "event_type": "runtime_artifact_materialization_failed",
+                            "message": f"Failed to materialize {role or 'artifact'} for Directus Files persistence",
+                            "payload_json": {"role": role, "storage_path": storage_path},
+                            "created_by": service_name,
+                        },
+                    )
+                    continue
                 artifact_copy.setdefault("persistence_target", "directus_row")
                 persisted.append(artifact_copy)
                 continue
@@ -368,7 +384,6 @@ class S1RuntimeDirectusRecorder:
                 )
             except Exception as exc:
                 artifact_copy["metadata_json"]["directus_upload_error"] = str(exc)
-                artifact_copy["persistence_target"] = "directus_row"
                 self.client.create_item(
                     "s1_events",
                     {
@@ -382,7 +397,9 @@ class S1RuntimeDirectusRecorder:
                 )
                 if cleanup_path is not None and cleanup_path.exists():
                     cleanup_path.unlink(missing_ok=True)
-                persisted.append(artifact_copy)
+                if role not in CRITICAL_DIRECTUS_FILE_ARTIFACT_ROLES:
+                    artifact_copy["persistence_target"] = "directus_row"
+                    persisted.append(artifact_copy)
                 continue
             artifact_copy["directus_file_id"] = upload["id"]
             artifact_copy["directus_asset_url"] = upload.get("asset_url") or upload.get("locator")
@@ -483,7 +500,7 @@ class S1RuntimeDirectusRecorder:
     ) -> dict[str, Any] | None:
         if role is None or not isinstance(result_payload, dict):
             return None
-        candidates = result_payload.get("artifacts") or []
+        candidates = [*(result_payload.get("artifacts") or []), *(result_payload.get("dataset_artifacts") or [])]
         for candidate in candidates:
             if candidate is artifact:
                 continue
@@ -502,11 +519,11 @@ class S1RuntimeDirectusRecorder:
         manifest = result_payload.get("dataset_manifest")
         if not isinstance(manifest, dict):
             return None
-        artifacts = result_payload.get("artifacts") or result_payload.get("dataset_artifacts") or []
+        artifacts = [*(result_payload.get("artifacts") or []), *(result_payload.get("dataset_artifacts") or [])]
         base_image = next((item for item in artifacts if _artifact_role(item) == "base_image"), None)
         if not isinstance(base_image, dict):
             return None
-        inline_data = (base_image.get("metadata_json") or {}).get("inline_data_base64")
+        inline_data = _artifact_inline_payload(base_image)
         if not isinstance(inline_data, str) or not inline_data:
             return None
 
@@ -521,6 +538,12 @@ class S1RuntimeDirectusRecorder:
         with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("images/base-image.png", base_image_bytes)
             archive.writestr("dataset-manifest.json", json.dumps(manifest, indent=2))
+            for file_entry in manifest.get("files", []):
+                if not isinstance(file_entry, dict):
+                    continue
+                declared_path = file_entry.get("path")
+                if isinstance(declared_path, str) and declared_path:
+                    archive.writestr(declared_path, base_image_bytes)
         return package_path
 
     @staticmethod
@@ -537,6 +560,7 @@ class S1RuntimeDirectusRecorder:
 
     def _artifact_metadata(self, artifact: dict[str, Any]) -> dict[str, Any]:
         metadata = dict(artifact.get("metadata_json", {}))
+        metadata.pop("inline_data_base64", None)
         metadata.setdefault("persistence_target", artifact.get("persistence_target") or "directus_row")
         if artifact.get("directus_file_id"):
             metadata.setdefault("directus_file_id", artifact.get("directus_file_id"))

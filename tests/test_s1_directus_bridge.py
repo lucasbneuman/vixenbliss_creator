@@ -298,8 +298,8 @@ def test_recorder_falls_back_when_upload_fails(tmp_path: Path) -> None:
         },
     )
 
-    assert fake.store["s1_artifacts"][0]["file"] is None
-    assert fake.store["s1_artifacts"][0]["uri"] == str(artifact_path)
+    artifact_roles = [item["role"] for item in fake.store["s1_artifacts"]]
+    assert "dataset_manifest" not in artifact_roles
     assert any(event["event_type"] == "runtime_artifact_upload_failed" for event in fake.store["s1_events"])
     assert any(event["event_type"] == "dataset_validation_failed" for event in fake.store["s1_events"])
 
@@ -421,6 +421,85 @@ def test_recorder_materializes_base_image_from_runtime_artifact_inline_payload(t
     assert base_artifact["metadata_json"]["registration_status"] == "registered"
     tmp_package.unlink(missing_ok=True)
     tmp_package.with_suffix(".json").unlink(missing_ok=True)
+
+
+def test_recorder_uploads_critical_dataset_artifacts_from_modal_like_handoff(tmp_path: Path) -> None:
+    class HttpLocatorControlPlane(FakeControlPlane):
+        def upload_file(self, *args, **kwargs) -> dict[str, Any]:
+            payload = super().upload_file(*args, **kwargs)
+            source = Path(args[0])
+            persisted_copy = tmp_path / f"uploaded-{payload['id']}-{source.name}"
+            persisted_copy.write_bytes(source.read_bytes())
+            payload["locator"] = str(persisted_copy)
+            self.files[-1]["locator"] = str(persisted_copy)
+            return payload
+
+    fake = HttpLocatorControlPlane()
+    identity = fake.create_item("s1_identities", {"avatar_id": "modal-42", "status": "draft"})
+    recorder = S1RuntimeDirectusRecorder(client=fake)
+    manifest = _build_dataset_manifest("modal-42", package_path=Path("/app/data/artifacts/modal-42/dataset-package.zip"), sample_count=24)
+    result_payload = {
+        "provider": "modal",
+        "base_model_id": "flux-schnell-v1",
+        "workflow_id": "base-image-ipadapter-impact",
+        "workflow_version": "2026-04-02",
+        "face_detection_confidence": 0.91,
+        "dataset_manifest": manifest,
+        "metadata": {
+            "seed_bundle": {"portrait_seed": 11, "variation_seed": 22, "dataset_seed": 33},
+            "prompt": "test prompt",
+            "negative_prompt": "bad anatomy",
+            "width": 1024,
+            "height": 1024,
+            "ip_adapter": {"enabled": True},
+            "face_detailer": {"enabled": True},
+            "reference_face_image_url": "https://example.com/ref.png",
+        },
+        "dataset_artifacts": [
+            {
+                "artifact_type": "base_image",
+                "storage_path": "/app/data/artifacts/modal-42/base-image.png",
+                "content_type": "image/png",
+                "metadata_json": {
+                    "identity_id": "modal-42",
+                    "character_id": "modal-42",
+                    "inline_data_base64": base64.b64encode(tiny_png_bytes()).decode("ascii"),
+                },
+            },
+            {
+                "artifact_type": "dataset_manifest",
+                "storage_path": "/app/data/artifacts/modal-42/dataset-manifest.json",
+                "content_type": "application/json",
+                "metadata_json": {"identity_id": "modal-42"},
+            },
+            {
+                "artifact_type": "dataset_package",
+                "storage_path": "/app/data/artifacts/modal-42/dataset-package.zip",
+                "content_type": "application/zip",
+                "metadata_json": {"identity_id": "modal-42"},
+            },
+        ],
+    }
+
+    recorder.record_job(
+        service_name="s1_image",
+        job_id="job-modal-42",
+        status="completed",
+        input_payload={"identity_id": "modal-42", "prompt": "test prompt"},
+        result_payload=result_payload,
+    )
+
+    artifacts = {item["role"]: item for item in fake.store["s1_artifacts"]}
+    assert artifacts["base_image"]["file"].startswith("file-")
+    assert artifacts["dataset_manifest"]["file"].startswith("file-")
+    assert artifacts["dataset_package"]["file"].startswith("file-")
+    assert not any(item["metadata_json"].get("persistence_target") == "directus_row" for item in artifacts.values())
+    assert identity["dataset_storage_path"].startswith("https://directus.example.com/assets/file-")
+    assert identity["base_image_urls"][0].startswith("https://directus.example.com/assets/file-")
+    assert identity["latest_dataset_package_uri"].startswith("https://directus.example.com/assets/file-")
+    assert identity["latest_visual_config_json"]["dataset_storage_mode"] == "directus_files"
+    assert identity["dataset_status"] == "ready"
+    assert identity["pipeline_state"] == "dataset_ready"
 
 
 def test_recorder_reads_identity_id_from_metadata(tmp_path: Path) -> None:

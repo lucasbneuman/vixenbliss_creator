@@ -722,6 +722,7 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
         if artifact_copy["artifact_type"] == "base_image":
             artifact_copy["storage_path"] = base_image_path.as_posix()
             artifact_copy["size_bytes"] = len(base_image_bytes)
+            artifact_copy["metadata_json"]["inline_data_base64"] = base64.b64encode(base_image_bytes).decode("ascii")
         elif artifact_copy["artifact_type"] == "dataset_manifest":
             artifact_copy["storage_path"] = manifest_path.as_posix()
             artifact_copy["size_bytes"] = manifest_path.stat().st_size

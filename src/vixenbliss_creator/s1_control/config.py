@@ -10,7 +10,7 @@ class S1ControlSettings:
     directus_token: str
     directus_timeout_seconds: int = 30
     directus_webhook_secret: str | None = None
-    directus_assets_storage: str = "directus"
+    directus_assets_storage: str = "local"
     s1_control_bind_host: str = "127.0.0.1"
     s1_control_port: int = 8091
     s1_control_public_base_url: str | None = None
@@ -28,7 +28,7 @@ class S1ControlSettings:
             directus_token=directus_token,
             directus_timeout_seconds=int(os.getenv("DIRECTUS_TIMEOUT_SECONDS", "30")),
             directus_webhook_secret=os.getenv("DIRECTUS_WEBHOOK_SECRET"),
-            directus_assets_storage=os.getenv("DIRECTUS_ASSETS_STORAGE", "directus"),
+            directus_assets_storage=os.getenv("DIRECTUS_ASSETS_STORAGE", "local"),
             s1_control_bind_host=os.getenv("S1_CONTROL_BIND_HOST", "127.0.0.1"),
             s1_control_port=int(os.getenv("S1_CONTROL_PORT", "8091")),
             s1_control_public_base_url=os.getenv("S1_CONTROL_PUBLIC_BASE_URL"),
