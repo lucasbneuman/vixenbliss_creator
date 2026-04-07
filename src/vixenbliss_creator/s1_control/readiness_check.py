@@ -213,7 +213,7 @@ def _run_s1_image_job(identity_id: str, prompt_request_id: str, generation_resul
             "character_id": identity_id,
             "prompt_request_id": prompt_request_id,
             "autopromote": False,
-            "samples_target": 8,
+            "samples_target": 24,
             "seed_bundle": seed_bundle,
         },
     }
@@ -264,7 +264,7 @@ def _run_s1_image_job_via_modal(identity_id: str, prompt_request_id: str, genera
             "character_id": identity_id,
             "prompt_request_id": prompt_request_id,
             "autopromote": False,
-            "samples_target": 8,
+            "samples_target": 24,
             "seed_bundle": seed_bundle,
         },
     }
