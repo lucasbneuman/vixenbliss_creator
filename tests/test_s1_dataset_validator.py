@@ -154,3 +154,30 @@ def test_validator_accepts_remote_dataset_package_locator(tmp_path: Path, monkey
     )
 
     assert result.validation_status == "apto"
+
+
+def test_validator_accepts_structural_dataset_when_package_locator_is_not_publicly_resolvable(tmp_path: Path) -> None:
+    manifest = _build_manifest("42", Path("/app/data/artifacts/42/dataset-package.zip"), sample_count=24)
+
+    result = validate_s1_dataset(
+        identity_id="42",
+        run_id="run-unreachable",
+        result_payload={
+            "dataset_manifest": manifest,
+            "dataset_package_path": "/app/data/artifacts/42/dataset-package.zip",
+            "base_model_id": "flux-schnell-v1",
+            "workflow_id": "base-image-ipadapter-impact",
+            "workflow_version": "2026-04-02",
+        },
+        runtime_metadata={"seed_bundle": manifest["seed_bundle"]},
+        uploaded_artifacts=[
+            {"artifact_type": "base_image", "directus_asset_url": "https://directus.example.com/assets/file-1"},
+            {"artifact_type": "dataset_package", "storage_path": "/app/data/artifacts/42/dataset-package.zip"},
+        ],
+        identity_snapshot={"latest_base_model_id": "flux-schnell-v1"},
+        current_pipeline_state="base_images_registered",
+    )
+
+    assert result.validation_status == "apto"
+    assert result.dataset_status == "ready"
+    assert result.metrics["dataset_package_verifiable"] is False

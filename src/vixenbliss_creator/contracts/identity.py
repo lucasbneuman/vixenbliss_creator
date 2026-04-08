@@ -290,6 +290,11 @@ class System5Slots(TechnicalSheetBaseModel):
     memory_tags: list[str] = Field(min_length=2, max_length=10)
     prohibited_topics: list[str] = Field(default_factory=list, max_length=12)
     upsell_style: str = Field(min_length=8, max_length=120)
+    conversation_openers: list[str] = Field(default_factory=list, max_length=6)
+    emotional_triggers: list[str] = Field(default_factory=list, max_length=8)
+    fantasy_pillars: list[str] = Field(default_factory=list, max_length=8)
+    relationship_progression: str | None = Field(default=None, min_length=8, max_length=200)
+    tone_guardrails: list[str] = Field(default_factory=list, max_length=8)
 
 
 class FieldTrace(TechnicalSheetBaseModel):

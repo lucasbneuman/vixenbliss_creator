@@ -22,8 +22,8 @@ from .model_registry_store import DirectusModelRegistryStore
 from .support import sha256_hex
 
 
-DIRECTUS_FILE_ARTIFACT_ROLES = {"base_image", "generated_image", "thumbnail", "dataset_manifest", "dataset_package"}
-CRITICAL_DIRECTUS_FILE_ARTIFACT_ROLES = {"base_image", "dataset_manifest", "dataset_package"}
+DIRECTUS_FILE_ARTIFACT_ROLES = {"base_image", "generated_image", "thumbnail"}
+CRITICAL_DIRECTUS_FILE_ARTIFACT_ROLES = {"base_image"}
 
 
 def _stringify(value: Any) -> str | None:

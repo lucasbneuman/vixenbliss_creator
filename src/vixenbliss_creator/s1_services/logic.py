@@ -26,6 +26,79 @@ def _dataset_sample_seed(dataset_seed: int, *, index: int) -> int:
     return (dataset_seed + (index * 104_729)) % (2**31 - 1)
 
 
+def _stringify_context_value(value: object) -> str | None:
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    return None
+
+
+def _english_identity_summary(identity_context: dict[str, object]) -> str:
+    fallback_name = (
+        _stringify_context_value(identity_context.get("identity_summary"))
+        or _stringify_context_value(identity_context.get("summary"))
+    )
+    display_name = _stringify_context_value(identity_context.get("display_name")) or fallback_name or "This identity"
+    archetype = _stringify_context_value(identity_context.get("archetype")) or "editorial persona"
+    vertical = _stringify_context_value(identity_context.get("vertical")) or "premium"
+    style = _stringify_context_value(identity_context.get("style")) or "editorial"
+    return (
+        f"{display_name}, a {style} synthetic identity designed for the {vertical} vertical "
+        f"with a {archetype} archetype"
+    )
+
+
+def _english_persona_summary(identity_context: dict[str, object]) -> str:
+    fallback_name = (
+        _stringify_context_value(identity_context.get("identity_summary"))
+        or _stringify_context_value(identity_context.get("summary"))
+    )
+    display_name = _stringify_context_value(identity_context.get("display_name")) or fallback_name or "This identity"
+    archetype = _stringify_context_value(identity_context.get("archetype")) or "editorial persona"
+    voice_tone = _stringify_context_value(identity_context.get("voice_tone")) or "controlled"
+    return (
+        f"{display_name} maintains a {voice_tone} delivery with a {archetype} persona "
+        "optimized for consistent content generation."
+    )
+
+
+def _english_tagline(identity_context: dict[str, object]) -> str:
+    style = _stringify_context_value(identity_context.get("style")) or "premium"
+    vertical = _stringify_context_value(identity_context.get("vertical")) or "content"
+    return f"Synthetic {style} identity prepared for repeatable {vertical} content production."
+
+
+def _build_prompt_details(identity_context: dict[str, object]) -> str:
+    details: list[str] = []
+    display_name = _stringify_context_value(identity_context.get("display_name"))
+    if display_name:
+        details.append(f"Character: {display_name}.")
+
+    archetype = _stringify_context_value(identity_context.get("archetype"))
+    if archetype:
+        details.append(f"Archetype: {archetype}.")
+
+    vertical = _stringify_context_value(identity_context.get("vertical"))
+    style = _stringify_context_value(identity_context.get("style"))
+    if vertical or style:
+        profile_bits = [part for part in (vertical, style) if part]
+        details.append(f"Commercial profile: {' / '.join(profile_bits)}.")
+
+    voice_tone = _stringify_context_value(identity_context.get("voice_tone"))
+    if voice_tone:
+        details.append(f"Voice tone: {voice_tone}.")
+
+    details.append(f"Persona summary: {_english_persona_summary(identity_context)}.")
+    details.append(f"Identity summary: {_english_tagline(identity_context)}.")
+
+    personality_axes = identity_context.get("personality_axes")
+    if isinstance(personality_axes, dict) and personality_axes:
+        axis_summary = ", ".join(f"{axis}={value}" for axis, value in sorted(personality_axes.items()))
+        details.append(f"Personality axes: {axis_summary}.")
+
+    return " ".join(details)
+
+
 def _build_dataset_files(
     *,
     identity_id: str,
@@ -81,14 +154,18 @@ def build_generation_manifest(payload: GenerationServiceInput) -> GenerationMani
             "seed_basis": payload.seed_basis or str(payload.identity_id),
         }
     )
-    identity_summary = payload.identity_context.get("identity_summary") or payload.identity_context.get("summary") or "synthetic premium identity"
+    identity_summary = _english_identity_summary(payload.identity_context)
     tone = payload.identity_context.get("voice_tone") or payload.identity_context.get("style") or "editorial"
+    prompt_details = _build_prompt_details(payload.identity_context)
     prompt = (
         f"Create a consistent identity dataset portrait for {identity_summary}. "
         f"Preserve premium visual coherence, natural anatomy, face consistency and reusable training coverage. "
-        f"Tone: {tone}."
+        f"Tone: {tone}. "
+        f"{prompt_details}"
     )
-    negative_prompt = "low quality, anatomy drift, extra limbs, minors, watermark, text, body horror"
+    negative_prompt = (
+        "low quality, anatomy drift, identity drift, extra limbs, minors, watermark, text, body horror"
+    )
     artifact_path = str(PurePosixPath("artifacts") / "s1-llm" / str(payload.identity_id) / f"generation-manifest-{digest[:12]}.json")
     return GenerationManifest(
         identity_id=payload.identity_id,

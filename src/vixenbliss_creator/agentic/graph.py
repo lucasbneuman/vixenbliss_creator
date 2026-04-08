@@ -30,6 +30,10 @@ from vixenbliss_creator.contracts.identity import (
 )
 
 
+def _capped_field_list(values: list[str], *, limit: int = 24) -> list[str]:
+    return list(dict.fromkeys(values))[:limit]
+
+
 def _trim_error_message(prefix: str, exc: Exception, limit: int = 280) -> str:
     message = f"{prefix}: {exc}"
     return message if len(message) <= limit else message[: limit - 3] + "..."
@@ -309,16 +313,16 @@ class AgenticBrain:
 
         completion = expanded.completion_report
         trace_map = expanded.identity_draft.trace_map()
-        merged_manual_fields = [
+        merged_manual_fields = _capped_field_list([
             field_path
             for field_path in list(dict.fromkeys([*state.manually_defined_fields, *completion.manually_defined_fields]))
             if field_path != "field.path"
-        ]
-        merged_inferred_fields = [
+        ])
+        merged_inferred_fields = _capped_field_list([
             field_path
             for field_path in list(dict.fromkeys([*state.inferred_fields, *completion.inferred_fields]))
             if field_path not in merged_manual_fields and field_path != "field.path"
-        ]
+        ])
         merged_traces = list(expanded.identity_draft.field_traces)
         for field_path in merged_manual_fields:
             if field_path not in trace_map:
@@ -363,7 +367,7 @@ class AgenticBrain:
                 "identity_draft": patched_identity_draft,
                 "manually_defined_fields": merged_manual_fields,
                 "inferred_fields": merged_inferred_fields,
-                "missing_fields": completion.missing_fields,
+                "missing_fields": _capped_field_list(completion.missing_fields),
                 "coherence_report": None,
                 "copilot_recommendation": None,
                 "validation_result": None,

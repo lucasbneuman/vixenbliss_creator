@@ -86,6 +86,115 @@ def _build_field_traces(payload: dict, idea: str) -> list[dict]:
     return traces
 
 
+def _capped_field_list(values: list[str], *, limit: int = 24) -> list[str]:
+    return list(dict.fromkeys(values))[:limit]
+
+
+def _english_persona_summary(*, display_name: str, style: str, vertical: str, archetype: str) -> str:
+    return (
+        f"{display_name} is a synthetic identity built for System 1 with a {style} tone, "
+        f"{vertical} positioning, and a {archetype} conversational archetype."
+    )
+
+
+def _english_tagline(*, style: str) -> str:
+    return f"Synthetic {style} identity prepared for System 1 handoff and downstream content systems."
+
+
+def _english_interaction_style(vertical: str) -> str:
+    return (
+        f"Maintains a clear, emotionally controlled, and commercially coherent presence for the {vertical} vertical."
+    )
+
+
+def _english_archetype_summary(*, archetype: str, vertical: str) -> str:
+    return f"Avatar built around a {archetype} persona with behavior calibrated for the {vertical} vertical."
+
+
+def _english_origin_story(*, display_name: str, style: str, vertical: str) -> str:
+    return (
+        f"{display_name} was designed as a synthetic {style} identity with repeatable visual and conversational "
+        f"consistency for the {vertical} vertical."
+    )
+
+
+def _english_daily_life(*, style: str) -> str:
+    return (
+        f"Balances curated content production, aesthetic routines, and audience-facing moments with a {style} cadence."
+    )
+
+
+def _english_motivation(*, vertical: str) -> str:
+    return f"Grow a durable audience presence while protecting brand consistency across {vertical} interactions."
+
+
+def _english_relationship_with_fans() -> str:
+    return "Builds closeness with measured intimacy, emotional control, and a steady sense of exclusivity."
+
+
+def _default_system5_slots(*, display_name: str, style: str, vertical: str, archetype: str) -> dict:
+    return {
+        "persona_summary": _english_persona_summary(
+            display_name=display_name,
+            style=style,
+            vertical=vertical,
+            archetype=archetype,
+        ),
+        "greeting_style": "Opens with confident curiosity, light invitation, and immediate emotional presence.",
+        "reply_style_keywords": ["flirty", "direct", style],
+        "memory_tags": ["style_preferences", "favorite_scenarios", "boundaries", "upsell_readiness"],
+        "prohibited_topics": ["illegal_content", "real_world_personal_data"],
+        "upsell_style": "Escalates from playful intimacy into premium offers without breaking character consistency.",
+        "conversation_openers": [
+            "What kind of mood are you in tonight?",
+            "Do you want something playful, soft, or more intense?",
+            "Tell me what kind of attention you are craving right now.",
+        ],
+        "emotional_triggers": ["feeling desired", "exclusive attention", "playful validation", "confident reassurance"],
+        "fantasy_pillars": ["seductive teasing", "exclusive closeness", "glamour", "guided escalation"],
+        "relationship_progression": "Moves from warm curiosity to trusted intimacy, then into premium exclusivity.",
+        "tone_guardrails": ["never sounds generic", "never breaks confidence", "never loses flirt tension"],
+    }
+
+
+def _normalize_technical_sheet_payload(technical_sheet: dict, *, display_name: str, style: str, vertical: str, archetype: str) -> dict:
+    payload = dict(technical_sheet)
+    identity_core = dict(payload.get("identity_core", {}) or {})
+    personality_profile = dict(payload.get("personality_profile", {}) or {})
+    narrative_profile = dict(payload.get("narrative_profile", {}) or {})
+    minimal_profile = dict(narrative_profile.get("minimal_viable_profile", {}) or {})
+    system5_slots = dict(payload.get("system5_slots", {}) or {})
+
+    identity_core["tagline"] = _english_tagline(style=style)
+    personality_profile["interaction_style"] = _english_interaction_style(vertical)
+    narrative_profile["archetype_summary"] = _english_archetype_summary(archetype=archetype, vertical=vertical)
+    narrative_profile["origin_story"] = _english_origin_story(display_name=display_name, style=style, vertical=vertical)
+    minimal_profile["origin"] = _english_origin_story(display_name=display_name, style=style, vertical=vertical)
+    minimal_profile["daily_life"] = _english_daily_life(style=style)
+    minimal_profile["motivation"] = _english_motivation(vertical=vertical)
+    minimal_profile["relationship_with_fans"] = _english_relationship_with_fans()
+    narrative_profile["minimal_viable_profile"] = minimal_profile
+
+    system5_defaults = _default_system5_slots(
+        display_name=display_name,
+        style=style,
+        vertical=vertical,
+        archetype=archetype,
+    )
+    for key, value in system5_defaults.items():
+        if key not in system5_slots or not system5_slots.get(key):
+            system5_slots[key] = value
+    system5_slots["persona_summary"] = system5_defaults["persona_summary"]
+    system5_slots["greeting_style"] = system5_defaults["greeting_style"]
+    system5_slots["upsell_style"] = system5_defaults["upsell_style"]
+
+    payload["identity_core"] = identity_core
+    payload["personality_profile"] = personality_profile
+    payload["narrative_profile"] = narrative_profile
+    payload["system5_slots"] = system5_slots
+    return payload
+
+
 def _build_technical_sheet_from_identity(payload: dict, settings: AgenticSettings, idea: str) -> dict:
     normalized_constraints = payload.get("normalized_constraints", {}) or {}
     identity_draft = payload.get("identity_draft", {}) or {}
@@ -123,7 +232,7 @@ def _build_technical_sheet_from_identity(payload: dict, settings: AgenticSetting
             "locale": "es-AR",
             "primary_language": "spanish",
             "secondary_languages": ["english"],
-            "tagline": f"Identidad sintetica de estilo {style} preparada para Sistema 1 y consumo posterior.",
+            "tagline": _english_tagline(style=style),
         },
         "visual_profile": {
             "archetype": "editorial nocturna" if vertical != Vertical.LIFESTYLE.value else "luxury lifestyle portrait",
@@ -142,7 +251,7 @@ def _build_technical_sheet_from_identity(payload: dict, settings: AgenticSetting
             "voice_tone": voice_tone,
             "primary_traits": ["confident", "observant"],
             "secondary_traits": ["warm", "strategic"],
-            "interaction_style": "Mantiene una presencia clara, consistente y alineada con la vertical comercial elegida.",
+            "interaction_style": _english_interaction_style(vertical),
             "axes": {
                 "dominance": personality_axes.get("dominance", TraitScale.MEDIUM.value),
                 "warmth": personality_axes.get("warmth", TraitScale.HIGH.value),
@@ -205,12 +314,12 @@ def _build_technical_sheet_from_identity(payload: dict, settings: AgenticSetting
             "escalation_triggers": ["unsafe_request", "identity_drift"],
         },
         "system5_slots": {
-            "persona_summary": f"{display_name} es una identidad sintetica lista para Sistema 1 con sesgo {style} y vertical {vertical}.",
-            "greeting_style": "Abre con curiosidad segura y una invitacion breve.",
-            "reply_style_keywords": ["flirty", "direct", style],
-            "memory_tags": ["style_preferences", "favorite_scenarios"],
-            "prohibited_topics": ["illegal_content", "real_world_personal_data"],
-            "upsell_style": "Escala desde complicidad ligera hacia premium sin romper personaje.",
+            **_default_system5_slots(
+                display_name=display_name,
+                style=style,
+                vertical=vertical,
+                archetype=archetype,
+            ),
         },
         "traceability": {
             "source_issue_id": settings.source_issue_id,
@@ -240,11 +349,24 @@ def _coerce_expansion_payload(raw_payload: dict, settings: AgenticSettings, idea
             for trace in identity_draft["field_traces"]
             if trace.get("origin") in {"inferred", "defaulted", "derived"}
         ]
+    completion_report["manually_defined_fields"] = _capped_field_list(completion_report.get("manually_defined_fields", []))
+    completion_report["inferred_fields"] = _capped_field_list(completion_report.get("inferred_fields", []))
+    completion_report["missing_fields"] = _capped_field_list(completion_report.get("missing_fields", []))
     if "missing_fields" not in completion_report:
         completion_report["missing_fields"] = []
     technical_sheet_payload = payload.get("technical_sheet_payload")
     if not isinstance(technical_sheet_payload, dict) or "identity_core" not in technical_sheet_payload:
-        payload["technical_sheet_payload"] = _build_technical_sheet_from_identity(payload, settings, idea)
+        technical_sheet_payload = _build_technical_sheet_from_identity(payload, settings, idea)
+    metadata = technical_sheet_payload.get("identity_metadata", {}) or {}
+    personality_profile = technical_sheet_payload.get("personality_profile", {}) or {}
+    identity_core = technical_sheet_payload.get("identity_core", {}) or {}
+    payload["technical_sheet_payload"] = _normalize_technical_sheet_payload(
+        technical_sheet_payload,
+        display_name=str(identity_core.get("display_name") or "Velvet Ember"),
+        style=str(metadata.get("style") or "editorial"),
+        vertical=str(metadata.get("vertical") or Vertical.ADULT_ENTERTAINMENT.value),
+        archetype=str(personality_profile.get("archetype") or ArchetypeCode.PLAYFUL_TEASE.value),
+    )
     payload["identity_draft"] = identity_draft
     payload["completion_report"] = completion_report
     return payload

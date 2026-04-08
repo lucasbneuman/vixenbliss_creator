@@ -31,8 +31,72 @@ def test_generation_manifest_contains_prompt_and_stable_seed_bundle() -> None:
 
     assert manifest.identity_id == identity_id
     assert "Velvet Ember" in manifest.prompt
+    assert "Tone: seductive." in manifest.prompt
     assert manifest.seed_bundle.portrait_seed >= 0
     assert manifest.comfy_parameters["ip_adapter"]["enabled"] is True
+    assert "identity drift" in manifest.negative_prompt
+
+
+def test_generation_manifest_preserves_personality_context_before_training() -> None:
+    identity_id = uuid4()
+    identity_context = {
+        "identity_summary": "Secure, elegant, and provocative persona with memory for preferences.",
+        "summary": "Premium performer with strong visual consistency and safe tone control.",
+        "voice_tone": "authoritative",
+        "style": "premium",
+        "vertical": "lifestyle",
+        "display_name": "Velvet Ember",
+        "archetype": "luxury_muse",
+        "personality_axes": {
+            "dominance": "medium",
+            "warmth": "high",
+            "playfulness": "medium",
+            "mystery": "high",
+            "flirtiness": "high",
+            "intelligence": "high",
+            "sarcasm": "medium",
+        },
+    }
+
+    first_manifest = build_generation_manifest(
+        GenerationServiceInput(
+            identity_id=identity_id,
+            identity_context=identity_context,
+            workflow_id="s1-identity-v1",
+            workflow_version="2026-04-02",
+            base_model_id="flux-schnell-v1",
+        )
+    )
+    second_manifest = build_generation_manifest(
+        GenerationServiceInput(
+            identity_id=identity_id,
+            identity_context=identity_context,
+            workflow_id="s1-identity-v1",
+            workflow_version="2026-04-02",
+            base_model_id="flux-schnell-v1",
+        )
+    )
+
+    assert "Character: Velvet Ember." in first_manifest.prompt
+    assert "Archetype: luxury_muse." in first_manifest.prompt
+    assert "Commercial profile: lifestyle / premium." in first_manifest.prompt
+    assert "Voice tone: authoritative." in first_manifest.prompt
+    assert (
+        "Create a consistent identity dataset portrait for Velvet Ember, a premium synthetic identity designed for the lifestyle vertical with a luxury_muse archetype."
+        in first_manifest.prompt
+    )
+    assert (
+        "Persona summary: Velvet Ember maintains a authoritative delivery with a luxury_muse persona optimized for consistent content generation."
+        in first_manifest.prompt
+    )
+    assert "Identity summary: Synthetic premium identity prepared for repeatable lifestyle content production." in first_manifest.prompt
+    assert "Personality axes:" in first_manifest.prompt
+    assert "dominance=medium" in first_manifest.prompt
+    assert "warmth=high" in first_manifest.prompt
+    assert "sarcasm=medium" in first_manifest.prompt
+    assert "Figura segura" not in first_manifest.prompt
+    assert "consistencia visual" not in first_manifest.prompt
+    assert first_manifest.seed_bundle == second_manifest.seed_bundle
 
 
 def test_dataset_generation_requires_reference_face_when_ip_adapter_enabled() -> None:

@@ -19,7 +19,11 @@ from fastapi.testclient import TestClient
 from vixenbliss_creator.agentic.runner import run_agentic_brain, run_agentic_brain_with_real_llm
 from vixenbliss_creator.contracts.identity import TechnicalSheet
 from vixenbliss_creator.runtime_providers import ModalRuntimeProviderClient, RuntimeProviderSettings, ServiceRuntime
-from vixenbliss_creator.s1_control import S1RuntimeDirectusRecorder
+from vixenbliss_creator.s1_control import (
+    DirectusIdentityStore,
+    S1RuntimeDirectusRecorder,
+    build_identity_from_technical_sheet,
+)
 
 from .bootstrap import bootstrap_directus_schema
 from .config import S1ControlSettings
@@ -311,6 +315,25 @@ def _run_agentic_flow(idea: str) -> tuple[TechnicalSheet, dict[str, Any]]:
     }
 
 
+def _persist_identity_snapshot(
+    *,
+    client: DirectusControlPlaneClient,
+    technical_sheet: TechnicalSheet,
+    prompt_request_id: str,
+    base_model_id: str,
+) -> tuple[TechnicalSheet, str]:
+    identity = build_identity_from_technical_sheet(
+        technical_sheet,
+        base_model_id=base_model_id,
+    )
+    DirectusIdentityStore(client=client).upsert_identity(
+        identity,
+        created_by="codex",
+        source_prompt_request_id=prompt_request_id,
+    )
+    return identity.technical_sheet_json, str(identity.id)
+
+
 def _inspect_directus_artifact(settings: S1ControlSettings, artifact_row: dict[str, Any]) -> dict[str, Any]:
     file_id = artifact_row.get("file")
     asset_bytes = b""
@@ -396,11 +419,13 @@ def run_readiness_check(idea: str = DEFAULT_IDEA) -> dict[str, Any]:
     )
 
     technical_sheet, agentic_execution = _run_agentic_flow(idea)
+    technical_sheet, identity_id = _persist_identity_snapshot(
+        client=client,
+        technical_sheet=technical_sheet,
+        prompt_request_id=str(prompt_request["id"]),
+        base_model_id="flux-schnell-v1",
+    )
     avatar_id_hint = technical_sheet.identity_metadata.avatar_id
-    try:
-        identity_id = str(UUID(str(avatar_id_hint)))
-    except (TypeError, ValueError):
-        identity_id = str(uuid4())
 
     generation_result = _run_s1_llm_job(identity_id, technical_sheet)
     image_result = _run_s1_image_job(str(identity_id), str(prompt_request["id"]), generation_result)

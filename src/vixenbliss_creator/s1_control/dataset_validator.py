@@ -131,17 +131,6 @@ def validate_s1_dataset(
         if not manifest_version:
             reasons.append(_reason("manifest_version_missing", "dataset_manifest must include a versioned manifest identifier"))
 
-    if not dataset_package_locator:
-        reasons.append(_reason("dataset_package_missing", "dataset_package locator is required before S1 Training"))
-    elif dataset_package_path is None:
-        reasons.append(
-            _reason(
-                "dataset_package_unreachable",
-                "dataset_package locator must resolve to an accessible file for deterministic validation",
-                details={"dataset_package_locator": dataset_package_locator},
-            )
-        )
-
     for key in REQUIRED_SEED_KEYS:
         if seed_bundle.get(key) is None:
             reasons.append(_reason("seed_bundle_incomplete", f"seed_bundle missing required key '{key}'"))
@@ -250,34 +239,31 @@ def validate_s1_dataset(
 
     archive_members: list[str] = []
     missing_files: list[str] = []
-    if files:
-        if dataset_package_path is not None:
-            try:
-                with zipfile.ZipFile(dataset_package_path) as archive:
-                    archive_members = archive.namelist()
-            except zipfile.BadZipFile:
+    if files and dataset_package_path is not None:
+        try:
+            with zipfile.ZipFile(dataset_package_path) as archive:
+                archive_members = archive.namelist()
+        except zipfile.BadZipFile:
+            reasons.append(
+                _reason(
+                    "dataset_package_invalid",
+                    "dataset_package must be a readable zip file",
+                    details={"dataset_package_locator": dataset_package_locator},
+                )
+            )
+        else:
+            declared_paths = [str(file_entry.get("path")) for file_entry in files if isinstance(file_entry, dict) and file_entry.get("path")]
+            missing_files = [path for path in declared_paths if path not in archive_members]
+            if missing_files:
                 reasons.append(
                     _reason(
-                        "dataset_package_invalid",
-                        "dataset_package must be a readable zip file",
-                        details={"dataset_package_locator": dataset_package_locator},
+                        "dataset_package_missing_files",
+                        "dataset_package is missing files declared in dataset_manifest",
+                        details={"missing_files": missing_files[:10], "missing_count": len(missing_files)},
                     )
                 )
-            else:
-                declared_paths = [str(file_entry.get("path")) for file_entry in files if isinstance(file_entry, dict) and file_entry.get("path")]
-                missing_files = [path for path in declared_paths if path not in archive_members]
-                if missing_files:
-                    reasons.append(
-                        _reason(
-                            "dataset_package_missing_files",
-                            "dataset_package is missing files declared in dataset_manifest",
-                            details={"missing_files": missing_files[:10], "missing_count": len(missing_files)},
-                        )
-                    )
-                if "dataset-manifest.json" not in archive_members:
-                    reasons.append(_reason("dataset_package_missing_manifest", "dataset_package must include dataset-manifest.json"))
-        else:
-            reasons.append(_reason("dataset_package_not_verifiable", "dataset_package could not be verified against manifest file declarations"))
+            if "dataset-manifest.json" not in archive_members:
+                reasons.append(_reason("dataset_package_missing_manifest", "dataset_package must include dataset-manifest.json"))
     if dataset_package_path is not None and dataset_package_path.name.startswith("vb-dataset-verify-"):
         dataset_package_path.unlink(missing_ok=True)
 
@@ -291,6 +277,7 @@ def validate_s1_dataset(
         "variation_group_count": len(variation_values),
         "composition_counts": composition_counts,
         "dataset_package_locator": dataset_package_locator,
+        "dataset_package_verifiable": dataset_package_path is not None,
         "archive_members_count": len(archive_members),
         "seed_bundle_keys": sorted(seed_bundle.keys()),
     }

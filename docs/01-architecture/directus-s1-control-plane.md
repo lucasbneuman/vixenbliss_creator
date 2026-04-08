@@ -89,6 +89,27 @@ Uso recomendado:
 - persistirla con `src/vixenbliss_creator/s1_control/identity_store.py`
 - consultar por `avatar_id = Identity.id` para rehidratar la entidad completa sin reconstrucciones manuales
 
+Chequeo operativo recomendado en DB:
+
+- `s1_identities.technical_sheet_json` es la ficha completa del avatar
+- `s1_identities.display_name`, `category`, `vertical`, `style` y `occupation_or_content_basis` exponen el resumen navegable
+- `s1_identities.latest_generation_manifest_json` conserva el prompt tecnico final que consumio `S1 image`
+- `s1_identities.latest_visual_config_json` resume config visual, artifacts persistidos y estado de validacion
+
+CLI de consulta rapida:
+
+- `python -m vixenbliss_creator.s1_control.avatar_report --latest`
+- `python -m vixenbliss_creator.s1_control.avatar_report --identity-id <avatar_id>`
+
+Ese comando devuelve una vista resumida y legible con:
+
+- identidad y perfil comercial
+- visual profile
+- personality profile
+- narrativa minima
+- `system5_slots`
+- prompt tecnico, seeds y snapshot de revision
+
 Estado inicial esperado:
 
 - `pipeline_state = identity_created`

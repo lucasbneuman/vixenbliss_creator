@@ -182,30 +182,30 @@ def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:
     assert fake.store["s1_generation_runs"][0]["external_job_id"] == "job-123"
     assert any(event["event_type"] == "runtime_job_recorded" for event in fake.store["s1_events"])
     manifest_artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "dataset_manifest")
-    assert manifest_artifact["file"].startswith("file-")
+    assert manifest_artifact["file"] is None
     assert manifest_artifact["metadata_json"]["original_storage_path"] == str(manifest_path)
-    assert manifest_artifact["metadata_json"]["persistence_target"] == "directus_file"
+    assert manifest_artifact["metadata_json"]["persistence_target"] == "directus_row"
     package_artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "dataset_package")
     assert package_artifact["metadata_json"]["checksum_sha256"] == "abc123"
-    assert package_artifact["file"].startswith("file-")
+    assert package_artifact["file"] is None
     validation_artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "dataset_validation_report")
     assert validation_artifact["metadata_json"]["validation_status"] == "apto"
-    assert len(fake.files) == 3
+    assert len(fake.files) == 1
     assert identity["pipeline_state"] == "dataset_ready"
     assert identity["dataset_status"] == "ready"
-    assert identity["dataset_storage_path"].startswith("https://directus.example.com/assets/file-")
+    assert identity["dataset_storage_path"] == str(package_path)
     assert identity["base_image_urls"][0].startswith("https://directus.example.com/assets/file-")
     assert identity["reference_face_image_url"].startswith("https://directus.example.com/assets/file-")
     assert identity["reference_face_image_id"].startswith("file-")
     assert identity["base_model_id"] == "flux-schnell-v1"
     assert identity["latest_seed_bundle_json"]["portrait_seed"] == 11
-    assert identity["latest_visual_config_json"]["dataset_storage_mode"] == "directus_files"
+    assert identity["latest_visual_config_json"]["dataset_storage_mode"] == "directus_images_and_rows"
     assert len(identity["latest_visual_config_json"]["persisted_artifacts"]) == 3
     assert identity["latest_base_image_file_id"].startswith("file-")
     assert identity["latest_dataset_manifest_json"]["identity_id"] == "42"
-    assert identity["latest_dataset_manifest_file_id"].startswith("file-")
-    assert identity["latest_dataset_package_file_id"].startswith("file-")
-    assert identity["latest_dataset_package_uri"].startswith("https://directus.example.com/assets/file-")
+    assert identity["latest_dataset_manifest_file_id"] is None
+    assert identity["latest_dataset_package_file_id"] is None
+    assert identity["latest_dataset_package_uri"] == str(package_path)
     assert identity["latest_visual_config_json"]["reference_face_image_url"] == "https://example.com/ref.png"
     assert identity["latest_visual_config_json"]["dataset_validation_status"] == "apto"
     base_artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "base_image")
@@ -267,7 +267,7 @@ def test_recorder_updates_existing_run_when_directus_run_id_is_present() -> None
     assert fake.store["s1_generation_runs"][0]["prompt_request_id"] == "101"
 
 
-def test_recorder_falls_back_when_upload_fails(tmp_path: Path) -> None:
+def test_recorder_keeps_dataset_metadata_in_rows_when_only_non_visual_artifacts_exist(tmp_path: Path) -> None:
     class FailingControlPlane(FakeControlPlane):
         def upload_file(self, *args, **kwargs) -> dict[str, Any]:
             raise RuntimeError("storage unavailable")
@@ -298,9 +298,10 @@ def test_recorder_falls_back_when_upload_fails(tmp_path: Path) -> None:
         },
     )
 
-    artifact_roles = [item["role"] for item in fake.store["s1_artifacts"]]
-    assert "dataset_manifest" not in artifact_roles
-    assert any(event["event_type"] == "runtime_artifact_upload_failed" for event in fake.store["s1_events"])
+    artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "dataset_manifest")
+    assert artifact["file"] is None
+    assert artifact["metadata_json"]["persistence_target"] == "directus_row"
+    assert not any(event["event_type"] == "runtime_artifact_upload_failed" for event in fake.store["s1_events"])
     assert any(event["event_type"] == "dataset_validation_failed" for event in fake.store["s1_events"])
 
 
@@ -332,9 +333,9 @@ def test_recorder_publishes_persisted_artifacts_metadata(tmp_path: Path) -> None
         result_payload=result_payload,
     )
 
-    assert result_payload["metadata"]["dataset_storage_mode"] == "directus_files"
+    assert result_payload["metadata"]["dataset_storage_mode"] == "directus_rows"
     assert result_payload["metadata"]["persisted_artifacts"][0]["role"] == "dataset_manifest"
-    assert result_payload["metadata"]["persisted_artifacts"][0]["file_id"].startswith("file-")
+    assert result_payload["metadata"]["persisted_artifacts"][0]["file_id"] is None
 
 
 def test_recorder_materializes_base_image_from_runtime_artifact_inline_payload(tmp_path: Path) -> None:
@@ -491,13 +492,14 @@ def test_recorder_uploads_critical_dataset_artifacts_from_modal_like_handoff(tmp
 
     artifacts = {item["role"]: item for item in fake.store["s1_artifacts"]}
     assert artifacts["base_image"]["file"].startswith("file-")
-    assert artifacts["dataset_manifest"]["file"].startswith("file-")
-    assert artifacts["dataset_package"]["file"].startswith("file-")
-    assert not any(item["metadata_json"].get("persistence_target") == "directus_row" for item in artifacts.values())
-    assert identity["dataset_storage_path"].startswith("https://directus.example.com/assets/file-")
+    assert artifacts["dataset_manifest"]["file"] is None
+    assert artifacts["dataset_package"]["file"] is None
+    assert artifacts["dataset_manifest"]["metadata_json"]["persistence_target"] == "directus_row"
+    assert artifacts["dataset_package"]["metadata_json"]["persistence_target"] == "directus_row"
+    assert identity["dataset_storage_path"] == "/app/data/artifacts/modal-42/dataset-package.zip"
     assert identity["base_image_urls"][0].startswith("https://directus.example.com/assets/file-")
-    assert identity["latest_dataset_package_uri"].startswith("https://directus.example.com/assets/file-")
-    assert identity["latest_visual_config_json"]["dataset_storage_mode"] == "directus_files"
+    assert identity["latest_dataset_package_uri"] == "/app/data/artifacts/modal-42/dataset-package.zip"
+    assert identity["latest_visual_config_json"]["dataset_storage_mode"] == "directus_images_and_rows"
     assert identity["dataset_status"] == "ready"
     assert identity["pipeline_state"] == "dataset_ready"
 

@@ -500,6 +500,20 @@ def test_category_and_style_can_be_manual_while_narrative_is_generated() -> None
     assert result.identity_draft.narrative_minimal.relationship_with_fans
 
 
+def test_system5_slots_are_enriched_for_chatbot_and_prompt_handoff() -> None:
+    result = run_agentic_brain("Modelo rubia ojos claros para contenidos NSFW, el resto automatico")
+
+    slots = result.final_technical_sheet_payload.system5_slots
+
+    assert "System 1" in slots.persona_summary
+    assert slots.greeting_style.startswith("Opens with confident curiosity")
+    assert slots.conversation_openers
+    assert slots.emotional_triggers
+    assert slots.fantasy_pillars
+    assert slots.relationship_progression
+    assert slots.tone_guardrails
+
+
 def test_validator_blocks_incoherent_vertical_personality_combination() -> None:
     state = GraphState.model_validate(
         {
