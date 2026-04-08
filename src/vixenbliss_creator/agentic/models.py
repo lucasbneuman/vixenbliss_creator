@@ -46,6 +46,12 @@ class CritiqueDomain(str, Enum):
     OPERATIONAL_LIMITS = "operational_limits"
 
 
+class CopilotStage(str, Enum):
+    S1_IDENTITY_IMAGE = "s1_identity_image"
+    S2_CONTENT_IMAGE = "s2_content_image"
+    S2_VIDEO = "s2_video"
+
+
 class OperatorIntent(ContractBaseModel):
     action: str = Field(min_length=3, max_length=80)
     wants_new_avatar: bool = True
@@ -121,13 +127,21 @@ class ExpansionResult(ContractBaseModel):
 
 
 class CopilotRecommendation(ContractBaseModel):
+    stage: CopilotStage
     workflow_id: str = Field(min_length=3, max_length=120)
+    workflow_version: str = Field(min_length=2, max_length=40)
+    recommended_workflow_family: str = Field(min_length=3, max_length=80)
     base_model_id: str = Field(min_length=3, max_length=120)
-    node_ids: list[str] = Field(min_length=1, max_length=24)
+    required_nodes: list[str] = Field(min_length=1, max_length=24)
+    optional_nodes: list[str] = Field(default_factory=list, max_length=24)
+    model_hints: list[str] = Field(default_factory=list, max_length=12)
     prompt_template: str = Field(min_length=12, max_length=600)
     negative_prompt: str = Field(min_length=12, max_length=400)
-    rationale: str = Field(min_length=12, max_length=320)
+    reasoning_summary: str = Field(min_length=12, max_length=320)
+    risk_flags: list[str] = Field(default_factory=list, max_length=12)
+    compatibility_notes: list[str] = Field(default_factory=list, max_length=12)
     content_modes_supported: list[str] = Field(min_length=1, max_length=3)
+    registry_source: str = Field(default="approved_internal", min_length=3, max_length=80)
 
 
 class ValidationOutcome(ContractBaseModel):
@@ -161,6 +175,7 @@ class GraphState(ContractBaseModel):
     identity_draft: IdentityDraft | None = None
     expanded_context: ExpansionResult | None = None
     copilot_recommendation: CopilotRecommendation | None = None
+    copilot_notes: list[str] = Field(default_factory=list, max_length=8)
     coherence_report: CoherenceReport | None = None
     validation_result: ValidationOutcome | None = None
     critique_history: list[CritiqueIssue] = Field(default_factory=list, max_length=20)

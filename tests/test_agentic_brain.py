@@ -7,12 +7,14 @@ import pytest
 
 from vixenbliss_creator.agentic.adapters import (
     ComfyUICopilotHTTPClient,
+    FakeLLMClient,
     OpenAICompatibleLLMClient,
 )
 from vixenbliss_creator.agentic.config import AgenticSettings
 from vixenbliss_creator.agentic.graph import build_agentic_brain
 from vixenbliss_creator.agentic.models import (
     CompletionStatus,
+    CopilotStage,
     CreationMode,
     CritiqueDomain,
     CritiqueIssue,
@@ -253,13 +255,21 @@ def build_expansion_payload(
 
 def build_copilot_payload(*, supported_modes: list[str] | None = None) -> dict:
     return {
-        "workflow_id": "copilot-editorial-v2",
+        "stage": CopilotStage.S1_IDENTITY_IMAGE.value,
+        "workflow_id": "base-image-ipadapter-impact",
+        "workflow_version": "2026-03-31",
+        "recommended_workflow_family": "flux_identity_reference",
         "base_model_id": "flux-schnell-v1",
-        "node_ids": ["load_model", "ip_adapter_plus", "ksampler", "vae_decode"],
+        "required_nodes": ["load_model", "ip_adapter_plus", "ksampler", "vae_decode"],
+        "optional_nodes": ["face_detector", "face_detailer"],
+        "model_hints": ["flux", "ipadapter-face", "impact-pack"],
         "prompt_template": "Editorial nightlife portrait aligned with identity metadata and communication style.",
         "negative_prompt": "low quality, anatomy drift, minors, body horror, extra limbs",
-        "rationale": "Workflow preparado para glamour premium con control de identidad.",
+        "reasoning_summary": "Workflow preparado para glamour premium con control de identidad.",
+        "risk_flags": ["identity_drift", "face_confidence_low"],
+        "compatibility_notes": ["Approved for System 1 identity generation."],
         "content_modes_supported": supported_modes or ["sfw", "sensual", "nsfw"],
+        "registry_source": "test_fixture",
     }
 
 
@@ -427,6 +437,29 @@ def test_graph_fails_when_retries_are_exhausted() -> None:
     assert result.final_technical_sheet_payload is None
 
 
+def test_graph_uses_registry_fallback_when_copilot_is_unavailable() -> None:
+    settings = AgenticSettings(max_attempts=2)
+
+    class BrokenCopilotClient:
+        def recommend_workflow(self, expansion: ExpansionResult) -> dict:
+            raise RuntimeError("network timeout")
+
+    brain = build_agentic_brain(
+        settings=settings,
+        llm_client=FakeLLMClient(factory=lambda idea, critique_history, attempt_count: build_expansion_payload(with_hard_limits=True)),
+        copilot_client=BrokenCopilotClient(),
+    )
+
+    result = brain.invoke(GraphState(input_idea="idea de prueba suficientemente larga"))
+
+    assert result.completion_status == CompletionStatus.SUCCEEDED
+    assert result.copilot_recommendation is not None
+    assert result.copilot_recommendation.workflow_id == "base-image-ipadapter-impact"
+    assert result.copilot_recommendation.registry_source == "approved_internal_fallback"
+    assert result.copilot_notes
+    assert "fallback" in result.copilot_notes[0].lower()
+
+
 def test_graph_caps_critique_history_before_failing() -> None:
     settings = AgenticSettings(max_attempts=5)
 
@@ -550,6 +583,30 @@ def test_validator_blocks_incoherent_vertical_personality_combination() -> None:
     assert {"premium_personality_conflict", "style_behavior_conflict"} & issue_codes
 
 
+def test_validator_rejects_unapproved_optional_nodes_from_copilot() -> None:
+    invalid_recommendation = build_copilot_payload()
+    invalid_recommendation["optional_nodes"] = ["face_detailer", "rogue_custom_node"]
+
+    state = GraphState.model_validate(
+        {
+            "input_idea": "idea de prueba suficientemente larga",
+            "attempt_count": 1,
+            "max_attempts": 2,
+            "identity_draft": build_expansion_payload(with_hard_limits=True)["identity_draft"],
+            "expanded_context": build_expansion_payload(with_hard_limits=True),
+            "manually_defined_fields": ["metadata.vertical"],
+            "inferred_fields": ["metadata.style"],
+            "copilot_recommendation": invalid_recommendation,
+        }
+    )
+
+    outcome = TechnicalSheetGraphValidator().validate(state)
+
+    assert outcome.valid is False
+    issue_codes = {issue.code for issue in outcome.issues}
+    assert "copilot_optional_nodes_not_approved" in issue_codes
+
+
 def test_openai_adapter_parses_openai_compatible_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = AgenticSettings(
         llm_serverless_base_url="https://example.com/v1",
@@ -663,4 +720,6 @@ def test_copilot_adapter_parses_http_payload(monkeypatch: pytest.MonkeyPatch) ->
     )
 
     assert captured["url"] == "https://copilot.example.com/api/recommend"
-    assert result.workflow_id == "copilot-editorial-v2"
+    assert captured["payload"]["stage"] == "s1_identity_image"
+    assert captured["payload"]["approved_workflows"]
+    assert result.workflow_id == "base-image-ipadapter-impact"

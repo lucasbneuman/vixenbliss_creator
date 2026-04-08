@@ -256,13 +256,21 @@ def _build_demo_expansion_payload(settings: AgenticSettings, idea: str) -> dict:
 def _build_demo_recommendation() -> CopilotRecommendation:
     return CopilotRecommendation.model_validate(
         {
-            "workflow_id": "copilot-editorial-v2",
+            "stage": "s1_identity_image",
+            "workflow_id": "base-image-ipadapter-impact",
+            "workflow_version": "2026-03-31",
+            "recommended_workflow_family": "flux_identity_reference",
             "base_model_id": "flux-schnell-v1",
-            "node_ids": ["load_model", "ip_adapter_plus", "ksampler", "vae_decode"],
+            "required_nodes": ["load_model", "ip_adapter_plus", "ksampler", "vae_decode"],
+            "optional_nodes": ["face_detector", "face_detailer"],
+            "model_hints": ["flux", "ipadapter-face", "impact-pack"],
             "prompt_template": "Editorial portrait aligned with identity metadata, archetype and communication style.",
             "negative_prompt": "low quality, anatomy drift, minors, body horror, extra limbs",
-            "rationale": "Workflow preparado para mantener consistencia visual y tono comercial del avatar.",
+            "reasoning_summary": "Workflow preparado para mantener consistencia visual y tono comercial del avatar.",
+            "risk_flags": ["identity_drift", "face_confidence_low"],
+            "compatibility_notes": ["Approved for System 1 identity generation."],
             "content_modes_supported": ["sfw", "sensual", "nsfw"],
+            "registry_source": "demo_runner",
         }
     )
 
@@ -272,7 +280,7 @@ def run_agentic_brain(idea: str, settings: AgenticSettings | None = None) -> Gra
     llm = FakeLLMClient(
         factory=lambda current_idea, critique_history, attempt_count: _build_demo_expansion_payload(settings, current_idea)
     )
-    copilot = FakeCopilotClient(sequence=[_build_demo_recommendation()])
+    copilot = FakeCopilotClient(factory=lambda expansion: _build_demo_recommendation())
     brain = build_agentic_brain(settings=settings, llm_client=llm, copilot_client=copilot)
     seed_state = GraphState(input_idea=idea, max_attempts=settings.max_attempts)
     return brain.invoke(seed_state)
@@ -281,7 +289,7 @@ def run_agentic_brain(idea: str, settings: AgenticSettings | None = None) -> Gra
 def run_agentic_brain_with_real_llm(idea: str, settings: AgenticSettings | None = None) -> GraphState:
     settings = settings or AgenticSettings.from_env()
     llm = OpenAICompatibleLLMClient(settings)
-    copilot = FakeCopilotClient(sequence=[_build_demo_recommendation()])
+    copilot = FakeCopilotClient(factory=lambda expansion: _build_demo_recommendation())
     brain = build_agentic_brain(settings=settings, llm_client=llm, copilot_client=copilot)
     seed_state = GraphState(input_idea=idea, max_attempts=settings.max_attempts)
     return brain.invoke(seed_state)

@@ -9,6 +9,7 @@ from .config import AgenticSettings
 from .models import (
     CoherenceReport,
     CompletionStatus,
+    CopilotStage,
     CreationMode,
     CritiqueDomain,
     CritiqueIssue,
@@ -18,6 +19,7 @@ from .models import (
 )
 from .ports import CopilotClient, GraphValidator, LLMClient
 from .validator import TechnicalSheetGraphValidator
+from .workflow_registry import WorkflowRegistry
 from vixenbliss_creator.contracts.identity import (
     ArchetypeCode,
     CreationCategory,
@@ -59,6 +61,7 @@ class GraphStateDict(TypedDict, total=False):
     critique_history: list[Any]
     final_technical_sheet_payload: Any
     terminal_error_message: str | None
+    copilot_notes: list[str]
 
 
 class AgenticBrain:
@@ -68,11 +71,15 @@ class AgenticBrain:
         copilot_client: CopilotClient,
         validator: GraphValidator,
         max_attempts: int = 2,
+        workflow_registry: WorkflowRegistry | None = None,
+        copilot_default_stage: CopilotStage = CopilotStage.S1_IDENTITY_IMAGE,
     ) -> None:
         self.llm_client = llm_client
         self.copilot_client = copilot_client
         self.validator = validator
         self.max_attempts = max_attempts
+        self.workflow_registry = workflow_registry or WorkflowRegistry.default()
+        self.copilot_default_stage = copilot_default_stage
         self._graph = self._build_graph()
 
     def invoke(self, state: GraphState) -> GraphState:
@@ -470,10 +477,11 @@ class AgenticBrain:
         try:
             recommendation = self.copilot_client.recommend_workflow(state.expanded_context)
         except Exception as exc:
+            note = _trim_error_message("Copilot degraded to approved fallback", exc)
             return state.model_copy(
                 update={
-                    "completion_status": CompletionStatus.FAILED,
-                    "terminal_error_message": _trim_error_message("Copilot recommendation failed explicitly", exc),
+                    "copilot_recommendation": self.workflow_registry.build_fallback_recommendation(self.copilot_default_stage),
+                    "copilot_notes": [*state.copilot_notes, note][-8:],
                 }
             ).as_graph_dict()
         return state.model_copy(update={"copilot_recommendation": recommendation}).as_graph_dict()
@@ -578,10 +586,13 @@ def build_agentic_brain(
     settings = settings or AgenticSettings.from_env()
     llm_client = llm_client or OpenAICompatibleLLMClient(settings)
     copilot_client = copilot_client or ComfyUICopilotHTTPClient(settings)
-    validator = validator or TechnicalSheetGraphValidator()
+    workflow_registry = WorkflowRegistry.default()
+    validator = validator or TechnicalSheetGraphValidator(workflow_registry=workflow_registry)
     return AgenticBrain(
         llm_client=llm_client,
         copilot_client=copilot_client,
         validator=validator,
         max_attempts=settings.max_attempts,
+        workflow_registry=workflow_registry,
+        copilot_default_stage=settings.comfyui_copilot_default_stage,
     )

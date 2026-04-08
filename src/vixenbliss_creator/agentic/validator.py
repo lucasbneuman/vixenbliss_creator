@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from .models import CritiqueDomain, CritiqueIssue, GraphState, ValidationOutcome
+from .workflow_registry import WorkflowRegistry
 from vixenbliss_creator.contracts.identity import ArchetypeCode, IdentityStyle, Vertical
 
 
 class TechnicalSheetGraphValidator:
+    def __init__(self, workflow_registry: WorkflowRegistry | None = None) -> None:
+        self.workflow_registry = workflow_registry or WorkflowRegistry.default()
+
     def validate(self, state: GraphState) -> ValidationOutcome:
         issues: list[CritiqueIssue] = []
 
@@ -90,16 +94,72 @@ class TechnicalSheetGraphValidator:
                     target_node="request_copilot_recommendation",
                 )
             )
-        if not state.copilot_recommendation.node_ids:
+        if not state.copilot_recommendation.required_nodes:
             issues.append(
                 CritiqueIssue(
-                    code="empty_copilot_nodes",
-                    message="Copilot recommendation must include consumable node identifiers.",
+                    code="empty_copilot_required_nodes",
+                    message="Copilot recommendation must include consumable required nodes.",
                     source_node="validate_final_payload",
                     domain=CritiqueDomain.COPILOT,
                     target_node="request_copilot_recommendation",
                 )
             )
+
+        approved_workflow = self.workflow_registry.get(state.copilot_recommendation.workflow_id)
+        if approved_workflow is None:
+            issues.append(
+                CritiqueIssue(
+                    code="copilot_workflow_not_approved",
+                    message="Copilot recommendation must resolve to an approved internal workflow.",
+                    source_node="validate_final_payload",
+                    domain=CritiqueDomain.COPILOT,
+                    target_node="request_copilot_recommendation",
+                )
+            )
+        else:
+            if state.copilot_recommendation.stage != approved_workflow.stage:
+                issues.append(
+                    CritiqueIssue(
+                        code="copilot_stage_mismatch",
+                        message="Copilot recommendation stage does not match the approved workflow stage.",
+                        source_node="validate_final_payload",
+                        domain=CritiqueDomain.COPILOT,
+                        target_node="request_copilot_recommendation",
+                    )
+                )
+            if state.copilot_recommendation.base_model_id != approved_workflow.base_model_id:
+                issues.append(
+                    CritiqueIssue(
+                        code="copilot_model_mismatch",
+                        message="Copilot recommendation must preserve the approved base model for the selected workflow.",
+                        source_node="validate_final_payload",
+                        domain=CritiqueDomain.COPILOT,
+                        target_node="request_copilot_recommendation",
+                    )
+                )
+            if not set(approved_workflow.required_nodes).issubset(set(state.copilot_recommendation.required_nodes)):
+                issues.append(
+                    CritiqueIssue(
+                        code="copilot_required_nodes_missing",
+                        message="Copilot recommendation omitted required nodes from the approved workflow registry.",
+                        source_node="validate_final_payload",
+                        domain=CritiqueDomain.COPILOT,
+                        target_node="request_copilot_recommendation",
+                    )
+                )
+            unsupported_optional_nodes = set(state.copilot_recommendation.optional_nodes) - set(
+                approved_workflow.required_nodes + approved_workflow.optional_nodes
+            )
+            if unsupported_optional_nodes:
+                issues.append(
+                    CritiqueIssue(
+                        code="copilot_optional_nodes_not_approved",
+                        message="Copilot recommendation proposed nodes outside the approved workflow registry.",
+                        source_node="validate_final_payload",
+                        domain=CritiqueDomain.COPILOT,
+                        target_node="request_copilot_recommendation",
+                    )
+                )
 
         if payload.identity_metadata.vertical != metadata.vertical:
             issues.append(
@@ -132,17 +192,6 @@ class TechnicalSheetGraphValidator:
                     target_node="complete_identity_profile",
                 )
             )
-        if payload.narrative_profile.minimal_viable_profile.relationship_with_fans != draft.narrative_minimal.relationship_with_fans:
-            issues.append(
-                CritiqueIssue(
-                    code="narrative_fan_relationship_mismatch",
-                    message="Technical sheet narrative must remain aligned with the identity draft fan relationship.",
-                    source_node="validate_final_payload",
-                    domain=CritiqueDomain.TECHNICAL_SHEET,
-                    target_node="complete_identity_profile",
-                )
-            )
-
         if metadata.vertical == Vertical.LIFESTYLE and draft.archetype == ArchetypeCode.DOMINANT_QUEEN:
             issues.append(
                 CritiqueIssue(

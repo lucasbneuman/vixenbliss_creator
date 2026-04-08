@@ -11,6 +11,7 @@ Definir el modulo que transforma una instruccion conversacional del operador en 
 - `TechnicalSheet` final compatible con `Sistema 1`
 - recomendacion tecnica de `ComfyUI Copilot`
 - validacion fail-fast y critique loop
+- degradacion controlada hacia workflows aprobados cuando `Copilot` no responde
 
 ## Flujo del grafo
 
@@ -29,9 +30,9 @@ Definir el modulo que transforma una instruccion conversacional del operador en 
 7. `generate_technical_sheet`
    Conserva la traduccion del draft hacia `TechnicalSheet` dentro del contexto expandido.
 8. `request_copilot_recommendation`
-   Consulta `ComfyUI Copilot` con la ficha tecnica ya enriquecida.
+   Consulta `ComfyUI Copilot` con la ficha tecnica ya enriquecida y el stage objetivo.
 9. `validate_final_payload`
-   Verifica completitud, trazabilidad, estabilidad del payload, limites operacionales y compatibilidad con Copilot.
+   Verifica completitud, trazabilidad, estabilidad del payload, limites operacionales y compatibilidad con el workflow registry interno.
 10. `critique_and_retry`
    Reinyecta issues estructurados al nodo correcto segun dominio y target.
 11. `finalize_graph_state`
@@ -69,6 +70,18 @@ Definir el modulo que transforma una instruccion conversacional del operador en 
 - un campo manual no puede perder su traza manual
 - `TechnicalSheet.identity_metadata` debe conservar `vertical`, `category`, `style` y `occupation_or_content_basis`
 - `ComfyUI Copilot` sigue resolviendo recomendacion tecnica, no construccion de personalidad
+- si `Copilot` falla, el grafo usa una recomendacion fallback desde el registry interno y deja nota trazable
+- la recomendacion valida de `Copilot` debe pertenecer a un stage aprobado: `s1_identity_image`, `s2_content_image` o `s2_video`
+
+## Registry interno
+
+`Copilot` no es la fuente de verdad de workflows.
+
+- el repo mantiene un registry interno de workflows aprobados por stage
+- `Copilot` recomienda sobre ese universo
+- el validador rechaza recomendaciones fuera del registry o incompatibles con sus nodos y modelo base
+
+Ver detalle en `docs/01-architecture/comfyui-copilot-governance.md`.
 
 ## Smoke local
 

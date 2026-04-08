@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .models import CopilotStage
+
 
 _ENV_PLACEHOLDERS = {"CHANGEME", "YOUR_VALUE_HERE", "TODO", "TBD"}
 
@@ -49,6 +51,7 @@ class AgenticSettings:
     comfyui_copilot_base_url: str | None = None
     comfyui_copilot_api_key: str | None = None
     comfyui_copilot_path: str = "/recommend"
+    comfyui_copilot_default_stage: CopilotStage = CopilotStage.S1_IDENTITY_IMAGE
     max_attempts: int = 2
     source_issue_id: str = "DEV-7"
     source_epic_id: str = "DEV-3"
@@ -98,6 +101,10 @@ class AgenticSettings:
             comfyui_copilot_base_url=_env("COMFYUI_COPILOT_BASE_URL"),
             comfyui_copilot_api_key=_env("COMFYUI_COPILOT_API_KEY"),
             comfyui_copilot_path=_env("COMFYUI_COPILOT_PATH", "/recommend") or "/recommend",
+            comfyui_copilot_default_stage=CopilotStage(
+                _env("COMFYUI_COPILOT_DEFAULT_STAGE", CopilotStage.S1_IDENTITY_IMAGE.value)
+                or CopilotStage.S1_IDENTITY_IMAGE.value
+            ),
             max_attempts=int(max_attempts_raw),
             source_issue_id=_env("AGENTIC_BRAIN_SOURCE_ISSUE_ID", "DEV-7") or "DEV-7",
             source_epic_id=_env("AGENTIC_BRAIN_SOURCE_EPIC_ID", "DEV-3") or "DEV-3",

@@ -7,6 +7,7 @@ from urllib import error, parse, request
 
 from .config import AgenticSettings
 from .models import CopilotRecommendation, CritiqueIssue, ExpansionResult
+from .workflow_registry import WorkflowRegistry
 from vixenbliss_creator.contracts.identity import (
     ArchetypeCode,
     AttentionStrategy,
@@ -523,6 +524,7 @@ class OpenAICompatibleLLMClient:
 @dataclass
 class ComfyUICopilotHTTPClient:
     settings: AgenticSettings
+    workflow_registry: WorkflowRegistry = field(default_factory=WorkflowRegistry.default)
 
     def recommend_workflow(self, expansion: ExpansionResult) -> CopilotRecommendation:
         if not self.settings.comfyui_copilot_base_url:
@@ -538,9 +540,14 @@ class ComfyUICopilotHTTPClient:
         response_payload = _json_post(
             url,
             {
+                "stage": self.settings.comfyui_copilot_default_stage,
                 "expansion_summary": expansion.expansion_summary,
                 "prompt_blueprint": expansion.prompt_blueprint,
                 "technical_sheet_payload": expansion.technical_sheet_payload.model_dump(mode="json"),
+                "approved_workflows": [
+                    workflow.model_dump(mode="json")
+                    for workflow in self.workflow_registry.for_stage(self.settings.comfyui_copilot_default_stage)
+                ],
             },
             headers,
             timeout_seconds=self.settings.s1_llm_runtime_timeout_seconds,

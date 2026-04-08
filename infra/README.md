@@ -4,6 +4,7 @@ La infraestructura nueva deja de organizarse por proveedor y pasa a organizarse 
 
 Servicios objetivo:
 
+- `comfyui-copilot`
 - `s1-image`
 - `s1-lora-train`
 - `s1-llm`

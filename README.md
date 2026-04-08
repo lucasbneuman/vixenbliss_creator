@@ -75,6 +75,7 @@ El roadmap del repo existe como vision flexible y contexto tecnico, no como agen
 - Base tecnica: `docs/01-architecture/technical-base.md`
 - Arquitectura operativa: `docs/01-architecture/operational-architecture.md`
 - Motor visual: `docs/01-architecture/visual-generation-engine.md`
+- Gobernanza `ComfyUI Copilot`: `docs/01-architecture/comfyui-copilot-governance.md`
 - Portfolio serverless: `docs/01-architecture/serverless-provider-portfolio-analysis.md`
 - Migracion a Modal: `docs/01-architecture/modal-beam-migration-plan.md`
 - Factibilidad Beam: `docs/01-architecture/beam-feasibility-analysis.md`
@@ -152,6 +153,7 @@ El detalle tecnico y las variables nuevas viven en `docs/01-architecture/visual-
 El repo ahora separa la infraestructura por servicio y no por proveedor en `infra/`.
 
 - `infra/s1-image/`
+- `infra/comfyui-copilot/`
 - `infra/s1-lora-train/`
 - `infra/s1-llm/`
 - `infra/s2-image/`

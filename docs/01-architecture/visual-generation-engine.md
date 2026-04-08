@@ -17,6 +17,14 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
 - la separacion por runtime sigue siendo recomendada aunque `training` pertenezca al negocio de `S1` y `video` pertenezca al negocio de `S2`
 - `S1` y `S2` deben permanecer en la misma familia `Flux` para preservar compatibilidad del LoRA
 - dentro de `DEV-8`, el runtime objetivo es especificamente `S1 image`
+- `ComfyUI Copilot` solo actua como complemento de desarrollo y gobernanza de workflows; no participa del render productivo
+
+## Gobernanza de Copilot
+
+- los runtimes productivos consumen workflows versionados y aprobados
+- `Copilot` puede sugerir cambios o extensiones, pero no reemplaza el registry interno
+- si `Copilot` no responde, el pipeline sigue con fallback aprobado
+- `S2 video` queda preparado para recomendaciones pre-runtime, no para adopcion automatica
 
 ### Request
 
@@ -38,6 +46,32 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
 - `face_detection_confidence` registra la confianza facial usada para decidir si hay correccion regional.
 - `ip_adapter_used` y `regional_inpaint_triggered` dejan trazabilidad explicita del camino ejecutado.
 - `error_code` y `error_message` normalizan fallos del pipeline visual.
+
+### Dataset LoRA real de `S1 image`
+
+- `S1 image` ya no puede limitarse a duplicar una sola `base_image` para el handoff de training.
+- el runtime debe expandir el prompt tecnico del avatar a un `dataset shot plan` determinista con `40` muestras reales por identidad
+- cada muestra debe persistir al menos:
+  - `sample_id`
+  - `prompt`
+  - `negative_prompt`
+  - `caption`
+  - `seed`
+  - `wardrobe_state`
+  - `framing`
+  - `camera_angle`
+  - `pose_family`
+  - `realism_profile`
+  - `source_strategy`
+- la composicion canonica por defecto para training LoRA es:
+  - `20` clothed y `20` nude
+  - `10` `close_up_face`, `10` `medium` y `20` `full_body`
+  - `5` angulos con `8` muestras cada uno: `front`, `left_three_quarter`, `right_three_quarter`, `left_profile`, `right_profile`
+- el prompt final de cada muestra se construye por capas:
+  - bloque de identidad del avatar
+  - bloque de realismo fotografico adulto
+  - bloque de variante de shot
+- el `dataset_package` debe contener binarios distintos y trazables; si domina una sola carga binaria repetida, el handoff no es apto para training
 
 ## Fail-fast canonico
 
@@ -246,7 +280,8 @@ Direccion recomendada de persistencia para `S1 image`:
 
 Estado actual implementado:
 
-- `S1 image` sigue materializando localmente el handoff para compatibilidad
+- `S1 image` genera un `base_render` trazable y luego expande un `shot plan` real para producir el dataset LoRA
+- el handoff por defecto usa `40` muestras reales con prompts y seeds por muestra
 - luego persiste `base_image` en `Directus Files`
 - `dataset_manifest` y `dataset_package` quedan registrados en `s1_artifacts` y snapshots tecnicos, no como files binarios
 - cuando `s1_image` termina bien y existe `identity_id`, `s1_control.bridge` promueve `s1_identities.pipeline_state` a `base_images_generated`
@@ -259,6 +294,7 @@ Estado actual implementado:
   - modelo base
   - configuracion visual efectiva de `ip_adapter` y `face_detailer`
   - referencia facial usada
+  - prompts, captions y cobertura de shot por muestra
 - `s1_identities` conserva el snapshot tecnico canonico por avatar para futuros flujos de `S1 Training` y `S2 Image`
 
 Direccion recomendada del handoff:
