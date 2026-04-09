@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
@@ -13,11 +14,14 @@ import zipfile
 from vixenbliss_creator.contracts.identity import DatasetStatus, PipelineState
 
 
-MIN_VALID_IMAGES = 12
+MIN_VALID_IMAGES = 40
+MIN_RENDER_IMAGES = 80
 MIN_BASE_IMAGES = 1
-MIN_VARIATION_GROUPS = 3
+MIN_VARIATION_GROUPS = 5
+MIN_FULL_BODY_IMAGES = 20
+MIN_REQUIRED_ANGLE_SAMPLES = 4
 MAX_DOMINANT_COMPOSITION_SHARE = 0.60
-MAX_DUPLICATE_PAYLOAD_SHARE = 0.20
+MAX_DUPLICATE_PAYLOAD_SHARE = 0.10
 REQUIRED_SEED_KEYS = ("portrait_seed", "variation_seed", "dataset_seed")
 REQUIRED_TRAINING_KEYS = ("identity_id", "base_model_id", "workflow_id", "workflow_version")
 VARIATION_KEYS = ("variation_group", "framing", "shot_type", "camera_angle", "pose", "class_name")
@@ -32,6 +36,11 @@ REQUIRED_FILE_FIELDS = (
     "framing",
     "camera_angle",
     "pose_family",
+    "camera_distance",
+    "lens_hint",
+    "lighting_setup",
+    "background_style",
+    "quality_priority",
     "realism_profile",
     "source_strategy",
 )
@@ -139,6 +148,7 @@ def validate_s1_dataset(
     files = manifest.get("files") if isinstance(manifest.get("files"), list) else []
     sample_count = int(manifest.get("sample_count") or 0)
     generated_samples = int(manifest.get("generated_samples") or 0)
+    render_sample_count = int(manifest.get("render_sample_count") or sample_count)
 
     if not manifest:
         reasons.append(_reason("manifest_missing", "dataset_manifest is required before S1 Training"))
@@ -183,6 +193,14 @@ def validate_s1_dataset(
                 "sample_count_too_low",
                 f"dataset requires at least {MIN_VALID_IMAGES} images",
                 details={"sample_count": sample_count, "minimum_required": MIN_VALID_IMAGES},
+            )
+        )
+    if render_sample_count < MIN_RENDER_IMAGES:
+        reasons.append(
+            _reason(
+                "render_sample_count_too_low",
+                f"dataset requires at least {MIN_RENDER_IMAGES} rendered images before curation",
+                details={"render_sample_count": render_sample_count, "minimum_required": MIN_RENDER_IMAGES},
             )
         )
     if generated_samples and generated_samples != len(files):
@@ -235,6 +253,26 @@ def validate_s1_dataset(
                 "variation_coverage_too_low",
                 f"dataset requires at least {MIN_VARIATION_GROUPS} declared variation groups",
                 details={"variation_values": sorted(variation_values), "minimum_required": MIN_VARIATION_GROUPS},
+            )
+        )
+    framing_counts = Counter(str(file_entry.get("framing")) for file_entry in files if isinstance(file_entry, dict))
+    if framing_counts.get("full_body", 0) < MIN_FULL_BODY_IMAGES:
+        reasons.append(
+            _reason(
+                "full_body_coverage_too_low",
+                "curated dataset requires strong full-body coverage",
+                details={"full_body_count": framing_counts.get("full_body", 0), "minimum_required": MIN_FULL_BODY_IMAGES},
+            )
+        )
+    angle_counts = Counter(str(file_entry.get("camera_angle")) for file_entry in files if isinstance(file_entry, dict))
+    required_angles = ("front", "left_three_quarter", "right_three_quarter", "left_profile", "right_profile")
+    missing_angles = [angle for angle in required_angles if angle_counts.get(angle, 0) < MIN_REQUIRED_ANGLE_SAMPLES]
+    if missing_angles:
+        reasons.append(
+            _reason(
+                "camera_angle_coverage_too_low",
+                "curated dataset requires minimum angle coverage for all five canonical angles",
+                details={"missing_or_low_angles": missing_angles, "angle_counts": dict(angle_counts)},
             )
         )
 
@@ -323,9 +361,12 @@ def validate_s1_dataset(
     pipeline_state = PipelineState.DATASET_READY.value if not reasons else current_pipeline_state
     metrics = {
         "sample_count": sample_count,
+        "render_sample_count": render_sample_count,
         "files_count": len(files),
         "base_image_count": base_image_count,
         "variation_group_count": len(variation_values),
+        "framing_counts": dict(framing_counts),
+        "angle_counts": dict(angle_counts),
         "composition_counts": composition_counts,
         "dataset_package_locator": dataset_package_locator,
         "dataset_package_verifiable": dataset_package_path is not None,
@@ -343,8 +384,11 @@ def validate_s1_dataset(
         "metrics": metrics,
         "required_thresholds": {
             "min_valid_images": MIN_VALID_IMAGES,
+            "min_render_images": MIN_RENDER_IMAGES,
             "min_base_images": MIN_BASE_IMAGES,
             "min_variation_groups": MIN_VARIATION_GROUPS,
+            "min_full_body_images": MIN_FULL_BODY_IMAGES,
+            "min_required_angle_samples": MIN_REQUIRED_ANGLE_SAMPLES,
             "max_dominant_composition_share": MAX_DOMINANT_COMPOSITION_SHARE,
             "max_duplicate_payload_share": MAX_DUPLICATE_PAYLOAD_SHARE,
         },

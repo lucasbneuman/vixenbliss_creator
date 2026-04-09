@@ -649,7 +649,7 @@ def _generate_dataset_samples(
     base_image_bytes: bytes,
     emit_progress: ProgressEmitter | None = None,
 ) -> list[dict]:
-    files = dataset_manifest.get("files") or []
+    files = dataset_manifest.get("render_files") or dataset_manifest.get("files") or []
     if not files:
         raise RuntimeError("COMFYUI_EXECUTION_FAILED: dataset manifest does not contain any files to render")
 
@@ -670,6 +670,8 @@ def _generate_dataset_samples(
                 "prompt": file_entry["prompt"],
                 "negative_prompt": file_entry["negative_prompt"],
                 "seed": int(file_entry["seed"]),
+                "workflow_id": str(dataset_manifest.get("workflow_id") or _resolved_workflow_id(job_input)),
+                "workflow_version": str(dataset_manifest.get("workflow_version") or _resolved_workflow_version(job_input)),
                 "mode": ResumeStage.BASE_RENDER.value,
                 "reference_face_image_url": None,
                 "reference_face_image_name": reference_image_name,
@@ -695,6 +697,10 @@ def _generate_dataset_samples(
             {
                 "sample_id": file_entry["sample_id"],
                 "path": file_entry["path"],
+                "framing": file_entry.get("framing"),
+                "wardrobe_state": file_entry.get("wardrobe_state"),
+                "camera_angle": file_entry.get("camera_angle"),
+                "quality_priority": file_entry.get("quality_priority"),
                 "bytes": sample_bytes,
                 "checksum_sha256": _sha256_bytes(sample_bytes),
                 "byte_size": len(sample_bytes),
@@ -714,6 +720,106 @@ def _classify_dataset_samples(dataset_manifest: dict) -> dict[str, int]:
     return counts
 
 
+def _selection_score(file_entry: dict, sample_data: dict, duplicate_counts: Counter[str]) -> int:
+    framing = str(file_entry.get("framing") or "")
+    angle = str(file_entry.get("camera_angle") or "")
+    quality_priority = str(file_entry.get("quality_priority") or "standard")
+    score = {"hero": 300, "standard": 220, "coverage": 140}.get(quality_priority, 180)
+    score += {"full_body": 90, "medium": 55, "close_up_face": 40}.get(framing, 0)
+    score += {"front": 35, "left_three_quarter": 35, "right_three_quarter": 35, "left_profile": 15, "right_profile": 15}.get(angle, 0)
+    score += min(int(sample_data.get("byte_size") or 0) // 32, 40)
+    if duplicate_counts[sample_data["checksum_sha256"]] > 1:
+        score -= 500
+    return score
+
+
+def _curate_training_subset(dataset_manifest: dict, dataset_samples: list[dict]) -> tuple[list[dict], list[str], dict[str, str], bool]:
+    render_files = list(dataset_manifest.get("render_files") or [])
+    if not render_files:
+        raise RuntimeError("COMFYUI_EXECUTION_FAILED: render_files are required for curated dataset selection")
+    target = int(dataset_manifest.get("selected_sample_count") or dataset_manifest.get("sample_count") or 40)
+    sample_by_path = {sample["path"]: sample for sample in dataset_samples}
+    duplicate_counts = Counter(sample["checksum_sha256"] for sample in dataset_samples)
+    selection_reasons: dict[str, str] = dict(dataset_manifest.get("selection_reasons") or {})
+    selected_files = [dict(entry) for entry in list(dataset_manifest.get("files") or [])[:target]]
+    selected_ids = {entry["sample_id"] for entry in selected_files}
+    remaining_files = [dict(entry) for entry in render_files if entry["sample_id"] not in selected_ids]
+
+    def _score(entry: dict) -> int:
+        sample_data = sample_by_path[entry["path"]]
+        return _selection_score(entry, sample_data, duplicate_counts)
+
+    def _replace(victim_index: int, replacement: dict, reason: str) -> None:
+        victim = selected_files[victim_index]
+        remaining_files.append(victim)
+        selected_files[victim_index] = replacement
+        remaining_files.remove(replacement)
+        selection_reasons[replacement["sample_id"]] = reason
+
+    selected_checksums = Counter(sample_by_path[entry["path"]]["checksum_sha256"] for entry in selected_files)
+    for index, entry in enumerate(list(selected_files)):
+        checksum = sample_by_path[entry["path"]]["checksum_sha256"]
+        if selected_checksums[checksum] <= 1:
+            continue
+        replacement = next(
+            (
+                candidate
+                for candidate in sorted(remaining_files, key=_score, reverse=True)
+                if candidate["class_name"] == entry["class_name"]
+                and candidate["framing"] == entry["framing"]
+                and sample_by_path[candidate["path"]]["checksum_sha256"] != checksum
+            ),
+            None,
+        )
+        if replacement is None:
+            continue
+        selected_checksums[checksum] -= 1
+        selected_checksums[sample_by_path[replacement["path"]]["checksum_sha256"]] += 1
+        _replace(index, replacement, "curated_for_duplicate_reduction")
+
+    for required_angle in ("front", "left_three_quarter", "right_three_quarter", "left_profile", "right_profile"):
+        while Counter(str(entry.get("camera_angle")) for entry in selected_files).get(required_angle, 0) < 4:
+            replacement = next(
+                (
+                    candidate
+                    for candidate in sorted(remaining_files, key=_score, reverse=True)
+                    if candidate["camera_angle"] == required_angle
+                ),
+                None,
+            )
+            if replacement is None:
+                break
+            victim_index = next(
+                (
+                    idx
+                    for idx, candidate in enumerate(selected_files)
+                    if candidate["class_name"] == replacement["class_name"]
+                    and candidate["framing"] == replacement["framing"]
+                    and Counter(str(entry.get("camera_angle")) for entry in selected_files).get(str(candidate.get("camera_angle")), 0) > 4
+                ),
+                None,
+            )
+            if victim_index is None:
+                break
+            _replace(victim_index, replacement, "curated_for_angle_coverage")
+
+    selected_ids = {entry["sample_id"] for entry in selected_files}
+    rejected_sample_ids = [entry["sample_id"] for entry in render_files if entry["sample_id"] not in selected_ids]
+    angle_counts = Counter(str(entry.get("camera_angle")) for entry in selected_files)
+    framing_counts = Counter(str(entry.get("framing")) for entry in selected_files)
+    duplicate_share = 0.0
+    if selected_files:
+        selected_duplicates = Counter(sample_by_path[entry["path"]]["checksum_sha256"] for entry in selected_files)
+        duplicate_share = max(selected_duplicates.values()) / len(selected_files)
+    review_required = (
+        len(selected_files) != target
+        or framing_counts.get("full_body", 0) < 20
+        or any(angle_counts.get(angle, 0) < 4 for angle in ("front", "left_three_quarter", "right_three_quarter", "left_profile", "right_profile"))
+        or duplicate_share > 0.10
+    )
+    return selected_files, rejected_sample_ids, selection_reasons, review_required
+
+
 def _validate_dataset_manifest_contract(dataset_manifest: dict) -> None:
     files = dataset_manifest.get("files") or []
     if not files:
@@ -729,6 +835,11 @@ def _validate_dataset_manifest_contract(dataset_manifest: dict) -> None:
         "framing",
         "camera_angle",
         "pose_family",
+        "camera_distance",
+        "lens_hint",
+        "lighting_setup",
+        "background_style",
+        "quality_priority",
         "realism_profile",
         "source_strategy",
     }
@@ -740,10 +851,15 @@ def _validate_dataset_manifest_contract(dataset_manifest: dict) -> None:
     if counts["SFW"] + counts["NSFW"] != int(dataset_manifest.get("sample_count", 0)):
         raise ValueError("dataset builder sample_count does not match the generated file list")
     framing_counts = Counter(str(entry.get("framing")) for entry in files)
-    if int(dataset_manifest.get("sample_count", 0)) == 40:
-        expected_framing = {"close_up_face": 10, "medium": 10, "full_body": 20}
-        if {key: framing_counts.get(key, 0) for key in expected_framing} != expected_framing:
-            raise ValueError("dataset builder requires 10 close_up_face, 10 medium and 20 full_body samples")
+    if int(dataset_manifest.get("render_sample_count", 0)) < 80:
+        raise ValueError("dataset builder requires at least 80 rendered samples before curation")
+    if int(dataset_manifest.get("selected_sample_count", 0)) != int(dataset_manifest.get("sample_count", 0)):
+        raise ValueError("selected_sample_count must match sample_count in the curated manifest")
+    if framing_counts.get("full_body", 0) < 20:
+        raise ValueError("dataset builder requires at least 20 curated full_body samples")
+    angle_counts = Counter(str(entry.get("camera_angle")) for entry in files)
+    if any(angle_counts.get(angle, 0) < 4 for angle in ("front", "left_three_quarter", "right_three_quarter", "left_profile", "right_profile")):
+        raise ValueError("dataset builder requires all five camera angles in the curated subset")
 
 
 def _materialize_dataset_package(
@@ -753,6 +869,8 @@ def _materialize_dataset_package(
     dataset_samples: list[dict],
     manifest_path: Path,
     package_path: Path,
+    render_manifest_path: Path | None = None,
+    render_package_path: Path | None = None,
     source_base_image_path: Path,
 ) -> tuple[Path, int]:
     source_base_image_path.parent.mkdir(parents=True, exist_ok=True)
@@ -761,7 +879,8 @@ def _materialize_dataset_package(
     package_path.parent.mkdir(parents=True, exist_ok=True)
 
     samples_by_path = {sample["path"]: sample for sample in dataset_samples}
-    for file_entry in dataset_manifest["files"]:
+    render_files = list(dataset_manifest.get("render_files") or [])
+    for file_entry in render_files:
         sample_data = samples_by_path.get(file_entry["path"])
         if sample_data is None:
             raise RuntimeError(f"COMFYUI_EXECUTION_FAILED: missing generated bytes for dataset sample {file_entry['path']}")
@@ -772,8 +891,26 @@ def _materialize_dataset_package(
         file_entry["byte_size"] = sample_data["byte_size"]
         file_entry["provider_job_id"] = sample_data["provider_job_id"]
         file_entry["source_uri"] = sample_data["source_uri"]
+    for file_entry in dataset_manifest["files"]:
+        sample_data = samples_by_path.get(file_entry["path"])
+        if sample_data is None:
+            continue
+        file_entry["checksum_sha256"] = sample_data["checksum_sha256"]
+        file_entry["byte_size"] = sample_data["byte_size"]
+        file_entry["provider_job_id"] = sample_data["provider_job_id"]
+        file_entry["source_uri"] = sample_data["source_uri"]
 
+    if render_manifest_path is not None:
+        render_manifest_path.write_text(json.dumps(dataset_manifest, indent=2), encoding="utf-8")
     manifest_path.write_text(json.dumps(dataset_manifest, indent=2), encoding="utf-8")
+    if render_package_path is not None:
+        with zipfile.ZipFile(render_package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.write(source_base_image_path, arcname="base-image.png")
+            if render_manifest_path is not None:
+                archive.write(render_manifest_path, arcname="render-manifest.json")
+            for file_entry in render_files:
+                sample_path = manifest_path.parent / Path(file_entry["path"])
+                archive.write(sample_path, arcname=file_entry["path"])
     with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.write(source_base_image_path, arcname="base-image.png")
         archive.write(manifest_path, arcname="dataset-manifest.json")
@@ -807,7 +944,10 @@ def _maybe_attach_dataset_handoff(
         return result
 
     metadata = job_input.get("metadata") or {}
-    samples_target = int(metadata.get("samples_target", job_input.get("samples_target", 40)))
+    training_samples_target = int(metadata.get("samples_target", job_input.get("samples_target", 40)))
+    render_samples_target = int(metadata.get("render_samples_target", job_input.get("render_samples_target", 80)))
+    dataset_workflow_id = str(metadata.get("dataset_workflow_id") or job_input.get("dataset_workflow_id") or "lora-dataset-ipadapter-batch")
+    dataset_workflow_version = str(metadata.get("dataset_workflow_version") or job_input.get("dataset_workflow_version") or "2026-04-08")
     identity_root = ARTIFACT_ROOT / str(identity_id)
     seed_bundle = _seed_bundle_from_job_input(job_input)
     dataset_version = f"dataset-{_sha256_bytes(base_image_bytes + str(seed_bundle.dataset_seed).encode('utf-8'))[:12]}"
@@ -818,22 +958,26 @@ def _maybe_attach_dataset_handoff(
             job_input.get("negative_prompt", "low quality, anatomy drift, extra limbs, text, watermark")
         ),
         seed_bundle=seed_bundle,
-        samples_target=samples_target,
+        samples_target=render_samples_target,
     )
     generation_manifest = GenerationManifest(
         identity_id=identity_id,
         prompt=str(job_input.get("prompt", "editorial portrait of a synthetic premium performer")),
         negative_prompt=str(job_input.get("negative_prompt", "low quality, anatomy drift, extra limbs, text, watermark")),
         seed_bundle=seed_bundle,
-        samples_target=samples_target,
-        workflow_id=_resolved_workflow_id(job_input),
-        workflow_version=_resolved_workflow_version(job_input),
-        workflow_family=str(job_input.get("workflow_family", "flux_identity_reference")),
+        samples_target=training_samples_target,
+        render_samples_target=render_samples_target,
+        training_samples_target=training_samples_target,
+        training_target_count=training_samples_target,
+        selection_policy=str(metadata.get("selection_policy") or job_input.get("selection_policy") or "score_curated_v1"),
+        workflow_id=dataset_workflow_id,
+        workflow_version=dataset_workflow_version,
+        workflow_family=str(job_input.get("workflow_family", "flux_lora_dataset_reference")),
         workflow_registry_source=str(job_input.get("workflow_registry_source", "approved_internal")),
         base_model_id=str(job_input.get("base_model_id", "flux-schnell-v1")),
         realism_profile=str(job_input.get("realism_profile", "photorealistic_adult_reference_v1")),
-        source_strategy=str(job_input.get("source_strategy", "avatar_prompt_plus_shot_plan_v1")),
-        dataset_shot_plan=dataset_shot_plan,
+        source_strategy=str(job_input.get("source_strategy", "avatar_prompt_plus_shot_plan_v2")),
+        render_shot_plan=dataset_shot_plan,
         comfy_parameters={
             "width": int(job_input.get("width", 1024)),
             "height": int(job_input.get("height", 1024)),
@@ -844,6 +988,9 @@ def _maybe_attach_dataset_handoff(
             "workflow_registry_source": job_input.get("workflow_registry_source"),
             "copilot_prompt_template": job_input.get("copilot_prompt_template"),
             "copilot_negative_prompt": job_input.get("copilot_negative_prompt"),
+            "selection_policy": metadata.get("selection_policy") or job_input.get("selection_policy") or "score_curated_v1",
+            "render_samples_target": render_samples_target,
+            "training_samples_target": training_samples_target,
         },
         artifact_path=(identity_root / "generation-manifest.json").as_posix(),
     )
@@ -851,8 +998,11 @@ def _maybe_attach_dataset_handoff(
         identity_id=identity_id,
         generation_manifest=generation_manifest,
         reference_face_image_url=job_input.get("reference_face_image_url"),
-        samples_target=samples_target,
-        dataset_shot_plan=dataset_shot_plan,
+        samples_target=training_samples_target,
+        render_samples_target=render_samples_target,
+        training_samples_target=training_samples_target,
+        selection_policy=str(metadata.get("selection_policy") or job_input.get("selection_policy") or "score_curated_v1"),
+        render_shot_plan=dataset_shot_plan,
         face_detection_confidence=result.get("face_detection_confidence"),
         artifact_root=ARTIFACT_ROOT.as_posix(),
         metadata_json={
@@ -870,6 +1020,8 @@ def _maybe_attach_dataset_handoff(
     manifest = dataset_result["dataset_manifest"]
     manifest_path = Path(manifest["artifact_path"])
     package_path = Path(manifest["dataset_package_path"])
+    render_manifest_path = Path(manifest["render_manifest_path"])
+    render_package_path = Path(manifest["render_package_path"])
     base_image_path = manifest_path.parent / "base-image.png"
     manifest["review_required"] = not bool(metadata.get("autopromote", False))
     dataset_samples = _generate_dataset_samples(
@@ -878,7 +1030,30 @@ def _maybe_attach_dataset_handoff(
         base_image_bytes=base_image_bytes,
         emit_progress=emit_progress,
     )
-    manifest["generated_samples"] = len(dataset_samples)
+    selected_files, rejected_sample_ids, selection_reasons, curation_review_required = _curate_training_subset(manifest, dataset_samples)
+    manifest["files"] = selected_files
+    manifest["generated_samples"] = len(selected_files)
+    manifest["selected_sample_count"] = len(selected_files)
+    manifest["sample_count"] = len(selected_files)
+    manifest["rejected_sample_ids"] = rejected_sample_ids
+    manifest["selection_reasons"] = selection_reasons
+    render_framing_counts = Counter(str(entry.get("framing")) for entry in manifest.get("render_files", []))
+    selected_framing_counts = Counter(str(entry.get("framing")) for entry in selected_files)
+    render_angle_counts = Counter(str(entry.get("camera_angle")) for entry in manifest.get("render_files", []))
+    selected_angle_counts = Counter(str(entry.get("camera_angle")) for entry in selected_files)
+    manifest["coverage_summary"] = {
+        "rendered": {
+            "angles": dict(render_angle_counts),
+            "framing": dict(render_framing_counts),
+            "wardrobe_state": dict(Counter(str(entry.get("wardrobe_state")) for entry in manifest.get("render_files", []))),
+        },
+        "selected": {
+            "angles": dict(selected_angle_counts),
+            "framing": dict(selected_framing_counts),
+            "wardrobe_state": dict(Counter(str(entry.get("wardrobe_state")) for entry in selected_files)),
+        },
+    }
+    manifest["review_required"] = manifest["review_required"] or curation_review_required
     _validate_dataset_manifest_contract(manifest)
     package_path, package_size = _materialize_dataset_package(
         dataset_manifest=manifest,
@@ -886,6 +1061,8 @@ def _maybe_attach_dataset_handoff(
         dataset_samples=dataset_samples,
         manifest_path=manifest_path,
         package_path=package_path,
+        render_manifest_path=render_manifest_path,
+        render_package_path=render_package_path,
         source_base_image_path=base_image_path,
     )
     package_checksum = _sha256_bytes(package_path.read_bytes())
@@ -931,7 +1108,10 @@ def _maybe_attach_dataset_handoff(
     result["metadata"]["identity_id"] = str(identity_id)
     result["metadata"]["character_id"] = character_id or str(identity_id)
     result["metadata"]["seed_bundle"] = seed_bundle.model_dump(mode="json")
-    result["metadata"]["samples_target"] = samples_target
+    result["metadata"]["samples_target"] = training_samples_target
+    result["metadata"]["render_samples_target"] = render_samples_target
+    result["metadata"]["selection_policy"] = generation_manifest.selection_policy
+    result["metadata"]["render_package_path"] = render_package_path.as_posix()
     return result
 
 

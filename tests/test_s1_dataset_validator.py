@@ -36,6 +36,11 @@ def _build_manifest(identity_id: str, package_path: Path, *, sample_count: int =
                             "pose_family": "editorial_standing" if framing != "full_body" else f"full_body_pose_{full_body_variant + 1}",
                             "expression": "calm confident expression",
                             "wardrobe_state": wardrobe_state,
+                            "camera_distance": "tight_portrait" if framing == "close_up_face" else ("editorial_mid" if framing == "medium" else "wide_full_body"),
+                            "lens_hint": "85mm portrait lens" if framing == "close_up_face" else ("50mm editorial lens" if framing == "medium" else "35mm fashion lens"),
+                            "lighting_setup": "soft studio key light with realistic skin falloff",
+                            "background_style": "minimal editorial backdrop",
+                            "quality_priority": "hero" if framing == "full_body" else "standard",
                             "prompt": f"adult real person {framing} {camera_angle} {wardrobe_state}",
                             "negative_prompt": "cgi, illustration, anime, duplicate body, text, watermark",
                             "caption": f"adult real person {framing} {camera_angle} {wardrobe_state} photorealistic reference photo",
@@ -57,15 +62,17 @@ def _build_manifest(identity_id: str, package_path: Path, *, sample_count: int =
         "identity_id": identity_id,
         "sample_count": sample_count,
         "generated_samples": sample_count,
+        "render_sample_count": 80,
+        "selected_sample_count": sample_count,
         "dataset_package_path": str(package_path),
         "files": files,
-        "composition": {"policy": "balanced_50_50", "SFW": sample_count // 2, "NSFW": sample_count // 2},
+        "composition": {"policy": "balanced_50_50_curated", "SFW": sample_count // 2, "NSFW": sample_count // 2},
         "seed_bundle": {"portrait_seed": 1, "variation_seed": 2, "dataset_seed": 3},
         "workflow_id": "base-image-ipadapter-impact",
         "workflow_version": "2026-04-08",
         "base_model_id": "flux-schnell-v1",
         "realism_profile": "photorealistic_adult_reference_v1",
-        "source_strategy": "avatar_prompt_plus_shot_plan_v1",
+        "source_strategy": "avatar_prompt_plus_shot_plan_v2",
     }
 
 
@@ -236,3 +243,39 @@ def test_validator_accepts_structural_dataset_when_package_locator_is_not_public
     assert result.validation_status == "apto"
     assert result.dataset_status == "ready"
     assert result.metrics["dataset_package_verifiable"] is False
+
+
+def test_validator_rejects_curated_dataset_with_low_full_body_and_angle_coverage(tmp_path: Path) -> None:
+    package_path = tmp_path / "dataset.zip"
+    manifest = _build_manifest("42", package_path)
+    manifest["files"] = manifest["files"][:40]
+    for file_entry in manifest["files"]:
+        file_entry["framing"] = "close_up_face"
+        file_entry["shot_type"] = "close_up_face"
+        file_entry["variation_group"] = "close_up_face"
+        file_entry["camera_distance"] = "tight_portrait"
+        file_entry["camera_angle"] = "front"
+    _write_package(package_path, manifest)
+
+    result = validate_s1_dataset(
+        identity_id="42",
+        run_id="run-low-coverage",
+        result_payload={
+            "dataset_manifest": manifest,
+            "dataset_package_path": str(package_path),
+            "base_model_id": "flux-schnell-v1",
+            "workflow_id": "base-image-ipadapter-impact",
+            "workflow_version": "2026-04-08",
+        },
+        runtime_metadata={"seed_bundle": manifest["seed_bundle"]},
+        uploaded_artifacts=[
+            {"artifact_type": "base_image", "directus_asset_url": "https://directus.example.com/assets/file-1"},
+            {"artifact_type": "dataset_package", "storage_path": str(package_path)},
+        ],
+        identity_snapshot={"latest_base_model_id": "flux-schnell-v1"},
+        current_pipeline_state="base_images_registered",
+    )
+
+    codes = {reason["code"] for reason in result.reasons}
+    assert "full_body_coverage_too_low" in codes
+    assert "camera_angle_coverage_too_low" in codes

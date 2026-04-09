@@ -45,7 +45,8 @@ El runtime nuevo porta el comportamiento útil del bundle legacy `infra/runpod-s
 
 - `FastAPI` y `LangGraph` corren en `Coolify` como capa de orquestacion
 - `Modal` solo despierta el worker GPU con `ComfyUI` embebido
-- workflow versionado `base-image-ipadapter-impact.json`
+- workflow canonico de dataset `lora-dataset-ipadapter-batch.json`
+- fallback de identidad base `base-image-ipadapter-impact.json`
 - alias lógico `plus_face` resuelto al asset real `ip-adapter.bin`
 - fail-fast para `REFERENCE_IMAGE_NOT_FOUND`, `FACE_CONFIDENCE_UNAVAILABLE`, `RESUME_STATE_INCOMPLETE` y `COMFYUI_EXECUTION_FAILED`
 - `runtime_stage=identity_image`
@@ -64,6 +65,9 @@ El runtime nuevo porta el comportamiento útil del bundle legacy `infra/runpod-s
 - `S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME`
 - `COMFYUI_WORKFLOW_IDENTITY_ID`
 - `COMFYUI_WORKFLOW_IDENTITY_VERSION`
+- `DEFAULT_RENDER_SAMPLES_TARGET=80`
+- `DEFAULT_TRAINING_SAMPLES_TARGET=40`
+- `DEFAULT_SELECTION_POLICY=score_curated_v1`
 - `COMFYUI_IP_ADAPTER_MODEL`
 - `COMFYUI_FACE_CONFIDENCE_THRESHOLD`
 - `COMFYUI_FLUX_DIFFUSION_MODEL_NAME`
@@ -130,6 +134,32 @@ Modos operativos esperados:
 
 Mientras el flujo este en validacion, priorizar `review`.
 Cuando la calidad del dataset ya este estabilizada, pasar a `autopromote` con storage en `Directus`.
+
+## Deploy en Modal
+
+Worker GPU esperado:
+
+1. primar el volume de modelos con `prime_model_cache`
+2. publicar la app privada:
+
+```powershell
+modal deploy infra/s1-image/providers/modal/app.py
+```
+
+3. validar desde Modal:
+
+```powershell
+modal run infra/s1-image/providers/modal/app.py::runtime_healthcheck --deep
+```
+
+4. usar desde el orquestador en `Coolify`:
+
+- `S1_IMAGE_PROVIDER=modal`
+- `S1_IMAGE_MODAL_APP_NAME=vixenbliss-s1-image`
+- `S1_IMAGE_MODAL_FUNCTION_NAME=run_s1_image_job`
+- `S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME=runtime_healthcheck`
+
+El worker de Modal queda alineado al flujo curado `80 -> 40` y al workflow aprobado `lora-dataset-ipadapter-batch`.
 
 ## Nota sobre Runpod
 

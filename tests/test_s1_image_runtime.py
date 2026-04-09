@@ -293,8 +293,10 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     assert payload["metadata"]["dataset_storage_mode"] == "local_artifact_root"
     assert payload["metadata"]["persisted_artifacts"] == []
     assert payload["metadata"]["dataset_version"].startswith("dataset-")
+    assert payload["metadata"]["render_samples_target"] == 80
+    assert payload["metadata"]["selection_policy"] == "score_curated_v1"
     assert payload["metadata"]["dataset_composition"] == {
-        "policy": "balanced_50_50",
+        "policy": "balanced_50_50_curated",
         "SFW": 20,
         "NSFW": 20,
     }
@@ -311,25 +313,33 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     assert payload["dataset_manifest"]["character_id"] == identity_id
     assert payload["dataset_manifest"]["sample_count"] == 40
     assert payload["dataset_manifest"]["generated_samples"] == 40
+    assert payload["dataset_manifest"]["render_sample_count"] == 80
+    assert payload["dataset_manifest"]["selected_sample_count"] == 40
     assert payload["dataset_manifest"]["workflow_family"] == "flux_lora_dataset_reference"
     assert payload["dataset_manifest"]["workflow_registry_source"] == "demo_runner"
     assert payload["dataset_manifest"]["composition"] == {
-        "policy": "balanced_50_50",
+        "policy": "balanced_50_50_curated",
         "SFW": 20,
         "NSFW": 20,
     }
     assert len(payload["dataset_manifest"]["files"]) == 40
-    assert payload["dataset_manifest"]["files"][0]["path"].startswith("images/SFW/front/")
-    assert payload["dataset_manifest"]["files"][-1]["path"].startswith("images/NSFW/right_profile/")
-    assert payload["dataset_manifest"]["files"][0]["camera_angle"] == "front"
-    assert payload["dataset_manifest"]["files"][0]["framing"] == "close_up_face"
+    assert len(payload["dataset_manifest"]["render_files"]) == 80
+    assert payload["dataset_manifest"]["files"][0]["path"].startswith("images/SFW/")
+    assert payload["dataset_manifest"]["render_files"][-1]["path"].startswith("images/SFW/") or payload["dataset_manifest"]["render_files"][-1]["path"].startswith("images/NSFW/")
+    assert payload["dataset_manifest"]["files"][0]["camera_angle"] in {"front", "left_three_quarter", "right_three_quarter", "left_profile", "right_profile"}
+    assert payload["dataset_manifest"]["files"][0]["framing"] in {"close_up_face", "medium", "full_body"}
+    assert payload["dataset_manifest"]["files"][0]["camera_distance"] in {"tight_portrait", "editorial_mid", "wide_full_body"}
     assert payload["dataset_manifest"]["files"][0]["prompt"].startswith("editorial portrait")
     assert payload["dataset_manifest"]["files"][0]["byte_size"] > 0
+    assert payload["dataset_manifest"]["selection_policy"] == "score_curated_v1"
+    assert len(payload["dataset_manifest"]["rejected_sample_ids"]) == 40
     assert payload["generation_manifest"]["seed_bundle"]["portrait_seed"] == 42
     assert payload["generation_manifest"]["seed_bundle"]["variation_seed"] == 84
     assert payload["generation_manifest"]["seed_bundle"]["dataset_seed"] == 126
+    assert payload["generation_manifest"]["render_samples_target"] == 80
     assert Path(payload["dataset_manifest"]["artifact_path"]).exists()
     assert Path(payload["dataset_package_path"]).exists()
+    assert Path(payload["metadata"]["render_package_path"]).exists()
     assert {artifact["artifact_type"] for artifact in payload["dataset_artifacts"]} == {
         "base_image",
         "dataset_manifest",
@@ -344,8 +354,7 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
         archive_names = set(archive.namelist())
         sample_payloads = {archive.read(file_entry["path"]) for file_entry in payload["dataset_manifest"]["files"]}
     assert "dataset-manifest.json" in archive_names
-    assert "images/SFW/front/sample-001.png" in archive_names
-    assert "images/NSFW/right_profile/sample-040.png" in archive_names
+    assert len([name for name in archive_names if name.endswith(".png") and name.startswith("images/")]) == 40
     assert len(sample_payloads) == 40
 
 

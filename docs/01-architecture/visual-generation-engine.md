@@ -50,10 +50,11 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
 - `ip_adapter_used` y `regional_inpaint_triggered` dejan trazabilidad explicita del camino ejecutado.
 - `error_code` y `error_message` normalizan fallos del pipeline visual.
 
-### Dataset LoRA real de `S1 image`
+### Dataset LoRA curado de `S1 image`
 
-- `S1 image` ya no puede limitarse a duplicar una sola `base_image` para el handoff de training.
-- el runtime debe expandir el prompt tecnico del avatar a un `dataset shot plan` determinista con `40` muestras reales por identidad
+- `S1 image` ya no puede limitarse a un unico set final de `40` muestras renderizadas.
+- el runtime debe expandir el prompt tecnico del avatar a un `render shot plan` determinista con `80` muestras reales por identidad
+- luego debe curar un `training subset` final de `40` muestras para `S1 lora train`
 - cada muestra debe persistir al menos:
   - `sample_id`
   - `prompt`
@@ -64,18 +65,30 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
   - `framing`
   - `camera_angle`
   - `pose_family`
+  - `camera_distance`
+  - `lens_hint`
+  - `lighting_setup`
+  - `background_style`
+  - `quality_priority`
   - `realism_profile`
   - `source_strategy`
-- la composicion canonica por defecto para training LoRA es:
-  - `20` clothed y `20` nude
-  - `10` `close_up_face`, `10` `medium` y `20` `full_body`
-  - `5` angulos con `8` muestras cada uno: `front`, `left_three_quarter`, `right_three_quarter`, `left_profile`, `right_profile`
+- la composicion canonica del render set es:
+  - `24` `full_body_clothed`
+  - `24` `full_body_nude`
+  - `12` `medium_clothed`
+  - `8` `medium_nude`
+  - `8` `close_up_face_clothed`
+  - `4` `close_up_face_nude`
+- el subset final de training mantiene balance `20/20`, prioriza `full_body` y exige presencia de los `5` angulos canonicos
 - el prompt final de cada muestra se construye por capas:
   - bloque de identidad del avatar
   - bloque de realismo fotografico adulto
-  - bloque de variante de shot
+  - bloque de direccion de shot
+  - bloque de quality guard
 - el manifest de `S1 llm` puede enriquecer ese prompt con la `prompt_template` y `negative_prompt` recomendadas por `Copilot`, pero siempre dentro de un workflow aprobado del registry interno
-- el `dataset_package` debe contener binarios distintos y trazables; si domina una sola carga binaria repetida, el handoff no es apto para training
+- el `dataset_package` final contiene solo el subset curado de training
+- el runtime puede conservar `render-manifest` y `render-package` como staging local de QA cuando la politica de retencion lo permite
+- si domina una sola carga binaria repetida o cae la cobertura minima, el handoff queda en `review_required`
 
 ## Fail-fast canonico
 
@@ -284,10 +297,11 @@ Direccion recomendada de persistencia para `S1 image`:
 
 Estado actual implementado:
 
-- `S1 image` genera un `base_render` trazable y luego expande un `shot plan` real para producir el dataset LoRA
-- el handoff por defecto usa `40` muestras reales con prompts y seeds por muestra
+- `S1 image` genera un `base_render` trazable y luego expande un `render shot plan` real de `80` muestras
+- el handoff por defecto entrega `40` muestras curadas con prompts y seeds por muestra
 - el runtime resuelve el template de `ComfyUI` por `workflow_id` de cada job; ya no depende de un unico workflow fijo cableado al contenedor
 - el registry aprobado de `S1` ya contempla una variante especifica para dataset LoRA realista: `lora-dataset-ipadapter-batch`
+- esa variante es el workflow canonico para dataset curado salvo override aprobado
 - luego persiste `base_image` en `Directus Files`
 - `dataset_manifest` y `dataset_package` quedan registrados en `s1_artifacts` y snapshots tecnicos, no como files binarios
 - cuando `s1_image` termina bien y existe `identity_id`, `s1_control.bridge` promueve `s1_identities.pipeline_state` a `base_images_generated`
@@ -306,8 +320,8 @@ Estado actual implementado:
 
 Direccion recomendada del handoff:
 
-1. `S1 image` produce `dataset_manifest`
-2. `S1 image` persiste `dataset_package` solo el tiempo necesario para QA o retry
+1. `S1 image` produce `dataset_manifest` con resumen de render set y subset curado
+2. `S1 image` persiste `dataset_package` solo para el subset final y deja staging temporal del render set para QA o retry
 3. en modo `review`, el operador valida calidad antes de disparar training
 4. en modo `autopromote`, el orquestador en `Coolify` dispara `S1 lora train` apenas termina la persistencia
 5. luego se aplica limpieza de artifacts temporales segun politica

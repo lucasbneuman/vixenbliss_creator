@@ -53,5 +53,8 @@ def test_s1_image_modal_wrapper_uses_volume_backed_cache() -> None:
     assert 'modal.Image.from_dockerfile(' in modal_app
     assert '"MODEL_CACHE_ROOT": "/cache/models"' in modal_app
     assert 'volumes={"/cache/models": model_cache_volume}' in modal_app
+    assert '"COMFYUI_WORKFLOW_IDENTITY_ID": os.getenv("COMFYUI_WORKFLOW_IDENTITY_ID", "lora-dataset-ipadapter-batch")' in modal_app
+    assert '"DEFAULT_RENDER_SAMPLES_TARGET": os.getenv("DEFAULT_RENDER_SAMPLES_TARGET", "80")' in modal_app
+    assert '"DEFAULT_SELECTION_POLICY": os.getenv("DEFAULT_SELECTION_POLICY", "score_curated_v1")' in modal_app
     assert "def run_s1_image_job(payload: dict) -> dict:" in modal_app
     assert "@modal.asgi_app()" not in modal_app

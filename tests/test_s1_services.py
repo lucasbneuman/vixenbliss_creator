@@ -38,8 +38,11 @@ def test_generation_manifest_contains_prompt_and_stable_seed_bundle() -> None:
     assert "identity drift" in manifest.negative_prompt
     assert manifest.samples_target == 40
     assert manifest.realism_profile == "photorealistic_adult_reference_v1"
-    assert len(manifest.dataset_shot_plan) == 40
-    assert manifest.workflow_family == "flux_identity_reference"
+    assert manifest.render_samples_target == 80
+    assert manifest.training_samples_target == 40
+    assert manifest.selection_policy == "score_curated_v1"
+    assert len(manifest.render_shot_plan) == 80
+    assert manifest.workflow_family == "flux_lora_dataset_reference"
     assert manifest.workflow_registry_source == "approved_internal"
 
 
@@ -150,13 +153,17 @@ def test_dataset_shot_plan_respects_40_image_coverage_and_prompt_layers() -> Non
         seed_bundle={"portrait_seed": 1, "variation_seed": 2, "dataset_seed": 3},
     )
 
-    assert len(shot_plan) == 40
-    assert sum(1 for shot in shot_plan if shot.wardrobe_state == "clothed") == 20
-    assert sum(1 for shot in shot_plan if shot.wardrobe_state == "nude") == 20
-    assert sum(1 for shot in shot_plan if shot.framing == "close_up_face") == 10
-    assert sum(1 for shot in shot_plan if shot.framing == "medium") == 10
-    assert sum(1 for shot in shot_plan if shot.framing == "full_body") == 20
-    assert sum(1 for shot in shot_plan if shot.camera_angle == "front") == 8
+    assert len(shot_plan) == 80
+    assert sum(1 for shot in shot_plan if shot.wardrobe_state == "clothed") == 44
+    assert sum(1 for shot in shot_plan if shot.wardrobe_state == "nude") == 36
+    assert sum(1 for shot in shot_plan if shot.framing == "close_up_face") == 12
+    assert sum(1 for shot in shot_plan if shot.framing == "medium") == 20
+    assert sum(1 for shot in shot_plan if shot.framing == "full_body") == 48
+    assert sum(1 for shot in shot_plan if shot.camera_angle == "front") == 20
+    assert shot_plan[0].camera_distance == "wide_full_body" or shot_plan[0].camera_distance
+    assert shot_plan[0].lens_hint
+    assert shot_plan[0].lighting_setup
+    assert shot_plan[0].background_style
     assert "avatar identity block" in shot_plan[0].prompt
     assert "adult real person" in shot_plan[0].prompt
     assert "cgi" in shot_plan[0].negative_prompt
@@ -201,34 +208,41 @@ def test_dataset_generation_returns_manifest_and_package() -> None:
             identity_id=manifest.identity_id,
             generation_manifest=manifest,
             reference_face_image_url="https://example.com/ref.png",
-            samples_target=40,
-            dataset_shot_plan=manifest.dataset_shot_plan,
+            render_samples_target=80,
+            training_samples_target=40,
+            render_shot_plan=manifest.render_shot_plan,
             metadata_json={"character_id": str(manifest.identity_id)},
         )
     )
 
     assert result["dataset_manifest"]["sample_count"] == 40
     assert result["dataset_manifest"]["generated_samples"] == 40
-    assert result["dataset_manifest"]["schema_version"] == "1.1.0"
+    assert result["dataset_manifest"]["render_sample_count"] == 80
+    assert result["dataset_manifest"]["selected_sample_count"] == 40
+    assert result["dataset_manifest"]["schema_version"] == "1.2.0"
     assert result["dataset_manifest"]["character_id"] == str(manifest.identity_id)
     assert result["dataset_manifest"]["dataset_version"].startswith("dataset-")
     assert result["dataset_manifest"]["storage_path"].endswith(f"/datasets/{result['dataset_manifest']['dataset_version']}")
     assert result["dataset_manifest"]["workflow_extensions"] == ["ComfyUI-BatchingNodes", "ComfyPack"]
-    assert result["dataset_manifest"]["workflow_family"] == "flux_identity_reference"
+    assert result["dataset_manifest"]["workflow_family"] == "flux_lora_dataset_reference"
     assert result["dataset_manifest"]["workflow_registry_source"] == "approved_internal"
     assert result["dataset_manifest"]["composition"] == {
-        "policy": "balanced_50_50",
+        "policy": "balanced_50_50_curated",
         "SFW": 20,
         "NSFW": 20,
     }
     assert len(result["dataset_manifest"]["files"]) == 40
+    assert len(result["dataset_manifest"]["render_files"]) == 80
     assert result["dataset_manifest"]["files"][0]["class_name"] == "SFW"
-    assert result["dataset_manifest"]["files"][0]["variation_group"] == "close_up_face"
+    assert result["dataset_manifest"]["files"][0]["variation_group"] in {"full_body", "medium", "close_up_face"}
     assert result["dataset_manifest"]["files"][0]["prompt"].startswith("Create a consistent identity dataset portrait")
     assert result["dataset_manifest"]["files"][0]["caption"].endswith("photorealistic reference photo")
-    assert result["dataset_manifest"]["files"][0]["camera_angle"] == "front"
+    assert result["dataset_manifest"]["files"][0]["camera_angle"] in {"front", "left_three_quarter", "right_three_quarter", "left_profile", "right_profile"}
+    assert result["dataset_manifest"]["files"][0]["camera_distance"] in {"tight_portrait", "editorial_mid", "wide_full_body"}
     assert result["dataset_manifest"]["files"][0]["realism_profile"] == "photorealistic_adult_reference_v1"
-    assert result["dataset_manifest"]["files"][-1]["class_name"] == "NSFW"
+    assert result["dataset_manifest"]["selection_policy"] == "score_curated_v1"
+    assert result["dataset_manifest"]["selection_reasons"]
+    assert len(result["dataset_manifest"]["rejected_sample_ids"]) == 40
     artifact_types = {artifact["artifact_type"] for artifact in result["artifacts"]}
     assert {"base_image", "dataset_manifest", "dataset_package"} <= artifact_types
     base_image_artifact = next(item for item in result["artifacts"] if item["artifact_type"] == "base_image")
@@ -251,13 +265,13 @@ def test_dataset_generation_requires_even_samples_for_balanced_policy() -> None:
     with pytest.raises(ValueError, match="samples_target"):
         build_dataset_result(
             DatasetServiceInput(
-                identity_id=manifest.identity_id,
-                generation_manifest=manifest,
-                reference_face_image_url="https://example.com/ref.png",
-                samples_target=19,
-                dataset_shot_plan=manifest.dataset_shot_plan[:19],
-                metadata_json={"character_id": str(manifest.identity_id)},
-            )
+            identity_id=manifest.identity_id,
+            generation_manifest=manifest,
+            reference_face_image_url="https://example.com/ref.png",
+            training_samples_target=19,
+            render_shot_plan=manifest.render_shot_plan,
+            metadata_json={"character_id": str(manifest.identity_id)},
+        )
         )
 
 

@@ -44,14 +44,17 @@ image = (
             "COMFYUI_BASE_URL": "http://127.0.0.1:8188",
             "MODEL_CACHE_ROOT": "/cache/models",
             "S1_IMAGE_EXECUTION_BACKEND": "local",
-            "COMFYUI_WORKFLOW_IDENTITY_ID": os.getenv("COMFYUI_WORKFLOW_IDENTITY_ID", "base-image-ipadapter-impact"),
-            "COMFYUI_WORKFLOW_IDENTITY_VERSION": os.getenv("COMFYUI_WORKFLOW_IDENTITY_VERSION", "2026-03-31"),
+            "COMFYUI_WORKFLOW_IDENTITY_ID": os.getenv("COMFYUI_WORKFLOW_IDENTITY_ID", "lora-dataset-ipadapter-batch"),
+            "COMFYUI_WORKFLOW_IDENTITY_VERSION": os.getenv("COMFYUI_WORKFLOW_IDENTITY_VERSION", "2026-04-08"),
             "COMFYUI_IP_ADAPTER_MODEL": os.getenv("COMFYUI_IP_ADAPTER_MODEL", "plus_face"),
             "COMFYUI_FACE_CONFIDENCE_THRESHOLD": os.getenv("COMFYUI_FACE_CONFIDENCE_THRESHOLD", "0.8"),
             "COMFYUI_FLUX_DIFFUSION_MODEL_NAME": os.getenv("COMFYUI_FLUX_DIFFUSION_MODEL_NAME", "flux1-schnell.safetensors"),
             "COMFYUI_FLUX_AE_NAME": os.getenv("COMFYUI_FLUX_AE_NAME", "ae.safetensors"),
             "COMFYUI_FLUX_CLIP_L_NAME": os.getenv("COMFYUI_FLUX_CLIP_L_NAME", "clip_l.safetensors"),
             "COMFYUI_FLUX_T5XXL_NAME": os.getenv("COMFYUI_FLUX_T5XXL_NAME", "t5xxl_fp8_e4m3fn.safetensors"),
+            "DEFAULT_RENDER_SAMPLES_TARGET": os.getenv("DEFAULT_RENDER_SAMPLES_TARGET", "80"),
+            "DEFAULT_TRAINING_SAMPLES_TARGET": os.getenv("DEFAULT_TRAINING_SAMPLES_TARGET", "40"),
+            "DEFAULT_SELECTION_POLICY": os.getenv("DEFAULT_SELECTION_POLICY", "score_curated_v1"),
         }
     )
 )
