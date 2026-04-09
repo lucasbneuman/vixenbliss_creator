@@ -238,6 +238,17 @@ Los bundles `runpod-*` quedan como baseline previo, no como direccion futura.
 - `OLLAMA_MODEL`
 - `OLLAMA_TIMEOUT_SECONDS`
 - `progress_url` derivado desde el endpoint cuando el runtime soporte `WebSocket`
+
+Para `S1 image` en `Coolify`, el contrato operativo recomendado ya no depende de `MODAL_ENDPOINT_S1_IMAGE`.
+
+- `S1_IMAGE_EXECUTION_BACKEND=modal`
+- `S1_IMAGE_PROVIDER=modal`
+- `MODAL_TOKEN_ID` y `MODAL_TOKEN_SECRET`
+- `S1_IMAGE_MODAL_APP_NAME=vixenbliss-s1-image`
+- `S1_IMAGE_MODAL_FUNCTION_NAME=run_s1_image_job`
+- `S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME=runtime_healthcheck`
+
+`MODAL_ENDPOINT_S1_IMAGE` queda solo como fallback legado si se intercala un proxy HTTP externo.
 - `PROVIDER_HTTP_TIMEOUT_SECONDS`
 - `PROVIDER_POLL_INTERVAL_SECONDS`
 - `PROVIDER_JOB_TIMEOUT_SECONDS`

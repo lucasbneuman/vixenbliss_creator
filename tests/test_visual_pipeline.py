@@ -24,7 +24,7 @@ from vixenbliss_creator.visual_pipeline import (
 )
 from vixenbliss_creator.visual_pipeline.adapters import RunpodServerlessExecutionClient
 from vixenbliss_creator.visual_pipeline.models import StepExecutionResult
-from vixenbliss_creator.runtime_providers import RuntimeProviderSettings
+from vixenbliss_creator.runtime_providers import RuntimeProviderSettings, ServiceRuntime
 
 
 def build_request(**overrides: object) -> VisualGenerationRequest:
@@ -255,6 +255,30 @@ def test_runtime_provider_settings_preserve_beam_for_legacy_image_endpoints(monk
 
     assert settings.s1_image_provider == Provider.BEAM
     assert settings.s2_image_provider == Provider.BEAM
+
+
+def test_runtime_provider_settings_support_private_modal_worker_without_http_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VISUAL_EXECUTION_PROVIDER", "routed")
+    monkeypatch.setenv("S1_IMAGE_PROVIDER", "modal")
+    monkeypatch.setenv("MODAL_TOKEN_ID", "modal-id")
+    monkeypatch.setenv("MODAL_TOKEN_SECRET", "modal-secret")
+    monkeypatch.setenv("S1_IMAGE_MODAL_APP_NAME", "vixenbliss-s1-image")
+    monkeypatch.setenv("S1_IMAGE_MODAL_FUNCTION_NAME", "run_s1_image_job")
+    monkeypatch.setenv("S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME", "runtime_healthcheck")
+    monkeypatch.delenv("MODAL_ENDPOINT_S1_IMAGE", raising=False)
+
+    settings = VisualPipelineSettings.from_env()
+
+    assert settings.runtime_provider_settings.s1_image_provider == Provider.MODAL
+    assert settings.runtime_provider_settings.modal_endpoint_s1_image is None
+    assert settings.runtime_provider_settings.modal_app_name_for(ServiceRuntime.S1_IMAGE) == "vixenbliss-s1-image"
+    assert settings.runtime_provider_settings.modal_job_function_for(ServiceRuntime.S1_IMAGE) == "run_s1_image_job"
+    assert (
+        settings.runtime_provider_settings.modal_healthcheck_function_for(ServiceRuntime.S1_IMAGE)
+        == "runtime_healthcheck"
+    )
 
 
 def test_build_visual_execution_client_selects_routed_by_default() -> None:
