@@ -28,6 +28,29 @@ def _approved_workflows() -> tuple[ApprovedWorkflow, ...]:
     return (
         ApprovedWorkflow(
             stage=CopilotStage.S1_IDENTITY_IMAGE,
+            workflow_id="lora-dataset-ipadapter-batch",
+            workflow_version="2026-04-08",
+            workflow_family="flux_lora_dataset_reference",
+            base_model_id="flux-schnell-v1",
+            required_nodes=["load_model", "ip_adapter_plus", "ksampler", "vae_decode"],
+            optional_nodes=["face_detector", "face_detailer"],
+            model_hints=["flux", "ipadapter-face", "impact-pack", "batch-dataset"],
+            input_contract=[
+                "identity_metadata",
+                "prompt_template",
+                "negative_prompt",
+                "reference_face_image_url",
+                "dataset_shot_plan",
+            ],
+            content_modes_supported=["sfw", "sensual", "nsfw"],
+            risk_flags=["identity_drift", "dataset_coverage_gap"],
+            compatibility_notes=[
+                "Approved for System 1 LoRA dataset generation with deterministic shot-plan coverage.",
+                "Consumes prompt and negative prompt strategy optimized for real-person dataset realism.",
+            ],
+        ),
+        ApprovedWorkflow(
+            stage=CopilotStage.S1_IDENTITY_IMAGE,
             workflow_id="base-image-ipadapter-impact",
             workflow_version="2026-03-31",
             workflow_family="flux_identity_reference",

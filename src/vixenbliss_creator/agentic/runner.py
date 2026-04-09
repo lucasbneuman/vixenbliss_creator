@@ -257,18 +257,24 @@ def _build_demo_recommendation() -> CopilotRecommendation:
     return CopilotRecommendation.model_validate(
         {
             "stage": "s1_identity_image",
-            "workflow_id": "base-image-ipadapter-impact",
-            "workflow_version": "2026-03-31",
-            "recommended_workflow_family": "flux_identity_reference",
+            "workflow_id": "lora-dataset-ipadapter-batch",
+            "workflow_version": "2026-04-08",
+            "recommended_workflow_family": "flux_lora_dataset_reference",
             "base_model_id": "flux-schnell-v1",
             "required_nodes": ["load_model", "ip_adapter_plus", "ksampler", "vae_decode"],
             "optional_nodes": ["face_detector", "face_detailer"],
-            "model_hints": ["flux", "ipadapter-face", "impact-pack"],
-            "prompt_template": "Editorial portrait aligned with identity metadata, archetype and communication style.",
-            "negative_prompt": "low quality, anatomy drift, minors, body horror, extra limbs",
-            "reasoning_summary": "Workflow preparado para mantener consistencia visual y tono comercial del avatar.",
-            "risk_flags": ["identity_drift", "face_confidence_low"],
-            "compatibility_notes": ["Approved for System 1 identity generation."],
+            "model_hints": ["flux", "ipadapter-face", "impact-pack", "batch-dataset"],
+            "prompt_template": (
+                "Photorealistic adult dataset workflow for LoRA training with deterministic angle coverage, "
+                "full-body emphasis, real-person skin texture, and identity-preserving editorial realism."
+            ),
+            "negative_prompt": (
+                "low quality, anatomy drift, minors, body horror, extra limbs, cgi, 3d, illustration, anime, "
+                "plastic skin, mannequin, watermark, text"
+            ),
+            "reasoning_summary": "Workflow preparado para dataset LoRA realista con cobertura de shot plan y continuidad facial.",
+            "risk_flags": ["identity_drift", "face_confidence_low", "dataset_coverage_gap"],
+            "compatibility_notes": ["Approved for System 1 LoRA dataset generation."],
             "content_modes_supported": ["sfw", "sensual", "nsfw"],
             "registry_source": "demo_runner",
         }

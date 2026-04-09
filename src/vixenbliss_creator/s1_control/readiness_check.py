@@ -17,12 +17,13 @@ from uuid import UUID, uuid4
 from fastapi.testclient import TestClient
 
 from vixenbliss_creator.agentic.runner import run_agentic_brain, run_agentic_brain_with_real_llm
+from vixenbliss_creator.agentic.models import GraphState
 from vixenbliss_creator.contracts.identity import TechnicalSheet
 from vixenbliss_creator.runtime_providers import ModalRuntimeProviderClient, RuntimeProviderSettings, ServiceRuntime
 from vixenbliss_creator.s1_control import (
     DirectusIdentityStore,
     S1RuntimeDirectusRecorder,
-    build_identity_from_technical_sheet,
+    build_identity_from_graph_state,
 )
 
 from .bootstrap import bootstrap_directus_schema
@@ -115,17 +116,25 @@ def _fetch_bytes(url: str, *, token: str) -> tuple[bytes, dict[str, Any]]:
         return response.read(), headers
 
 
-def _build_identity_context(technical_sheet: TechnicalSheet) -> dict[str, Any]:
-    return {
+def _build_identity_context(technical_sheet: TechnicalSheet, state: GraphState | None = None) -> dict[str, Any]:
+    context = {
         "identity_summary": technical_sheet.system5_slots.persona_summary,
         "summary": technical_sheet.identity_core.tagline,
         "voice_tone": _enum_or_value(technical_sheet.personality_profile.voice_tone),
         "style": _enum_or_value(technical_sheet.identity_metadata.style),
         "vertical": _enum_or_value(technical_sheet.identity_metadata.vertical),
+        "occupation_or_content_basis": technical_sheet.identity_metadata.occupation_or_content_basis,
         "display_name": technical_sheet.identity_core.display_name,
         "archetype": _enum_or_value(technical_sheet.personality_profile.archetype),
         "personality_axes": technical_sheet.personality_profile.axes.model_dump(mode="json"),
+        "visual_profile": technical_sheet.visual_profile.model_dump(mode="json"),
+        "interests": list(technical_sheet.narrative_profile.interests),
     }
+    if state is not None and state.copilot_recommendation is not None:
+        context["copilot_workflow_id"] = state.copilot_recommendation.workflow_id
+        context["copilot_workflow_family"] = state.copilot_recommendation.recommended_workflow_family
+        context["copilot_registry_source"] = state.copilot_recommendation.registry_source
+    return context
 
 
 def _create_required_assets(module: object) -> None:
@@ -134,22 +143,41 @@ def _create_required_assets(module: object) -> None:
         path.write_bytes(b"stub")
 
 
-def _run_s1_llm_job(identity_id: str, technical_sheet: TechnicalSheet) -> dict[str, Any]:
+def _run_s1_llm_job(identity_id: str, state: GraphState) -> dict[str, Any]:
     module = _load_runtime_module(f"vb_s1_llm_runtime_{uuid4().hex}", S1_LLM_RUNTIME_PATH)
     client = TestClient(module.web_app)
+    technical_sheet = state.final_technical_sheet_payload
+    if technical_sheet is None:
+        raise RuntimeError("GraphState did not produce a final technical sheet for the S1 LLM handoff.")
+    copilot = state.copilot_recommendation
     payload = {
         "input": {
             "identity_id": identity_id,
-            "identity_context": _build_identity_context(technical_sheet),
-            "workflow_id": "base-image-ipadapter-impact",
-            "workflow_version": "2026-04-03",
-            "base_model_id": "flux-schnell-v1",
+            "identity_context": _build_identity_context(technical_sheet, state),
+            "workflow_id": copilot.workflow_id if copilot is not None else "base-image-ipadapter-impact",
+            "workflow_version": copilot.workflow_version if copilot is not None else "2026-04-03",
+            "workflow_family": (
+                copilot.recommended_workflow_family if copilot is not None else "flux_identity_reference"
+            ),
+            "workflow_registry_source": copilot.registry_source if copilot is not None else "approved_internal",
+            "base_model_id": copilot.base_model_id if copilot is not None else "flux-schnell-v1",
             "reference_face_image_url": "https://example.com/reference.png",
             "image_width": 1024,
             "image_height": 1024,
+            "samples_target": 40,
+            "realism_profile": "photorealistic_adult_reference_v1",
+            "source_strategy": "copilot_workflow_plus_shot_plan_v1",
+            "copilot_prompt_template": copilot.prompt_template if copilot is not None else None,
+            "copilot_negative_prompt": copilot.negative_prompt if copilot is not None else None,
             "ip_adapter": {"enabled": True, "model_name": "plus_face", "weight": 0.9},
-            "prompt_hints": {"source": "readiness_check"},
-            "negative_prompt_hints": {"safety": "adult_fictional_only"},
+            "prompt_hints": {
+                "source": "readiness_check",
+                "copilot_reasoning": copilot.reasoning_summary if copilot is not None else "registry_fallback",
+            },
+            "negative_prompt_hints": {
+                "safety": "adult_fictional_only",
+                "copilot_risks": ", ".join(copilot.risk_flags) if copilot is not None else "identity_drift",
+            },
         }
     }
     submit = client.post("/jobs", json=payload)
@@ -163,6 +191,7 @@ def _run_s1_image_job(identity_id: str, prompt_request_id: str, generation_resul
     modal_result = _run_s1_image_job_via_modal(identity_id, prompt_request_id, generation_result)
     if modal_result is not None:
         return modal_result
+    manifest = generation_result["generation_manifest"]
     temp_root = Path(mkdtemp(prefix="vb-s1-readiness-"))
     comfy_home = temp_root / "comfyui"
     output_dir = comfy_home / "output" / "vb"
@@ -175,8 +204,8 @@ def _run_s1_image_job(identity_id: str, prompt_request_id: str, generation_resul
     os.environ["COMFYUI_INPUT_DIR"] = str(comfy_home / "input")
     os.environ["MODEL_CACHE_ROOT"] = str(temp_root / "model-cache")
     os.environ["SERVICE_ARTIFACT_ROOT"] = str(temp_root / "artifacts")
-    os.environ["COMFYUI_WORKFLOW_IDENTITY_ID"] = "base-image-ipadapter-impact"
-    os.environ["COMFYUI_WORKFLOW_IDENTITY_VERSION"] = "2026-04-03"
+    os.environ["COMFYUI_WORKFLOW_IDENTITY_ID"] = manifest["workflow_id"]
+    os.environ["COMFYUI_WORKFLOW_IDENTITY_VERSION"] = manifest["workflow_version"]
 
     module = _load_runtime_module(f"vb_s1_image_runtime_{uuid4().hex}", S1_IMAGE_RUNTIME_PATH)
     module._ensure_comfyui_running = lambda **_kwargs: None
@@ -193,7 +222,6 @@ def _run_s1_image_job(identity_id: str, prompt_request_id: str, generation_resul
     _create_required_assets(module)
     (output_dir / "base.png").write_bytes(tiny_png_bytes())
 
-    manifest = generation_result["generation_manifest"]
     seed_bundle = manifest["seed_bundle"]
     comfy_parameters = manifest["comfy_parameters"]
     job_input = {
@@ -201,23 +229,29 @@ def _run_s1_image_job(identity_id: str, prompt_request_id: str, generation_resul
         "mode": "base_render",
         "workflow_id": manifest["workflow_id"],
         "workflow_version": manifest["workflow_version"],
+        "workflow_family": manifest.get("workflow_family"),
+        "workflow_registry_source": manifest.get("workflow_registry_source"),
         "base_model_id": manifest["base_model_id"],
         "runtime_stage": "identity_image",
         "prompt": manifest["prompt"],
         "negative_prompt": manifest["negative_prompt"],
+        "realism_profile": manifest.get("realism_profile"),
+        "source_strategy": manifest.get("source_strategy"),
         "seed": seed_bundle["portrait_seed"],
         "seed_bundle": seed_bundle,
         "width": comfy_parameters["width"],
         "height": comfy_parameters["height"],
         "reference_face_image_url": comfy_parameters["reference_face_image_url"],
         "ip_adapter": comfy_parameters["ip_adapter"],
+        "copilot_prompt_template": comfy_parameters.get("copilot_prompt_template"),
+        "copilot_negative_prompt": comfy_parameters.get("copilot_negative_prompt"),
         "face_detailer": {"enabled": True, "confidence_threshold": 0.8, "inpaint_strength": 0.35},
         "metadata": {
             "identity_id": identity_id,
             "character_id": identity_id,
             "prompt_request_id": prompt_request_id,
             "autopromote": False,
-            "samples_target": 24,
+            "samples_target": manifest.get("samples_target", 40),
             "seed_bundle": seed_bundle,
         },
     }
@@ -252,23 +286,29 @@ def _run_s1_image_job_via_modal(identity_id: str, prompt_request_id: str, genera
         "mode": "base_render",
         "workflow_id": manifest["workflow_id"],
         "workflow_version": manifest["workflow_version"],
+        "workflow_family": manifest.get("workflow_family"),
+        "workflow_registry_source": manifest.get("workflow_registry_source"),
         "base_model_id": manifest["base_model_id"],
         "runtime_stage": "identity_image",
         "prompt": manifest["prompt"],
         "negative_prompt": manifest["negative_prompt"],
+        "realism_profile": manifest.get("realism_profile"),
+        "source_strategy": manifest.get("source_strategy"),
         "seed": seed_bundle["portrait_seed"],
         "seed_bundle": seed_bundle,
         "width": comfy_parameters["width"],
         "height": comfy_parameters["height"],
         "reference_face_image_url": os.getenv("S1_REFERENCE_FACE_IMAGE_URL", DEFAULT_REFERENCE_FACE_IMAGE_URL),
         "ip_adapter": comfy_parameters["ip_adapter"],
+        "copilot_prompt_template": comfy_parameters.get("copilot_prompt_template"),
+        "copilot_negative_prompt": comfy_parameters.get("copilot_negative_prompt"),
         "face_detailer": {"enabled": True, "confidence_threshold": 0.8, "inpaint_strength": 0.35},
         "metadata": {
             "identity_id": identity_id,
             "character_id": identity_id,
             "prompt_request_id": prompt_request_id,
             "autopromote": False,
-            "samples_target": 24,
+            "samples_target": manifest.get("samples_target", 40),
             "seed_bundle": seed_bundle,
         },
     }
@@ -293,13 +333,16 @@ def _run_s1_image_job_via_modal(identity_id: str, prompt_request_id: str, genera
     return result
 
 
-def _run_agentic_flow(idea: str) -> tuple[TechnicalSheet, dict[str, Any]]:
+def _run_agentic_flow(idea: str) -> tuple[GraphState, dict[str, Any]]:
     try:
         state = run_agentic_brain_with_real_llm(idea)
         if state.final_technical_sheet_payload is not None:
-            return state.final_technical_sheet_payload, {
+            return state, {
                 "mode": "local_real_llm",
                 "fallback_used": False,
+                "copilot_recommendation": (
+                    state.copilot_recommendation.model_dump(mode="json") if state.copilot_recommendation is not None else None
+                ),
             }
         failure_reason = state.terminal_error_message or "LangGraph real-LLM run completed without final technical sheet."
     except Exception as exc:
@@ -308,30 +351,35 @@ def _run_agentic_flow(idea: str) -> tuple[TechnicalSheet, dict[str, Any]]:
     fallback_state = run_agentic_brain(idea)
     if fallback_state.final_technical_sheet_payload is None:
         raise RuntimeError("LangGraph fallback runner did not produce a final technical sheet.")
-    return fallback_state.final_technical_sheet_payload, {
+    return fallback_state, {
         "mode": "local_demo_fallback",
         "fallback_used": True,
         "fallback_reason": failure_reason,
+        "copilot_recommendation": (
+            fallback_state.copilot_recommendation.model_dump(mode="json")
+            if fallback_state.copilot_recommendation is not None
+            else None
+        ),
     }
 
 
 def _persist_identity_snapshot(
     *,
     client: DirectusControlPlaneClient,
-    technical_sheet: TechnicalSheet,
+    state: GraphState,
     prompt_request_id: str,
-    base_model_id: str,
-) -> tuple[TechnicalSheet, str]:
-    identity = build_identity_from_technical_sheet(
-        technical_sheet,
-        base_model_id=base_model_id,
+    reference_face_image_url: str | None = None,
+) -> tuple[TechnicalSheet, str, str]:
+    identity = build_identity_from_graph_state(
+        state,
+        reference_face_image_url=reference_face_image_url,
     )
     DirectusIdentityStore(client=client).upsert_identity(
         identity,
         created_by="codex",
         source_prompt_request_id=prompt_request_id,
     )
-    return identity.technical_sheet_json, str(identity.id)
+    return identity.technical_sheet_json, str(identity.id), str(identity.base_model_id)
 
 
 def _inspect_directus_artifact(settings: S1ControlSettings, artifact_row: dict[str, Any]) -> dict[str, Any]:
@@ -418,16 +466,16 @@ def run_readiness_check(idea: str = DEFAULT_IDEA) -> dict[str, Any]:
         },
     )
 
-    technical_sheet, agentic_execution = _run_agentic_flow(idea)
-    technical_sheet, identity_id = _persist_identity_snapshot(
+    state, agentic_execution = _run_agentic_flow(idea)
+    technical_sheet, identity_id, resolved_base_model_id = _persist_identity_snapshot(
         client=client,
-        technical_sheet=technical_sheet,
+        state=state,
         prompt_request_id=str(prompt_request["id"]),
-        base_model_id="flux-schnell-v1",
+        reference_face_image_url=os.getenv("S1_REFERENCE_FACE_IMAGE_URL", DEFAULT_REFERENCE_FACE_IMAGE_URL),
     )
     avatar_id_hint = technical_sheet.identity_metadata.avatar_id
 
-    generation_result = _run_s1_llm_job(identity_id, technical_sheet)
+    generation_result = _run_s1_llm_job(identity_id, state)
     image_result = _run_s1_image_job(str(identity_id), str(prompt_request["id"]), generation_result)
     image_backend = str(image_result.get("metadata", {}).get("readiness_execution_backend") or "local_runtime_fallback")
 
@@ -492,6 +540,14 @@ def run_readiness_check(idea: str = DEFAULT_IDEA) -> dict[str, Any]:
             "archetype": _enum_or_value(technical_sheet.personality_profile.archetype),
             "voice_tone": _enum_or_value(technical_sheet.personality_profile.voice_tone),
             "persona_summary": technical_sheet.system5_slots.persona_summary,
+        },
+        "workflow_selection": {
+            "copilot": agentic_execution.get("copilot_recommendation"),
+            "resolved_base_model_id": resolved_base_model_id,
+            "manifest_workflow_id": generation_result["generation_manifest"]["workflow_id"],
+            "manifest_workflow_version": generation_result["generation_manifest"]["workflow_version"],
+            "manifest_workflow_family": generation_result["generation_manifest"].get("workflow_family"),
+            "manifest_registry_source": generation_result["generation_manifest"].get("workflow_registry_source"),
         },
         "generation_manifest": generation_result["generation_manifest"],
         "s1_image_output": {

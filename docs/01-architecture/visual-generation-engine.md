@@ -18,17 +18,20 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
 - `S1` y `S2` deben permanecer en la misma familia `Flux` para preservar compatibilidad del LoRA
 - dentro de `DEV-8`, el runtime objetivo es especificamente `S1 image`
 - `ComfyUI Copilot` solo actua como complemento de desarrollo y gobernanza de workflows; no participa del render productivo
+- desde `DEV-45`, la recomendacion aprobada de `Copilot` ya no queda solo como metadata del grafo: puede seleccionar una variante aprobada real de `S1 image` que el runtime de `Modal` consume por job
 
 ## Gobernanza de Copilot
 
 - los runtimes productivos consumen workflows versionados y aprobados
 - `Copilot` puede sugerir cambios o extensiones, pero no reemplaza el registry interno
+- para `S1 image`, `Copilot` solo puede elegir entre variantes aprobadas del stage `s1_identity_image`; el runtime nunca arma un workflow dinamico fuera del registry
 - si `Copilot` no responde, el pipeline sigue con fallback aprobado
 - `S2 video` queda preparado para recomendaciones pre-runtime, no para adopcion automatica
 
 ### Request
 
 - `workflow_id` y `workflow_version` identifican el workflow operativo.
+- `workflow_family` y `workflow_registry_source` dejan trazabilidad de la variante aprobada elegida por `Copilot` o por fallback interno.
 - `model_family` fija la familia compatible del runtime; la implementacion actual solo admite `flux`.
 - `runtime_stage` distingue `identity_image`, `content_image` y `video`.
 - `base_model_id`, `prompt`, `negative_prompt`, `seed`, `width` y `height` describen la corrida reproducible.
@@ -71,6 +74,7 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
   - bloque de identidad del avatar
   - bloque de realismo fotografico adulto
   - bloque de variante de shot
+- el manifest de `S1 llm` puede enriquecer ese prompt con la `prompt_template` y `negative_prompt` recomendadas por `Copilot`, pero siempre dentro de un workflow aprobado del registry interno
 - el `dataset_package` debe contener binarios distintos y trazables; si domina una sola carga binaria repetida, el handoff no es apto para training
 
 ## Fail-fast canonico
@@ -282,6 +286,8 @@ Estado actual implementado:
 
 - `S1 image` genera un `base_render` trazable y luego expande un `shot plan` real para producir el dataset LoRA
 - el handoff por defecto usa `40` muestras reales con prompts y seeds por muestra
+- el runtime resuelve el template de `ComfyUI` por `workflow_id` de cada job; ya no depende de un unico workflow fijo cableado al contenedor
+- el registry aprobado de `S1` ya contempla una variante especifica para dataset LoRA realista: `lora-dataset-ipadapter-batch`
 - luego persiste `base_image` en `Directus Files`
 - `dataset_manifest` y `dataset_package` quedan registrados en `s1_artifacts` y snapshots tecnicos, no como files binarios
 - cuando `s1_image` termina bien y existe `identity_id`, `s1_control.bridge` promueve `s1_identities.pipeline_state` a `base_images_generated`
@@ -291,6 +297,7 @@ Estado actual implementado:
   - `seed_bundle`
   - `character_id`
   - workflow y version
+  - workflow family y registry source
   - modelo base
   - configuracion visual efectiva de `ip_adapter` y `face_detailer`
   - referencia facial usada

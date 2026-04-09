@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
 from typing import Any
 import os
@@ -16,9 +17,24 @@ MIN_VALID_IMAGES = 12
 MIN_BASE_IMAGES = 1
 MIN_VARIATION_GROUPS = 3
 MAX_DOMINANT_COMPOSITION_SHARE = 0.60
+MAX_DUPLICATE_PAYLOAD_SHARE = 0.20
 REQUIRED_SEED_KEYS = ("portrait_seed", "variation_seed", "dataset_seed")
 REQUIRED_TRAINING_KEYS = ("identity_id", "base_model_id", "workflow_id", "workflow_version")
 VARIATION_KEYS = ("variation_group", "framing", "shot_type", "camera_angle", "pose", "class_name")
+REQUIRED_FILE_FIELDS = (
+    "sample_id",
+    "path",
+    "seed",
+    "prompt",
+    "negative_prompt",
+    "caption",
+    "wardrobe_state",
+    "framing",
+    "camera_angle",
+    "pose_family",
+    "realism_profile",
+    "source_strategy",
+)
 
 
 @dataclass(frozen=True)
@@ -185,6 +201,19 @@ def validate_s1_dataset(
                 details={"sample_count": sample_count, "files_count": len(files)},
             )
         )
+    missing_required_fields = [
+        file_entry.get("path", f"index:{index}")
+        for index, file_entry in enumerate(files, start=1)
+        if isinstance(file_entry, dict) and any(file_entry.get(field) in (None, "") for field in REQUIRED_FILE_FIELDS)
+    ]
+    if missing_required_fields:
+        reasons.append(
+            _reason(
+                "dataset_file_metadata_incomplete",
+                "each dataset sample must include prompt, caption, seed and coverage metadata",
+                details={"examples": missing_required_fields[:5], "count": len(missing_required_fields)},
+            )
+        )
 
     base_image_count = len([artifact for artifact in base_image_artifacts if _artifact_uri(artifact)])
     if base_image_count < MIN_BASE_IMAGES:
@@ -239,10 +268,21 @@ def validate_s1_dataset(
 
     archive_members: list[str] = []
     missing_files: list[str] = []
+    duplicate_payload_share = 0.0
     if files and dataset_package_path is not None:
+        payload_hashes: dict[str, int] = {}
         try:
             with zipfile.ZipFile(dataset_package_path) as archive:
                 archive_members = archive.namelist()
+                declared_paths = [
+                    str(file_entry.get("path")) for file_entry in files if isinstance(file_entry, dict) and file_entry.get("path")
+                ]
+                missing_files = [path for path in declared_paths if path not in archive_members]
+                for declared_path in declared_paths:
+                    if declared_path not in archive_members:
+                        continue
+                    payload_hash = hashlib.sha256(archive.read(declared_path)).hexdigest()
+                    payload_hashes[payload_hash] = payload_hashes.get(payload_hash, 0) + 1
         except zipfile.BadZipFile:
             reasons.append(
                 _reason(
@@ -252,8 +292,6 @@ def validate_s1_dataset(
                 )
             )
         else:
-            declared_paths = [str(file_entry.get("path")) for file_entry in files if isinstance(file_entry, dict) and file_entry.get("path")]
-            missing_files = [path for path in declared_paths if path not in archive_members]
             if missing_files:
                 reasons.append(
                     _reason(
@@ -264,6 +302,19 @@ def validate_s1_dataset(
                 )
             if "dataset-manifest.json" not in archive_members:
                 reasons.append(_reason("dataset_package_missing_manifest", "dataset_package must include dataset-manifest.json"))
+            if payload_hashes:
+                duplicate_payload_share = max(payload_hashes.values()) / len(declared_paths)
+                if duplicate_payload_share > MAX_DUPLICATE_PAYLOAD_SHARE:
+                    reasons.append(
+                        _reason(
+                            "dataset_payload_duplicates",
+                            "dataset package contains too many duplicate payloads for LoRA training",
+                            details={
+                                "duplicate_payload_share": duplicate_payload_share,
+                                "max_allowed_share": MAX_DUPLICATE_PAYLOAD_SHARE,
+                            },
+                        )
+                    )
     if dataset_package_path is not None and dataset_package_path.name.startswith("vb-dataset-verify-"):
         dataset_package_path.unlink(missing_ok=True)
 
@@ -279,6 +330,7 @@ def validate_s1_dataset(
         "dataset_package_locator": dataset_package_locator,
         "dataset_package_verifiable": dataset_package_path is not None,
         "archive_members_count": len(archive_members),
+        "duplicate_payload_share": duplicate_payload_share,
         "seed_bundle_keys": sorted(seed_bundle.keys()),
     }
     report = {
@@ -294,6 +346,7 @@ def validate_s1_dataset(
             "min_base_images": MIN_BASE_IMAGES,
             "min_variation_groups": MIN_VARIATION_GROUPS,
             "max_dominant_composition_share": MAX_DOMINANT_COMPOSITION_SHARE,
+            "max_duplicate_payload_share": MAX_DUPLICATE_PAYLOAD_SHARE,
         },
         "training_metadata": trainer_metadata,
     }

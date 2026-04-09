@@ -358,6 +358,75 @@ def test_openai_client_uses_runtime_timeout(monkeypatch: pytest.MonkeyPatch) -> 
     assert result.identity_draft.metadata.vertical == "lifestyle"
 
 
+def test_openai_client_bounds_long_summary_and_blueprint(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = build_expansion_payload(with_hard_limits=True)
+    payload["expansion_summary"] = ("Expansion realista con demasiados detalles para el limite permitido. " * 12).strip()
+    payload["prompt_blueprint"] = ("Blueprint detallado para identidad, narrativa y consistencia visual. " * 20).strip()
+
+    def fake_json_post(url: str, request_payload: dict, headers: dict[str, str], *, timeout_seconds: int = 30) -> dict:
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(payload),
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr("vixenbliss_creator.agentic.adapters._json_post", fake_json_post)
+
+    client = OpenAICompatibleLLMClient(
+        AgenticSettings(
+            s1_llm_runtime_base_url="https://modal.example.com/s1-llm",
+            s1_llm_runtime_model="qwen2.5:3b",
+        )
+    )
+
+    result = client.generate_expansion("Crea un avatar lifestyle premium", critique_history=[], attempt_count=1)
+
+    assert len(result.expansion_summary) <= 320
+    assert len(result.prompt_blueprint) <= 600
+    assert result.expansion_summary.startswith("Expansion realista")
+    assert result.prompt_blueprint.startswith("Blueprint detallado")
+
+
+def test_openai_client_infers_visual_hints_from_operator_idea_when_rebuilding_sheet(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = build_expansion_payload(with_hard_limits=True)
+    payload["technical_sheet_payload"] = {}
+    payload["identity_draft"]["narrative_minimal"] = {}
+
+    def fake_json_post(url: str, request_payload: dict, headers: dict[str, str], *, timeout_seconds: int = 30) -> dict:
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(payload),
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr("vixenbliss_creator.agentic.adapters._json_post", fake_json_post)
+
+    client = OpenAICompatibleLLMClient(
+        AgenticSettings(
+            s1_llm_runtime_base_url="https://modal.example.com/s1-llm",
+            s1_llm_runtime_model="qwen2.5:3b",
+        )
+    )
+
+    result = client.generate_expansion(
+        "Mujer pelirroja para contenido de adultos, vive cerca del mar y le gustan los animales marinos, su pasatiempo es andar en bici",
+        critique_history=[],
+        attempt_count=1,
+    )
+
+    assert result.technical_sheet_payload.visual_profile.hair_color == "red"
+    assert "animales marinos" in result.technical_sheet_payload.narrative_profile.interests
+    assert "andar en bici" in result.technical_sheet_payload.narrative_profile.interests
+
+
 def test_runner_returns_succeeded_graph_state() -> None:
     result = run_agentic_brain("Creá un avatar nuevo para lifestyle premium")
 
@@ -454,7 +523,8 @@ def test_graph_uses_registry_fallback_when_copilot_is_unavailable() -> None:
 
     assert result.completion_status == CompletionStatus.SUCCEEDED
     assert result.copilot_recommendation is not None
-    assert result.copilot_recommendation.workflow_id == "base-image-ipadapter-impact"
+    assert result.copilot_recommendation.workflow_id == "lora-dataset-ipadapter-batch"
+    assert result.copilot_recommendation.recommended_workflow_family == "flux_lora_dataset_reference"
     assert result.copilot_recommendation.registry_source == "approved_internal_fallback"
     assert result.copilot_notes
     assert "fallback" in result.copilot_notes[0].lower()

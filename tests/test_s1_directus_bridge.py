@@ -74,7 +74,7 @@ class FakeControlPlane:
 
 def _build_dataset_manifest(identity_id: str, *, package_path: Path, sample_count: int = 12) -> dict[str, Any]:
     files: list[dict[str, Any]] = []
-    variation_cycle = ("close_up", "medium", "full_body")
+    variation_cycle = ("close_up_face", "medium", "full_body")
     pose_cycle = ("front", "three_quarter", "profile")
     half = sample_count // 2
     sample_index = 0
@@ -90,13 +90,23 @@ def _build_dataset_manifest(identity_id: str, *, package_path: Path, sample_coun
                     "class_name": class_name,
                     "variation_group": variation_group,
                     "framing": variation_group,
+                    "shot_type": variation_group,
+                    "camera_angle": pose_cycle[(sample_index - 1) % len(pose_cycle)],
                     "pose": pose_cycle[(sample_index - 1) % len(pose_cycle)],
+                    "pose_family": pose_cycle[(sample_index - 1) % len(pose_cycle)],
+                    "expression": "calm confident expression",
+                    "wardrobe_state": "clothed" if class_name == "SFW" else "nude",
+                    "prompt": f"adult real person {variation_group}",
+                    "negative_prompt": "cgi, illustration, anime, text, watermark",
+                    "caption": f"adult real person {variation_group} photorealistic reference photo",
                     "path": f"images/{class_name}/sample-{class_offset + 1:03d}.png",
                     "seed": sample_index * 111,
+                    "realism_profile": "photorealistic_adult_reference_v1",
+                    "source_strategy": "avatar_prompt_plus_shot_plan_v1",
                 }
             )
     return {
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "identity_id": identity_id,
         "character_id": identity_id,
         "dataset_version": f"dataset-{identity_id}",
@@ -117,8 +127,8 @@ def _build_dataset_manifest(identity_id: str, *, package_path: Path, sample_coun
 def _write_dataset_package(package_path: Path, manifest: dict[str, Any]) -> None:
     with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("dataset-manifest.json", json.dumps(manifest))
-        for file_entry in manifest["files"]:
-            archive.writestr(file_entry["path"], tiny_png_bytes())
+        for index, file_entry in enumerate(manifest["files"], start=1):
+            archive.writestr(file_entry["path"], tiny_png_bytes() + f"-{index}".encode("ascii"))
 
 
 def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:

@@ -91,6 +91,53 @@ def _capped_field_list(values: list[str], *, limit: int = 24) -> list[str]:
     return list(dict.fromkeys(values))[:limit]
 
 
+def _bounded_text(value: object, *, minimum_length: int, maximum_length: int, fallback: str) -> str:
+    candidate = " ".join(str(value or "").split())
+    if not candidate:
+        candidate = fallback
+    if len(candidate) > maximum_length:
+        candidate = candidate[:maximum_length].rstrip(" ,;:-")
+    if len(candidate) < minimum_length:
+        candidate = fallback
+    if len(candidate) > maximum_length:
+        candidate = fallback[:maximum_length].rstrip(" ,;:-")
+    return candidate
+
+
+def _normalized_idea_text(idea: str) -> str:
+    return " ".join(idea.lower().split())
+
+
+def _idea_mentions(idea: str, *terms: str) -> bool:
+    normalized = _normalized_idea_text(idea)
+    return any(term in normalized for term in terms)
+
+
+def _infer_hair_color_from_idea(idea: str, *, fallback: str) -> str:
+    if _idea_mentions(idea, "pelirroj", "pelirroja", "redhead", "red hair", "ginger"):
+        return "red"
+    if _idea_mentions(idea, "rubia", "rubio", "blonde", "blond"):
+        return "blonde"
+    if _idea_mentions(idea, "morena", "moreno", "brunette"):
+        return "dark_brown"
+    return fallback
+
+
+def _infer_interests_from_idea(idea: str) -> list[str]:
+    interests: list[str] = []
+    if _idea_mentions(idea, "animales marinos", "marine animals", "vida marina", "sea life"):
+        interests.append("animales marinos")
+    if _idea_mentions(idea, "andar en bici", "anar en bici", "andar en bicicleta", "bike", "bici", "cycling"):
+        interests.append("andar en bici")
+    if _idea_mentions(idea, "vive cerca del mar", "vive cerca de mar", "cerca del mar", "junto al mar", "by the sea", "coastal"):
+        interests.append("vida costera")
+    if _idea_mentions(idea, "playa", "beach"):
+        interests.append("playa")
+    if len(interests) >= 2:
+        return interests[:10]
+    return []
+
+
 def _english_persona_summary(*, display_name: str, style: str, vertical: str, archetype: str) -> str:
     return (
         f"{display_name} is a synthetic identity built for System 1 with a {style} tone, "
@@ -216,7 +263,8 @@ def _build_technical_sheet_from_identity(payload: dict, settings: AgenticSetting
     archetype = identity_draft.get("archetype") or normalized_constraints.get("archetype") or ArchetypeCode.PLAYFUL_TEASE.value
     voice_tone = normalized_constraints.get("voice_tone") or (VoiceTone.AUTHORITATIVE.value if vertical == Vertical.LIFESTYLE.value else VoiceTone.SEDUCTIVE.value)
     display_name = identity_draft.get("name") or "Velvet Ember"
-    interests = narrative_minimal.get("interests") or ["fashion", "nightlife"]
+    interests = narrative_minimal.get("interests") or _infer_interests_from_idea(idea) or ["fashion", "nightlife"]
+    hair_color = _infer_hair_color_from_idea(idea, fallback="dark_brown")
 
     return {
         "schema_version": "1.0.0",
@@ -240,7 +288,7 @@ def _build_technical_sheet_from_identity(payload: dict, settings: AgenticSetting
             "body_type": "athletic",
             "skin_tone": "olive",
             "eye_color": "hazel",
-            "hair_color": "dark_brown",
+            "hair_color": hair_color,
             "hair_style": "soft_waves",
             "dominant_features": ["confident_gaze", "defined_jawline"],
             "wardrobe_styles": ["luxury_lingerie"] if vertical != Vertical.LIFESTYLE.value else ["premium_minimalist", "luxury_resort"],
@@ -335,11 +383,38 @@ def _build_technical_sheet_from_identity(payload: dict, settings: AgenticSetting
 
 def _coerce_expansion_payload(raw_payload: dict, settings: AgenticSettings, idea: str) -> dict:
     payload = dict(raw_payload)
+    payload["expansion_summary"] = _bounded_text(
+        payload.get("expansion_summary"),
+        minimum_length=24,
+        maximum_length=320,
+        fallback="Expansion normalized into a concise System 1 identity summary ready for structured validation.",
+    )
+    payload["prompt_blueprint"] = _bounded_text(
+        payload.get("prompt_blueprint"),
+        minimum_length=24,
+        maximum_length=600,
+        fallback="Prompt blueprint aligned with identity constraints, persona consistency, narrative coherence, and safe operational limits.",
+    )
     if not isinstance(payload.get("assumptions"), list):
         payload["assumptions"] = ["real_llm_smoke"]
     completion_report = dict(payload.get("completion_report", {}) or {})
     normalized_constraints = dict(payload.get("normalized_constraints", {}) or {})
     identity_draft = dict(payload.get("identity_draft", {}) or {})
+    identity_metadata = dict(identity_draft.get("metadata", {}) or {})
+    vertical = str(identity_metadata.get("vertical") or normalized_constraints.get("vertical") or Vertical.ADULT_ENTERTAINMENT.value)
+    style = str(identity_metadata.get("style") or normalized_constraints.get("style") or IdentityStyle.EDITORIAL.value)
+    display_name = str(identity_draft.get("name") or "Velvet Ember")
+    narrative_minimal = dict(identity_draft.get("narrative_minimal", {}) or {})
+    narrative_minimal["origin"] = narrative_minimal.get("origin") or _english_origin_story(
+        display_name=display_name,
+        style=style,
+        vertical=vertical,
+    )
+    narrative_minimal["interests"] = narrative_minimal.get("interests") or _infer_interests_from_idea(idea) or ["fashion", "nightlife"]
+    narrative_minimal["daily_life"] = narrative_minimal.get("daily_life") or _english_daily_life(style=style)
+    narrative_minimal["motivation"] = narrative_minimal.get("motivation") or _english_motivation(vertical=vertical)
+    narrative_minimal["relationship_with_fans"] = narrative_minimal.get("relationship_with_fans") or _english_relationship_with_fans()
+    identity_draft["narrative_minimal"] = narrative_minimal
     if "field_traces" not in identity_draft or not identity_draft.get("field_traces"):
         identity_draft["field_traces"] = _build_field_traces(payload, idea)
     if "manually_defined_fields" not in completion_report:

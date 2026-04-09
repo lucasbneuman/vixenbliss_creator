@@ -80,6 +80,30 @@ def _base_job_input(**overrides: object) -> dict:
     return payload
 
 
+def _install_sequential_dataset_renderer(module: object) -> None:
+    prompt_counter = {"value": 0}
+
+    def fake_submit_prompt(*_args, **_kwargs) -> str:
+        prompt_counter["value"] += 1
+        return f"prompt-{prompt_counter['value']}"
+
+    def fake_poll_history(prompt_id: str) -> dict:
+        prompt_number = int(prompt_id.split("-")[-1])
+        filename = f"sample-{prompt_number:03d}.png" if prompt_number > 1 else "base.png"
+        (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / filename).write_bytes(tiny_png_bytes() + prompt_id.encode("ascii"))
+        return {
+            "outputs": {
+                "save_base_image": {
+                    "images": [{"filename": filename, "subfolder": "vb", "type": "output"}],
+                },
+                "face_detector": {"metrics": {"bbox_confidence": 0.91}},
+            }
+        }
+
+    module._submit_prompt = fake_submit_prompt
+    module._poll_history = fake_poll_history
+
+
 def test_s1_image_runtime_healthcheck_reports_identity_contract(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
@@ -239,19 +263,7 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
-    monkeypatch.setattr(module, "_submit_prompt", lambda *_args, **_kwargs: "prompt-1")
-    monkeypatch.setattr(
-        module,
-        "_poll_history",
-        lambda _prompt_id: {
-            "outputs": {
-                "save_base_image": {
-                    "images": [{"filename": "base.png", "subfolder": "vb", "type": "output"}],
-                },
-                "face_detector": {"metrics": {"bbox_confidence": 0.91}},
-            }
-        },
-    )
+    _install_sequential_dataset_renderer(module)
     _create_required_flux_assets(module)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
@@ -267,8 +279,10 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
                     "identity_id": identity_id,
                     "character_id": identity_id,
                     "autopromote": True,
-                    "samples_target": 24,
+                    "samples_target": 40,
                 },
+                workflow_family="flux_lora_dataset_reference",
+                workflow_registry_source="demo_runner",
             )
         },
     )
@@ -281,8 +295,8 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     assert payload["metadata"]["dataset_version"].startswith("dataset-")
     assert payload["metadata"]["dataset_composition"] == {
         "policy": "balanced_50_50",
-        "SFW": 12,
-        "NSFW": 12,
+        "SFW": 20,
+        "NSFW": 20,
     }
     assert payload["metadata"]["seed"] == 42
     assert payload["metadata"]["seed_bundle"]["portrait_seed"] == 42
@@ -290,19 +304,27 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     assert payload["metadata"]["seed_bundle"]["dataset_seed"] == 126
     assert payload["metadata"]["character_id"] == identity_id
     assert payload["metadata"]["workflow_id"] == "base-image-ipadapter-impact"
+    assert payload["metadata"]["workflow_family"] == "flux_lora_dataset_reference"
+    assert payload["metadata"]["workflow_registry_source"] == "demo_runner"
     assert payload["metadata"]["base_model_id"] == "flux-schnell-v1"
     assert payload["dataset_manifest"]["identity_id"] == identity_id
     assert payload["dataset_manifest"]["character_id"] == identity_id
-    assert payload["dataset_manifest"]["sample_count"] == 24
-    assert payload["dataset_manifest"]["generated_samples"] == 24
+    assert payload["dataset_manifest"]["sample_count"] == 40
+    assert payload["dataset_manifest"]["generated_samples"] == 40
+    assert payload["dataset_manifest"]["workflow_family"] == "flux_lora_dataset_reference"
+    assert payload["dataset_manifest"]["workflow_registry_source"] == "demo_runner"
     assert payload["dataset_manifest"]["composition"] == {
         "policy": "balanced_50_50",
-        "SFW": 12,
-        "NSFW": 12,
+        "SFW": 20,
+        "NSFW": 20,
     }
-    assert len(payload["dataset_manifest"]["files"]) == 24
-    assert payload["dataset_manifest"]["files"][0]["path"].startswith("images/SFW/")
-    assert payload["dataset_manifest"]["files"][-1]["path"].startswith("images/NSFW/")
+    assert len(payload["dataset_manifest"]["files"]) == 40
+    assert payload["dataset_manifest"]["files"][0]["path"].startswith("images/SFW/front/")
+    assert payload["dataset_manifest"]["files"][-1]["path"].startswith("images/NSFW/right_profile/")
+    assert payload["dataset_manifest"]["files"][0]["camera_angle"] == "front"
+    assert payload["dataset_manifest"]["files"][0]["framing"] == "close_up_face"
+    assert payload["dataset_manifest"]["files"][0]["prompt"].startswith("editorial portrait")
+    assert payload["dataset_manifest"]["files"][0]["byte_size"] > 0
     assert payload["generation_manifest"]["seed_bundle"]["portrait_seed"] == 42
     assert payload["generation_manifest"]["seed_bundle"]["variation_seed"] == 84
     assert payload["generation_manifest"]["seed_bundle"]["dataset_seed"] == 126
@@ -320,16 +342,26 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
     assert manifest_payload["checksum_sha256"] == payload["dataset_manifest"]["checksum_sha256"]
     with zipfile.ZipFile(payload["dataset_package_path"]) as archive:
         archive_names = set(archive.namelist())
+        sample_payloads = {archive.read(file_entry["path"]) for file_entry in payload["dataset_manifest"]["files"]}
     assert "dataset-manifest.json" in archive_names
-    assert "images/SFW/sample-001.png" in archive_names
-    assert "images/NSFW/sample-012.png" in archive_names
+    assert "images/SFW/front/sample-001.png" in archive_names
+    assert "images/NSFW/right_profile/sample-040.png" in archive_names
+    assert len(sample_payloads) == 40
 
 
-def test_s1_image_runtime_response_includes_directus_persistence_metadata(tmp_path: Path, monkeypatch) -> None:
+def test_s1_image_runtime_uses_selected_workflow_template_from_job_input(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
-    monkeypatch.setattr(module, "_submit_prompt", lambda *_args, **_kwargs: "prompt-1")
+    captured: dict[str, object] = {}
+
+    def fake_submit_prompt(workflow: dict, *, mode: str, job_input: dict | None = None) -> str:
+        captured["workflow_keys"] = sorted(workflow.keys())
+        captured["extra_workflow_id"] = job_input["workflow_id"] if job_input is not None else None
+        captured["extra_workflow_version"] = job_input["workflow_version"] if job_input is not None else None
+        return "prompt-variant"
+
+    monkeypatch.setattr(module, "_submit_prompt", fake_submit_prompt)
     monkeypatch.setattr(
         module,
         "_poll_history",
@@ -338,10 +370,42 @@ def test_s1_image_runtime_response_includes_directus_persistence_metadata(tmp_pa
                 "save_base_image": {
                     "images": [{"filename": "base.png", "subfolder": "vb", "type": "output"}],
                 },
-                "face_detector": {"metrics": {"bbox_confidence": 0.91}},
+                "face_detector": {"metrics": {"bbox_confidence": 0.84}},
             }
         },
     )
+    _create_required_flux_assets(module)
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
+    client = TestClient(module.app)
+
+    submit = client.post(
+        "/jobs",
+        json={
+            "input": _base_job_input(
+                workflow_id="lora-dataset-ipadapter-batch",
+                workflow_version="2026-04-08",
+                workflow_family="flux_lora_dataset_reference",
+                workflow_registry_source="approved_internal_fallback",
+            )
+        },
+    )
+    payload = submit.json()["output"]
+
+    assert "load_diffusion_model" in captured["workflow_keys"]
+    assert captured["extra_workflow_id"] == "lora-dataset-ipadapter-batch"
+    assert captured["extra_workflow_version"] == "2026-04-08"
+    assert payload["workflow_id"] == "lora-dataset-ipadapter-batch"
+    assert payload["workflow_version"] == "2026-04-08"
+    assert payload["metadata"]["workflow_family"] == "flux_lora_dataset_reference"
+    assert payload["metadata"]["workflow_registry_source"] == "approved_internal_fallback"
+
+
+def test_s1_image_runtime_response_includes_directus_persistence_metadata(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
+    _install_sequential_dataset_renderer(module)
     _create_required_flux_assets(module)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
@@ -359,7 +423,7 @@ def test_s1_image_runtime_response_includes_directus_persistence_metadata(tmp_pa
     identity_id = str(uuid4())
     response = client.post(
         "/jobs",
-        json={"input": _base_job_input(metadata={"identity_id": identity_id, "autopromote": True, "samples_target": 24})},
+        json={"input": _base_job_input(metadata={"identity_id": identity_id, "autopromote": True, "samples_target": 40})},
     )
     payload = response.json()["output"]
 
@@ -372,19 +436,7 @@ def test_s1_image_runtime_exposes_directus_recording_failure(tmp_path: Path, mon
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
-    monkeypatch.setattr(module, "_submit_prompt", lambda *_args, **_kwargs: "prompt-1")
-    monkeypatch.setattr(
-        module,
-        "_poll_history",
-        lambda _prompt_id: {
-            "outputs": {
-                "save_base_image": {
-                    "images": [{"filename": "base.png", "subfolder": "vb", "type": "output"}],
-                },
-                "face_detector": {"metrics": {"bbox_confidence": 0.91}},
-            }
-        },
-    )
+    _install_sequential_dataset_renderer(module)
     _create_required_flux_assets(module)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
@@ -399,7 +451,7 @@ def test_s1_image_runtime_exposes_directus_recording_failure(tmp_path: Path, mon
 
     response = client.post(
         "/jobs",
-        json={"input": _base_job_input(metadata={"identity_id": identity_id, "autopromote": True, "samples_target": 24})},
+        json={"input": _base_job_input(metadata={"identity_id": identity_id, "autopromote": True, "samples_target": 40})},
     )
     payload = response.json()["output"]
 

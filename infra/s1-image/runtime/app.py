@@ -10,6 +10,7 @@ import time
 import uuid
 import zipfile
 from collections.abc import Callable
+from collections import Counter
 from pathlib import Path
 from typing import TextIO
 from urllib import error, parse, request
@@ -19,7 +20,14 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
 from vixenbliss_creator.provider import Provider
 from vixenbliss_creator.s1_control import S1ControlSettings, S1RuntimeDirectusRecorder
-from vixenbliss_creator.s1_services import DatasetServiceInput, GenerationManifest, InMemoryServiceRuntime, SeedBundle, build_dataset_result
+from vixenbliss_creator.s1_services import (
+    DatasetServiceInput,
+    GenerationManifest,
+    InMemoryServiceRuntime,
+    SeedBundle,
+    build_dataset_result,
+    build_dataset_shot_plan,
+)
 from vixenbliss_creator.visual_pipeline import ResumeCheckpoint, ResumeStage, RuntimeStage, VisualArtifact, VisualArtifactRole
 
 
@@ -64,7 +72,8 @@ MODEL_CACHE_ROOT = Path(
 )
 MODEL_BOOTSTRAP_WAIT_SECONDS = int(os.getenv("MODEL_BOOTSTRAP_WAIT_SECONDS", "45"))
 COMFYUI_HISTORY_TIMEOUT_SECONDS = int(os.getenv("COMFYUI_HISTORY_TIMEOUT_SECONDS", "1800"))
-WORKFLOW_TEMPLATE = RUNTIME_ROOT / "workflows" / f"{COMFYUI_WORKFLOW_IMAGE_ID}.json"
+WORKFLOW_TEMPLATE_DIR = RUNTIME_ROOT / "workflows"
+DEFAULT_WORKFLOW_TEMPLATE = WORKFLOW_TEMPLATE_DIR / f"{COMFYUI_WORKFLOW_IMAGE_ID}.json"
 ENTRYPOINT_SCRIPT = RUNTIME_ROOT / "scripts" / "entrypoint.sh"
 S1_IMAGE_EXECUTION_BACKEND = os.getenv("S1_IMAGE_EXECUTION_BACKEND", "local").strip().lower()
 S1_IMAGE_MODAL_APP_NAME = os.getenv("S1_IMAGE_MODAL_APP_NAME", "vixenbliss-s1-image")
@@ -79,6 +88,20 @@ COMFYUI_LOG_PATH = ARTIFACT_ROOT / "comfyui.log"
 ProgressEmitter = Callable[[str, str, float], None]
 
 
+def _resolved_workflow_id(job_input: dict | None = None) -> str:
+    job_input = job_input or {}
+    return str(job_input.get("workflow_id", COMFYUI_WORKFLOW_IMAGE_ID))
+
+
+def _resolved_workflow_version(job_input: dict | None = None) -> str:
+    job_input = job_input or {}
+    return str(job_input.get("workflow_version", COMFYUI_WORKFLOW_IMAGE_VERSION))
+
+
+def _workflow_template_path(job_input: dict | None = None) -> Path:
+    return WORKFLOW_TEMPLATE_DIR / f"{_resolved_workflow_id(job_input)}.json"
+
+
 def _resolve_ip_adapter_model_name(job_input: dict | None = None) -> str:
     job_input = job_input or {}
     ip_adapter = job_input.get("ip_adapter") or {}
@@ -88,11 +111,11 @@ def _resolve_ip_adapter_model_name(job_input: dict | None = None) -> str:
     return requested
 
 
-def _response_error(code: str, message: str, metadata: dict | None = None) -> dict:
+def _response_error(code: str, message: str, metadata: dict | None = None, *, job_input: dict | None = None) -> dict:
     return {
         "provider": Provider.MODAL.value,
-        "workflow_id": COMFYUI_WORKFLOW_IMAGE_ID,
-        "workflow_version": COMFYUI_WORKFLOW_IMAGE_VERSION,
+        "workflow_id": _resolved_workflow_id(job_input),
+        "workflow_version": _resolved_workflow_version(job_input),
         "runtime_stage": RuntimeStage.IDENTITY_IMAGE.value,
         "service_runtime": "s1_image",
         "artifacts": [],
@@ -110,10 +133,15 @@ def _assert_s1_runtime_contract(job_input: dict) -> None:
         raise RuntimeError("COMFYUI_EXECUTION_FAILED: S1 image runtime must not consume a LoRA version")
 
 
-def _copy_workflow() -> None:
-    target = COMFYUI_USER_DIR / "workflows" / f"{COMFYUI_WORKFLOW_IMAGE_ID}.json"
+def _copy_workflow(job_input: dict | None = None) -> None:
+    workflow_template = _workflow_template_path(job_input)
+    if not workflow_template.exists():
+        raise RuntimeError(
+            f"COMFYUI_EXECUTION_FAILED: workflow template {_resolved_workflow_id(job_input)} is not available in the runtime"
+        )
+    target = COMFYUI_USER_DIR / "workflows" / workflow_template.name
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(WORKFLOW_TEMPLATE.read_text(encoding="utf-8"), encoding="utf-8")
+    target.write_text(workflow_template.read_text(encoding="utf-8"), encoding="utf-8")
 
 
 def _urlopen_json(req: request.Request | str, *, timeout: int) -> dict:
@@ -153,14 +181,18 @@ def _emit_progress(emit_progress: ProgressEmitter | None, *, stage: str, message
         emit_progress(stage, message, progress)
 
 
-def _ensure_comfyui_running(*, emit_progress: ProgressEmitter | None = None) -> None:
+def _ensure_comfyui_running(
+    *,
+    emit_progress: ProgressEmitter | None = None,
+    job_input: dict | None = None,
+) -> None:
     global _COMFYUI_PROCESS, _COMFYUI_LOG_HANDLE
     if _healthcheck():
         _emit_progress(emit_progress, stage="comfyui_ready", message="ComfyUI already responding", progress=0.26)
         return
 
     _emit_progress(emit_progress, stage="starting_comfyui", message="Starting embedded ComfyUI runtime", progress=0.18)
-    _copy_workflow()
+    _copy_workflow(job_input)
 
     if _COMFYUI_PROCESS is None or _COMFYUI_PROCESS.poll() is not None:
         COMFYUI_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -250,7 +282,7 @@ def _runtime_checks(job_input: dict | None = None) -> dict[str, bool]:
         "cache_ip_adapter_present": cache_paths["ip_adapter_flux"].exists(),
         "face_detector_present": paths["face_detector"].exists(),
         "cache_face_detector_present": cache_paths["face_detector"].exists(),
-        "workflow_baked": WORKFLOW_TEMPLATE.exists(),
+        "workflow_baked": _workflow_template_path(job_input).exists(),
         "clip_vision_cache_present": (COMFYUI_MODELS_DIR / "clip_vision" / COMFYUI_IP_ADAPTER_CLIP_VISION_DIRNAME).exists(),
         "comfyui_baked": (COMFYUI_HOME / "main.py").exists(),
         "impact_pack_baked": (COMFYUI_CUSTOM_NODES_DIR / "ComfyUI-Impact-Pack").exists(),
@@ -301,7 +333,12 @@ def _materialize_resume_base_image(job_input: dict) -> str:
 
 
 def _build_workflow_payload(job_input: dict) -> dict:
-    workflow = json.loads(WORKFLOW_TEMPLATE.read_text(encoding="utf-8"))
+    workflow_template = _workflow_template_path(job_input)
+    if not workflow_template.exists():
+        raise RuntimeError(
+            f"COMFYUI_EXECUTION_FAILED: workflow template {_resolved_workflow_id(job_input)} is not available in the runtime"
+        )
+    workflow = json.loads(workflow_template.read_text(encoding="utf-8"))
     workflow = {
         key: value
         for key, value in workflow.items()
@@ -384,13 +421,13 @@ def _build_workflow_payload(job_input: dict) -> dict:
     raise RuntimeError(f"COMFYUI_EXECUTION_FAILED: unsupported mode {mode}")
 
 
-def _submit_prompt(workflow: dict, *, mode: str) -> str:
+def _submit_prompt(workflow: dict, *, mode: str, job_input: dict | None = None) -> str:
     payload = {
         "client_id": f"modal-{uuid.uuid4().hex}",
         "prompt": workflow,
         "extra_data": {
-            "workflow_id": COMFYUI_WORKFLOW_IMAGE_ID,
-            "workflow_version": COMFYUI_WORKFLOW_IMAGE_VERSION,
+            "workflow_id": _resolved_workflow_id(job_input),
+            "workflow_version": _resolved_workflow_version(job_input),
             "mode": mode,
         },
     }
@@ -562,6 +599,24 @@ def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _materialize_input_image(image_bytes: bytes, *, prefix: str) -> str:
+    COMFYUI_INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{prefix}-{uuid.uuid4().hex}.png"
+    (COMFYUI_INPUT_DIR / filename).write_bytes(image_bytes)
+    return filename
+
+
+def _resolve_artifact_bytes(artifact: dict) -> bytes:
+    metadata = artifact.get("metadata_json") or {}
+    inline_data = metadata.get("inline_data_base64")
+    if inline_data:
+        return base64.b64decode(inline_data)
+    artifact_uri = artifact.get("uri")
+    if artifact_uri and Path(artifact_uri).exists():
+        return Path(artifact_uri).read_bytes()
+    raise RuntimeError("COMFYUI_EXECUTION_FAILED: generated dataset sample is not materializable")
+
+
 def _seed_bundle_from_job_input(job_input: dict) -> SeedBundle:
     metadata = job_input.get("metadata") or {}
     explicit_seed_bundle = job_input.get("seed_bundle")
@@ -587,6 +642,69 @@ def _seed_bundle_from_job_input(job_input: dict) -> SeedBundle:
     )
 
 
+def _generate_dataset_samples(
+    *,
+    job_input: dict,
+    dataset_manifest: dict,
+    base_image_bytes: bytes,
+    emit_progress: ProgressEmitter | None = None,
+) -> list[dict]:
+    files = dataset_manifest.get("files") or []
+    if not files:
+        raise RuntimeError("COMFYUI_EXECUTION_FAILED: dataset manifest does not contain any files to render")
+
+    reference_image_name = _materialize_input_image(base_image_bytes, prefix="dataset-reference")
+    samples: list[dict] = []
+    total = len(files)
+    for index, file_entry in enumerate(files, start=1):
+        progress = 0.94 + ((index - 1) / max(total, 1)) * 0.04
+        _emit_progress(
+            emit_progress,
+            stage="rendering_dataset_sample",
+            message=f"Rendering dataset sample {index}/{total}",
+            progress=min(progress, 0.98),
+        )
+        sample_job_input = dict(job_input)
+        sample_job_input.update(
+            {
+                "prompt": file_entry["prompt"],
+                "negative_prompt": file_entry["negative_prompt"],
+                "seed": int(file_entry["seed"]),
+                "mode": ResumeStage.BASE_RENDER.value,
+                "reference_face_image_url": None,
+                "reference_face_image_name": reference_image_name,
+                "metadata": {
+                    **(job_input.get("metadata") or {}),
+                    "dataset_sample_id": file_entry["sample_id"],
+                    "dataset_shot_index": index,
+                    "dataset_render": True,
+                },
+            }
+        )
+        workflow = _build_workflow_payload(sample_job_input)
+        prompt_id = _submit_prompt(workflow, mode=ResumeStage.BASE_RENDER.value)
+        history = _poll_history(prompt_id)
+        artifacts = _extract_artifacts(history, mode=ResumeStage.BASE_RENDER.value)
+        if not artifacts:
+            raise RuntimeError(
+                f"COMFYUI_EXECUTION_FAILED: dataset sample {file_entry['sample_id']} did not expose any render artifacts"
+            )
+        sample_artifact = artifacts[0]
+        sample_bytes = _resolve_artifact_bytes(sample_artifact)
+        samples.append(
+            {
+                "sample_id": file_entry["sample_id"],
+                "path": file_entry["path"],
+                "bytes": sample_bytes,
+                "checksum_sha256": _sha256_bytes(sample_bytes),
+                "byte_size": len(sample_bytes),
+                "provider_job_id": prompt_id,
+                "source_uri": sample_artifact.get("uri"),
+            }
+        )
+    return samples
+
+
 def _classify_dataset_samples(dataset_manifest: dict) -> dict[str, int]:
     counts = {"SFW": 0, "NSFW": 0}
     for entry in dataset_manifest.get("files", []):
@@ -600,19 +718,39 @@ def _validate_dataset_manifest_contract(dataset_manifest: dict) -> None:
     files = dataset_manifest.get("files") or []
     if not files:
         raise ValueError("dataset builder did not produce any files")
-    if any("seed" not in entry for entry in files):
-        raise ValueError("dataset builder requires seed traceability for every generated sample")
+    required_fields = {
+        "sample_id",
+        "path",
+        "seed",
+        "prompt",
+        "negative_prompt",
+        "caption",
+        "wardrobe_state",
+        "framing",
+        "camera_angle",
+        "pose_family",
+        "realism_profile",
+        "source_strategy",
+    }
+    if any(any(field not in entry for field in required_fields) for entry in files):
+        raise ValueError("dataset builder requires prompt, caption, seed and coverage metadata for every sample")
     counts = _classify_dataset_samples(dataset_manifest)
     if counts["SFW"] != counts["NSFW"]:
         raise ValueError("dataset builder requires a 50/50 balance between SFW and NSFW")
     if counts["SFW"] + counts["NSFW"] != int(dataset_manifest.get("sample_count", 0)):
         raise ValueError("dataset builder sample_count does not match the generated file list")
+    framing_counts = Counter(str(entry.get("framing")) for entry in files)
+    if int(dataset_manifest.get("sample_count", 0)) == 40:
+        expected_framing = {"close_up_face": 10, "medium": 10, "full_body": 20}
+        if {key: framing_counts.get(key, 0) for key in expected_framing} != expected_framing:
+            raise ValueError("dataset builder requires 10 close_up_face, 10 medium and 20 full_body samples")
 
 
 def _materialize_dataset_package(
     *,
     dataset_manifest: dict,
     base_image_bytes: bytes,
+    dataset_samples: list[dict],
     manifest_path: Path,
     package_path: Path,
     source_base_image_path: Path,
@@ -622,10 +760,18 @@ def _materialize_dataset_package(
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     package_path.parent.mkdir(parents=True, exist_ok=True)
 
+    samples_by_path = {sample["path"]: sample for sample in dataset_samples}
     for file_entry in dataset_manifest["files"]:
+        sample_data = samples_by_path.get(file_entry["path"])
+        if sample_data is None:
+            raise RuntimeError(f"COMFYUI_EXECUTION_FAILED: missing generated bytes for dataset sample {file_entry['path']}")
         sample_path = manifest_path.parent / Path(file_entry["path"])
         sample_path.parent.mkdir(parents=True, exist_ok=True)
-        sample_path.write_bytes(base_image_bytes)
+        sample_path.write_bytes(sample_data["bytes"])
+        file_entry["checksum_sha256"] = sample_data["checksum_sha256"]
+        file_entry["byte_size"] = sample_data["byte_size"]
+        file_entry["provider_job_id"] = sample_data["provider_job_id"]
+        file_entry["source_uri"] = sample_data["source_uri"]
 
     manifest_path.write_text(json.dumps(dataset_manifest, indent=2), encoding="utf-8")
     with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -638,7 +784,12 @@ def _materialize_dataset_package(
     return package_path, package_path.stat().st_size
 
 
-def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
+def _maybe_attach_dataset_handoff(
+    job_input: dict,
+    result: dict,
+    *,
+    emit_progress: ProgressEmitter | None = None,
+) -> dict:
     identity_id = _resolve_identity_id(job_input)
     character_id = _resolve_character_id(job_input)
     result.setdefault("metadata", {})
@@ -656,23 +807,43 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
         return result
 
     metadata = job_input.get("metadata") or {}
-    samples_target = int(metadata.get("samples_target", job_input.get("samples_target", 24)))
+    samples_target = int(metadata.get("samples_target", job_input.get("samples_target", 40)))
     identity_root = ARTIFACT_ROOT / str(identity_id)
     seed_bundle = _seed_bundle_from_job_input(job_input)
+    dataset_version = f"dataset-{_sha256_bytes(base_image_bytes + str(seed_bundle.dataset_seed).encode('utf-8'))[:12]}"
+    dataset_shot_plan = build_dataset_shot_plan(
+        dataset_version=dataset_version,
+        avatar_identity_block=str(job_input.get("prompt", "editorial portrait of a synthetic premium performer")),
+        base_negative_prompt=str(
+            job_input.get("negative_prompt", "low quality, anatomy drift, extra limbs, text, watermark")
+        ),
+        seed_bundle=seed_bundle,
+        samples_target=samples_target,
+    )
     generation_manifest = GenerationManifest(
         identity_id=identity_id,
         prompt=str(job_input.get("prompt", "editorial portrait of a synthetic premium performer")),
         negative_prompt=str(job_input.get("negative_prompt", "low quality, anatomy drift, extra limbs, text, watermark")),
         seed_bundle=seed_bundle,
-        workflow_id=str(job_input.get("workflow_id", COMFYUI_WORKFLOW_IMAGE_ID)),
-        workflow_version=str(job_input.get("workflow_version", COMFYUI_WORKFLOW_IMAGE_VERSION)),
+        samples_target=samples_target,
+        workflow_id=_resolved_workflow_id(job_input),
+        workflow_version=_resolved_workflow_version(job_input),
+        workflow_family=str(job_input.get("workflow_family", "flux_identity_reference")),
+        workflow_registry_source=str(job_input.get("workflow_registry_source", "approved_internal")),
         base_model_id=str(job_input.get("base_model_id", "flux-schnell-v1")),
+        realism_profile=str(job_input.get("realism_profile", "photorealistic_adult_reference_v1")),
+        source_strategy=str(job_input.get("source_strategy", "avatar_prompt_plus_shot_plan_v1")),
+        dataset_shot_plan=dataset_shot_plan,
         comfy_parameters={
             "width": int(job_input.get("width", 1024)),
             "height": int(job_input.get("height", 1024)),
             "reference_face_image_url": job_input.get("reference_face_image_url"),
             "ip_adapter": job_input.get("ip_adapter", {}),
             "face_detailer": job_input.get("face_detailer", {}),
+            "workflow_family": job_input.get("workflow_family"),
+            "workflow_registry_source": job_input.get("workflow_registry_source"),
+            "copilot_prompt_template": job_input.get("copilot_prompt_template"),
+            "copilot_negative_prompt": job_input.get("copilot_negative_prompt"),
         },
         artifact_path=(identity_root / "generation-manifest.json").as_posix(),
     )
@@ -681,6 +852,7 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
         generation_manifest=generation_manifest,
         reference_face_image_url=job_input.get("reference_face_image_url"),
         samples_target=samples_target,
+        dataset_shot_plan=dataset_shot_plan,
         face_detection_confidence=result.get("face_detection_confidence"),
         artifact_root=ARTIFACT_ROOT.as_posix(),
         metadata_json={
@@ -690,6 +862,8 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
             "character_id": character_id or str(identity_id),
             "seed_bundle": seed_bundle.model_dump(mode="json"),
             "workflow_extensions": ["ComfyUI-BatchingNodes", "ComfyPack"],
+            "workflow_family": generation_manifest.workflow_family,
+            "workflow_registry_source": generation_manifest.workflow_registry_source,
         },
     )
     dataset_result = build_dataset_result(dataset_input)
@@ -698,10 +872,18 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
     package_path = Path(manifest["dataset_package_path"])
     base_image_path = manifest_path.parent / "base-image.png"
     manifest["review_required"] = not bool(metadata.get("autopromote", False))
+    dataset_samples = _generate_dataset_samples(
+        job_input=job_input,
+        dataset_manifest=manifest,
+        base_image_bytes=base_image_bytes,
+        emit_progress=emit_progress,
+    )
+    manifest["generated_samples"] = len(dataset_samples)
     _validate_dataset_manifest_contract(manifest)
     package_path, package_size = _materialize_dataset_package(
         dataset_manifest=manifest,
         base_image_bytes=base_image_bytes,
+        dataset_samples=dataset_samples,
         manifest_path=manifest_path,
         package_path=package_path,
         source_base_image_path=base_image_path,
@@ -749,6 +931,7 @@ def _maybe_attach_dataset_handoff(job_input: dict, result: dict) -> dict:
     result["metadata"]["identity_id"] = str(identity_id)
     result["metadata"]["character_id"] = character_id or str(identity_id)
     result["metadata"]["seed_bundle"] = seed_bundle.model_dump(mode="json")
+    result["metadata"]["samples_target"] = samples_target
     return result
 
 
@@ -756,7 +939,7 @@ def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = 
     _emit_progress(emit_progress, stage="validating_runtime_contract", message="Validating S1 image runtime contract", progress=0.16)
     _assert_s1_runtime_contract(job_input)
     _emit_progress(emit_progress, stage="starting_runtime", message="Preparing ComfyUI runtime", progress=0.2)
-    _ensure_comfyui_running(emit_progress=emit_progress)
+    _ensure_comfyui_running(emit_progress=emit_progress, job_input=job_input)
     _emit_progress(emit_progress, stage="validating_runtime_assets", message="Checking FLUX and IP Adapter assets", progress=0.32)
     _assert_required_runtime_inputs(job_input)
 
@@ -764,7 +947,7 @@ def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = 
     _emit_progress(emit_progress, stage="building_workflow", message=f"Preparing {mode} workflow payload", progress=0.42)
     workflow = _build_workflow_payload(job_input)
     _emit_progress(emit_progress, stage="submitting_prompt", message="Submitting prompt to ComfyUI", progress=0.54)
-    prompt_id = _submit_prompt(workflow, mode=mode)
+    prompt_id = _submit_prompt(workflow, mode=mode, job_input=job_input)
     _emit_progress(emit_progress, stage="awaiting_history", message=f"Waiting for ComfyUI prompt {prompt_id}", progress=0.7)
     history = _poll_history(prompt_id)
     _emit_progress(emit_progress, stage="collecting_artifacts", message="Collecting generated artifacts", progress=0.84)
@@ -785,6 +968,7 @@ def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = 
             "FACE_CONFIDENCE_UNAVAILABLE",
             "face detector did not return a usable confidence score",
             {"prompt_id": prompt_id},
+            job_input=job_input,
         )
     if mode == ResumeStage.BASE_RENDER.value:
         _emit_progress(
@@ -809,8 +993,8 @@ def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = 
 
     result = {
         "provider": Provider.MODAL.value,
-        "workflow_id": str(job_input.get("workflow_id", COMFYUI_WORKFLOW_IMAGE_ID)),
-        "workflow_version": str(job_input.get("workflow_version", COMFYUI_WORKFLOW_IMAGE_VERSION)),
+        "workflow_id": _resolved_workflow_id(job_input),
+        "workflow_version": _resolved_workflow_version(job_input),
         "base_model_id": str(job_input.get("base_model_id", "flux-schnell-v1")),
         "model_family": "flux",
         "runtime_stage": RuntimeStage.IDENTITY_IMAGE.value,
@@ -834,8 +1018,10 @@ def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = 
             "character_id": _resolve_character_id(job_input),
             "requested_threshold": job_input.get("face_confidence_threshold", COMFYUI_FACE_CONFIDENCE_THRESHOLD),
             "face_detection_confidence_inferred": face_confidence_inferred,
-            "workflow_id": str(job_input.get("workflow_id", COMFYUI_WORKFLOW_IMAGE_ID)),
-            "workflow_version": str(job_input.get("workflow_version", COMFYUI_WORKFLOW_IMAGE_VERSION)),
+            "workflow_id": _resolved_workflow_id(job_input),
+            "workflow_version": _resolved_workflow_version(job_input),
+            "workflow_family": str(job_input.get("workflow_family", "flux_identity_reference")),
+            "workflow_registry_source": str(job_input.get("workflow_registry_source", "approved_internal")),
             "base_model_id": str(job_input.get("base_model_id", "flux-schnell-v1")),
             "seed": int(job_input.get("seed", 42)),
             "seed_bundle": _seed_bundle_from_job_input(job_input).model_dump(mode="json"),
@@ -846,6 +1032,10 @@ def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = 
             "ip_adapter": job_input.get("ip_adapter", {}),
             "face_detailer": job_input.get("face_detailer", {}),
             "reference_face_image_url": job_input.get("reference_face_image_url"),
+            "realism_profile": str(job_input.get("realism_profile", "photorealistic_adult_reference_v1")),
+            "source_strategy": str(job_input.get("source_strategy", "avatar_prompt_plus_shot_plan_v1")),
+            "copilot_prompt_template": job_input.get("copilot_prompt_template"),
+            "copilot_negative_prompt": job_input.get("copilot_negative_prompt"),
             "flux_assets": {
                 "diffusion_model": job_input.get("flux_diffusion_model_name", COMFYUI_FLUX_DIFFUSION_MODEL_NAME),
                 "ae": job_input.get("flux_ae_name", COMFYUI_FLUX_AE_NAME),
@@ -856,7 +1046,7 @@ def _run_generation(job_input: dict, *, emit_progress: ProgressEmitter | None = 
         },
     }
     if mode == ResumeStage.BASE_RENDER.value:
-        result = _maybe_attach_dataset_handoff(job_input, result)
+        result = _maybe_attach_dataset_handoff(job_input, result, emit_progress=emit_progress)
     return result
 
 
@@ -884,21 +1074,21 @@ def _processor(payload: dict, *, emit_progress: ProgressEmitter | None = None) -
     try:
         action = str(payload.get("action", "generate"))
         if action != "generate":
-            return _response_error("COMFYUI_EXECUTION_FAILED", f"unsupported action {action}")
+            return _response_error("COMFYUI_EXECUTION_FAILED", f"unsupported action {action}", job_input=payload)
         if S1_IMAGE_EXECUTION_BACKEND == "modal":
             return _run_generation_via_modal(payload, emit_progress=emit_progress)
         return _run_generation(payload, emit_progress=emit_progress)
     except FileNotFoundError as exc:
-        return _response_error("REFERENCE_IMAGE_NOT_FOUND", str(exc))
+        return _response_error("REFERENCE_IMAGE_NOT_FOUND", str(exc), job_input=payload)
     except RuntimeError as exc:
         message = str(exc)
         if message.startswith("RESUME_STATE_INCOMPLETE:"):
-            return _response_error("RESUME_STATE_INCOMPLETE", message.split(":", 1)[1].strip())
+            return _response_error("RESUME_STATE_INCOMPLETE", message.split(":", 1)[1].strip(), job_input=payload)
         if message.startswith("COMFYUI_EXECUTION_FAILED:"):
-            return _response_error("COMFYUI_EXECUTION_FAILED", message.split(":", 1)[1].strip())
-        return _response_error("COMFYUI_EXECUTION_FAILED", message)
+            return _response_error("COMFYUI_EXECUTION_FAILED", message.split(":", 1)[1].strip(), job_input=payload)
+        return _response_error("COMFYUI_EXECUTION_FAILED", message, job_input=payload)
     except Exception as exc:
-        return _response_error("COMFYUI_EXECUTION_FAILED", str(exc))
+        return _response_error("COMFYUI_EXECUTION_FAILED", str(exc), job_input=payload)
 
 
 runtime = InMemoryServiceRuntime(processor=_processor)
