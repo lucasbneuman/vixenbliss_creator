@@ -1,5 +1,14 @@
 # Prompt Base - Review
 
+## Audiencia
+
+- agentes
+- developers que piden revisiones a agentes
+
+## Vigencia
+
+- `vivo`
+
 Usar esta plantilla para pedir una revision de calidad:
 
 ```text

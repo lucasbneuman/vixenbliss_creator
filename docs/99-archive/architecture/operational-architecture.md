@@ -1,3 +1,8 @@
+> Estado: `archivado`
+> Fecha de archivo: `2026-04-10`
+> Motivo: este documento describe una arquitectura operativa y comercial mas amplia que el estado implementado actual del repo.
+> Reemplazo vigente: `docs/01-architecture/technical-base.md` para estado tecnico actual y `docs/02-roadmap/roadmap-master.md` para direccion futura.
+
 VIXENBLISS - ARQUITECTURA OPERATIVA
 Sistema Industrial de Identidades Digitales Monetizables
 VISIÓN EJECUTIVA

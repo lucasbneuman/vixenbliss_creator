@@ -1,5 +1,14 @@
 # Working Agreement
 
+## Audiencia
+
+- developers
+- agentes
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Definir reglas simples y estables para que dos desarrolladores y uno o mas agentes trabajen en paralelo sin ambiguedad ni perdida de trazabilidad.

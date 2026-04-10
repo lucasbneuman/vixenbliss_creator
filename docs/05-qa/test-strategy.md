@@ -1,5 +1,14 @@
 # Test Strategy
 
+## Audiencia
+
+- developers
+- agentes
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Definir el piso minimo de validacion para que una tarea pueda considerarse lista para revision o cierre.

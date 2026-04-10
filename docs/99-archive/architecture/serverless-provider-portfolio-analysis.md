@@ -1,5 +1,10 @@
 # Analisis de Portfolio Serverless GPU para VixenBliss
 
+> Estado: `archivado`
+> Fecha de archivo: `2026-04-10`
+> Motivo: analisis comparativo historico de proveedores. Se conserva como contexto, no como fuente de verdad activa.
+> Reemplazo vigente: `docs/01-architecture/technical-base.md` y la configuracion real de `infra/`.
+
 ## Objetivo
 
 Rehacer la investigacion de proveedores `serverless GPU` para `VixenBliss Creator` con una mirada de portfolio y no de reemplazo unico.

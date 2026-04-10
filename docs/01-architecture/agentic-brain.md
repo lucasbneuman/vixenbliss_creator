@@ -1,5 +1,14 @@
 # Cerebro Agentico
 
+## Audiencia
+
+- developers
+- agentes que implementan o revisan `agentic`
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Definir el modulo que transforma una instruccion conversacional del operador en un `GraphState` final, con:

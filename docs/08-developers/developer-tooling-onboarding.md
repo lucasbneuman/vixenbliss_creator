@@ -1,5 +1,14 @@
 # Developer Tooling Onboarding
 
+## Audiencia
+
+- developers
+- agentes solo si necesitan entender bootstrap o entorno local
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Permitir que cualquier desarrollador configure el mismo baseline de herramientas y pueda trabajar con sus propias credenciales sin depender de contexto informal.

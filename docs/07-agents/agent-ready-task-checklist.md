@@ -1,5 +1,14 @@
 # Agent-Ready Task Checklist
 
+## Audiencia
+
+- agentes
+- developers que preparan tareas para agentes
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Definir el minimo que debe traer una tarea para que un agente la pueda planificar o ejecutar sin reinterpretacion peligrosa.

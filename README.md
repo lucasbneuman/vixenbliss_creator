@@ -1,27 +1,26 @@
 # VixenBliss Creator
 
-Base documental y operativa para construir `VixenBliss Creator` desde cero con un flujo pensado para dos desarrolladores y agentes como `Codex`.
+Base operativa y tecnica para `VixenBliss Creator`, enfocada en documentacion viva, contratos reutilizables y una implementacion Python alineada al estado real de `src/` e `infra/`.
+
+## Audiencia
+
+- developers
+- agentes
+
+## Vigencia
+
+- `vivo`
 
 ## Que contiene este repositorio
 
-- arquitectura y base tecnica del sistema
-- contexto estrategico, arquitectura y proceso operativo
-- reglas operativas de trabajo
-- contrato operativo para agentes, MCPs, skills y credenciales
-- onboarding reproducible para desarrolladores y agentes
-- plantillas para pedir plan, implementacion y review a agentes
-- configuracion minima de GitHub para PRs, issues y CI
+- proceso compartido para trabajar con `YouTrack`, `GitHub` y `develop`
+- arquitectura tecnica vigente del codigo actual
+- contratos de identidad, trazabilidad y pipeline visual
+- onboarding tecnico para developers
+- contratos, prompts y checklists para agentes
+- plantillas de entorno, `MCPs` y skills compartidas
 
-## Principios de trabajo
-
-- fuente de verdad unica por tema
-- tareas chicas, verificables y trazables
-- plan antes de implementar
-- aprobacion explicita antes de avanzar
-- PR obligatoria para merge
-- documentacion viva junto con el codigo
-
-## Estructura
+## Mapa rapido
 
 ```text
 .
@@ -34,147 +33,120 @@ Base documental y operativa para construir `VixenBliss Creator` desde cero con u
 |   |-- 03-process/
 |   |-- 04-decisions/
 |   |-- 05-qa/
-|   `-- 06-prompts/
-`-- .github/
+|   |-- 07-agents/
+|   |-- 08-developers/
+|   `-- 99-archive/
+|-- src/
+|-- infra/
+|-- tests/
+`-- templates/
 ```
 
-## Fuente de verdad recomendada
+## Fuentes de verdad
 
-- Trabajo operativo, backlog, prioridades y evolucion de tareas: `YouTrack`
-- Codigo, PRs y releases: `GitHub`
-- Proceso, arquitectura, contratos, decisiones y documentacion tecnica: repo `docs/`
+- Backlog, prioridad, estado y evidencia enlazada: `YouTrack`
+- Codigo, PRs, checks y releases: `GitHub`
+- Proceso, arquitectura, contratos y documentacion durable: repo `docs/`
 
-No duplicar el estado de tareas y bugs dentro del repo.
-El roadmap del repo existe como vision flexible y contexto tecnico, no como agenda rigida de ejecucion.
+No duplicar tracking transaccional dentro del repo.
 
-## Flujo recomendado por tarea
+## Documentos de entrada
 
-1. Seleccionar tarea en `YouTrack`.
+- Vision y foco de producto: `docs/00-product/vision.md`
+- Proceso compartido: `docs/03-process/README.md`
+- Contrato para agentes: `docs/07-agents/agent-ops-contract.md`
+- Onboarding de developers: `docs/08-developers/developer-tooling-onboarding.md`
+- Base tecnica vigente: `docs/01-architecture/technical-base.md`
+- QA minima: `docs/05-qa/test-strategy.md`
+
+## Estructura documental
+
+### `docs/03-process/`
+
+Carril compartido para developers y agentes:
+
+- `working-agreement.md`
+- `task-lifecycle.md`
+- `branching-and-commits.md`
+- `technical-documentation-policy.md`
+- `secrets-and-access.md`
+- `youtrack-structure.md`
+
+### `docs/07-agents/`
+
+Carril especifico para agentes:
+
+- `agent-ops-contract.md`
+- `agent-ready-task-checklist.md`
+- `plan-prompt.md`
+- `implement-prompt.md`
+- `review-prompt.md`
+
+### `docs/08-developers/`
+
+Carril especifico para developers:
+
+- `developer-tooling-onboarding.md`
+
+### `docs/01-architecture/`
+
+Arquitectura y contratos tecnicos vigentes, alineados al codigo actual:
+
+- `technical-base.md`
+- `agentic-brain.md`
+- `agentic-brain-system1-implementation-guide.md`
+- `identity-master-schema.md`
+- `traceability-contracts.md`
+- `visual-generation-engine.md`
+- `comfyui-copilot-governance.md`
+- `directus-s1-control-plane.md`
+
+### `docs/99-archive/`
+
+Archivo historico. No es fuente de verdad activa.
+
+## Flujo operativo por tarea
+
+1. Tomar tarea en `YouTrack`.
 2. Pasarla a `In Progress`.
-3. Pedir plan a Codex.
+3. Pedir plan.
 4. Aprobar con `IMPLEMENTAR PLAN` o `PLAN OK`.
-5. Implementar sobre `develop`, salvo pedido explicito de crear una rama nueva.
-6. Ejecutar validaciones.
-7. Dejar comentario en la tarea con evidencia, dependencias, errores o inquietudes si aplica.
-8. Cerrar la tarea.
-9. Dejar al menos un commit trazable por tarea o cambio cerrado.
-10. Abrir PR con evidencia si corresponde.
-11. Revisar y aprobar con `MERGE OK`.
-12. Hacer merge.
+5. Implementar sobre `develop`, salvo pedido explicito de rama nueva.
+6. Ejecutar validaciones relevantes.
+7. Actualizar documentacion impactada.
+8. Dejar evidencia en tarea y PR.
+9. Integrar solo con `MERGE OK`.
 
-## Politica actual de ramas
+## Codigo actual
 
-- `develop` es la rama de trabajo diaria.
-- `main` es la rama estable de integracion.
-- No se crean ramas nuevas salvo pedido explicito.
-- Si se pide una rama nueva de forma excepcional, debe quedar asociada a una tarea concreta.
+La implementacion viva hoy se concentra en:
 
-## Documentos clave
-
-- Vision: `docs/00-product/vision.md`
-- Base tecnica: `docs/01-architecture/technical-base.md`
-- Arquitectura operativa: `docs/01-architecture/operational-architecture.md`
-- Motor visual: `docs/01-architecture/visual-generation-engine.md`
-- Gobernanza `ComfyUI Copilot`: `docs/01-architecture/comfyui-copilot-governance.md`
-- Portfolio serverless: `docs/01-architecture/serverless-provider-portfolio-analysis.md`
-- Migracion a Modal: `docs/01-architecture/modal-beam-migration-plan.md`
-- Factibilidad Beam: `docs/01-architecture/beam-feasibility-analysis.md`
-- Roadmap maestro flexible: `docs/02-roadmap/roadmap-master.md`
-- Reglas de trabajo: `docs/03-process/working-agreement.md`
-- Ciclo de tarea: `docs/03-process/task-lifecycle.md`
-- Ramas y commits: `docs/03-process/branching-and-commits.md`
-- Contrato operativo de agentes: `docs/03-process/agent-ops-contract.md`
-- Onboarding de tooling: `docs/03-process/developer-tooling-onboarding.md`
-- Secretos y accesos: `docs/03-process/secrets-and-access.md`
-- Checklist agent-ready: `docs/03-process/agent-ready-task-checklist.md`
-- Politica de documentacion tecnica: `docs/03-process/technical-documentation-policy.md`
-- QA: `docs/05-qa/test-strategy.md`
+- `src/vixenbliss_creator/agentic/`: grafo y adapters del cerebro agentico
+- `src/vixenbliss_creator/contracts/`: contratos persistibles y tipos compartidos
+- `src/vixenbliss_creator/s1_control/`: servicios y puentes operativos de `Sistema 1`
+- `src/vixenbliss_creator/visual_pipeline/`: contrato y servicio del motor visual
+- `src/vixenbliss_creator/runtime_providers/`: abstraccion de proveedores de runtime
+- `infra/`: runtimes y bundles de despliegue por servicio
+- `tests/`: cobertura de contratos, servicios y runtimes
 
 ## Baseline compartido de tooling
 
-El repositorio versiona contrato y plantillas compartibles para trabajo con multiples desarrolladores y multiples tipos de agentes.
-
-- Entorno local base: `.env.example`
+- Entorno base: `env.example`
 - Dependencias Python: `requirements.txt`
 - MCPs versionables: `templates/agent-tooling/mcp.servers.example.json`
-- Skills por workspace: `templates/agent-tooling/skills.manifest.example.yaml`
-
-La plantilla de MCPs ya incluye baseline para `youtrack`, `github` y `supabase`. Los secretos reales y overrides locales siguen fuera del repo.
-
-Los secretos reales y configuraciones personales no se versionan. Cada desarrollador conecta sus propias credenciales siguiendo `docs/03-process/developer-tooling-onboarding.md`.
+- Skills compartidas: `templates/agent-tooling/skills.manifest.example.yaml`
+- Secretos y accesos: `docs/03-process/secrets-and-access.md`
+- Contrato de agentes: `docs/07-agents/agent-ops-contract.md`
+- Onboarding de developer: `docs/08-developers/developer-tooling-onboarding.md`
 
 ## Bootstrap local de Python
 
-Flujo operativo recomendado para este repo:
-
-1. Crear entorno virtual: `python -m venv .venv`
-2. Activarlo en PowerShell: `.\.venv\Scripts\Activate.ps1`
-3. Actualizar `pip`: `python -m pip install --upgrade pip`
-4. Instalar dependencias: `python -m pip install -r requirements.txt`
-5. Ejecutar validacion base: `python -m pytest -q`
-
-`requirements.txt` es la unica fuente de verdad para dependencias de Python en este repo.
-
-## Estado actual
-
-Este repositorio hoy esta preparado como base de proyecto y como baseline operativo compartido para onboarding de developers y agentes. La implementacion tecnica de aplicacion y la CI productiva pueden crecer sobre este contrato comun.
-
-## Cerebro agentico
-
-`DEV-7` incorpora un modulo inicial de orquestacion agentica en `LangGraph` bajo `src/vixenbliss_creator/agentic/`.
-
-- entrada: idea en lenguaje natural
-- salida: `GraphState` final con `TechnicalSheet` validado y recomendacion tecnica de `Copilot`
-- integraciones: adapter `LLM serverless` compatible con OpenAI y adapter HTTP para `ComfyUI Copilot`
-- soporte local: fakes deterministas para tests y smoke
-
-Smoke demo:
-
 ```powershell
-$env:PYTHONPATH = (Resolve-Path .\src)
-python -m vixenbliss_creator.agentic.runner --idea "performer glam nocturna con tono seguro y premium"
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pytest -q
 ```
 
-Detalle tecnico y contrato de variables en `docs/01-architecture/agentic-brain.md`.
-
-## Motor visual
-
-`DEV-8` agrega una primera capa de motor visual real en `src/vixenbliss_creator/visual_pipeline/`.
-
-- contrato estable de request/response para generacion sobre `ComfyUI`
-- rama opcional de `IP Adapter Plus` para consistencia facial
-- disparo de `Impact Pack FaceDetailer` cuando la confianza facial cae por debajo del umbral configurado
-- checkpoint serializable para retomar desde el ultimo nodo exitoso
-
-El detalle tecnico y las variables nuevas viven en `docs/01-architecture/visual-generation-engine.md`.
-
-## Runtime deployable de ComfyUI
-
-El repo ahora separa la infraestructura por servicio y no por proveedor en `infra/`.
-
-- `infra/s1-image/`
-- `infra/comfyui-copilot/`
-- `infra/s1-lora-train/`
-- `infra/s1-llm/`
-- `infra/s2-image/`
-- `infra/s2-video/`
-
-Cada servicio define un `runtime/` comun y wrapper activo de deploy para `Modal`. `Beam` queda como placeholder futuro y los bundles `infra/runpod-*` quedan como referencia historica mientras termina la migracion.
-
-En `S1`, `LangGraph` sigue siendo el orquestador y consume tres runtimes separados:
-
-- `S1 llm`: prepara prompt, negative prompt, seeds y manifiesto tecnico
-- `S1 image`: genera imagenes base y arma dataset
-- `S1 lora train`: entrena el LoRA a partir del dataset
-
-El contrato recomendado de runtime es `HTTP` para submit/status/result/healthcheck y `WebSocket` opcional para progreso en tiempo real.
-
-## Directus y PostgreSQL
-
-El repo ahora tambien incluye una capa opcional de integracion con `Directus` como control plane sobre `PostgreSQL` para `S1`.
-
-- cliente autenticado y settings en `src/vixenbliss_creator/s1_control/`
-- bootstrap de esquema base para colecciones de `S1`
-- integracion opcional: no reemplaza a `LangGraph` ni al flujo actual de servicios `S1`
-
-Detalle en `docs/01-architecture/directus-s1-control-plane.md`.
+`requirements.txt` es la unica fuente de verdad de dependencias Python del repo.

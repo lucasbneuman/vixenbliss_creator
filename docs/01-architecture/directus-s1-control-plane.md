@@ -1,5 +1,14 @@
 # Directus S1 Control Plane
 
+## Audiencia
+
+- developers
+- agentes que tocan `Directus` o `s1_control`
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Definir como `Directus` opera como control plane opcional de `Sistema 1` sin absorber la logica pesada de IA ni reemplazar a `LangGraph`.

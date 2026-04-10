@@ -1,5 +1,14 @@
 # Secrets and Access
 
+## Audiencia
+
+- developers
+- agentes
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Definir el contrato minimo de secretos, accesos y ownership para que el equipo comparta tooling sin compartir credenciales en el repositorio.

@@ -22,16 +22,22 @@ jobs:
             "env.example"
             "docs/00-product/vision.md"
             "docs/01-architecture/technical-base.md"
-            "docs/01-architecture/operational-architecture.md"
             "docs/02-roadmap/roadmap-master.md"
             "docs/03-process/working-agreement.md"
             "docs/03-process/task-lifecycle.md"
             "docs/03-process/branching-and-commits.md"
-            "docs/03-process/agent-ops-contract.md"
-            "docs/03-process/developer-tooling-onboarding.md"
             "docs/03-process/secrets-and-access.md"
-            "docs/03-process/agent-ready-task-checklist.md"
             "docs/03-process/technical-documentation-policy.md"
+            "docs/03-process/README.md"
+            "docs/07-agents/README.md"
+            "docs/07-agents/agent-ops-contract.md"
+            "docs/07-agents/agent-ready-task-checklist.md"
+            "docs/07-agents/plan-prompt.md"
+            "docs/07-agents/implement-prompt.md"
+            "docs/07-agents/review-prompt.md"
+            "docs/08-developers/README.md"
+            "docs/08-developers/developer-tooling-onboarding.md"
+            "docs/99-archive/README.md"
             "docs/05-qa/test-strategy.md"
             "templates/agent-tooling/mcp.servers.example.json"
             "templates/agent-tooling/skills.manifest.example.yaml"
@@ -56,10 +62,13 @@ jobs:
           grep -q "developer-tooling-onboarding.md" README.md || { echo "README must link developer-tooling-onboarding.md"; exit 1; }
           grep -q "secrets-and-access.md" README.md || { echo "README must link secrets-and-access.md"; exit 1; }
           grep -q "agent-ready-task-checklist.md" README.md || { echo "README must link agent-ready-task-checklist.md"; exit 1; }
+          grep -q "docs/07-agents/" README.md || { echo "README must mention docs/07-agents/"; exit 1; }
+          grep -q "docs/08-developers/" README.md || { echo "README must mention docs/08-developers/"; exit 1; }
           grep -q "agent-ops-contract.md" AGENTS.md || { echo "AGENTS.md must link agent-ops-contract.md"; exit 1; }
           grep -q "developer-tooling-onboarding.md" AGENTS.md || { echo "AGENTS.md must link developer-tooling-onboarding.md"; exit 1; }
           grep -q "secrets-and-access.md" AGENTS.md || { echo "AGENTS.md must link secrets-and-access.md"; exit 1; }
           grep -q "agent-ready-task-checklist.md" AGENTS.md || { echo "AGENTS.md must link agent-ready-task-checklist.md"; exit 1; }
+          grep -q "docs/99-archive/" AGENTS.md || { echo "AGENTS.md must mention docs/99-archive/"; exit 1; }
 
   branch-name:
     if: github.event_name == 'pull_request'

@@ -1,5 +1,14 @@
 # ComfyUI Copilot Governance
 
+## Audiencia
+
+- developers
+- agentes que integran `ComfyUI Copilot`
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Definir como `ComfyUI Copilot` complementa la arquitectura de `ComfyUI` sin convertirse en dependencia hard del runtime productivo.

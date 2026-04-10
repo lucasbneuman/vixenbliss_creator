@@ -4,28 +4,56 @@
 
 Este repositorio es la base operativa de `VixenBliss Creator`. Su funcion es concentrar:
 
-- contexto minimo para agentes y desarrolladores
-- documentacion viva del producto y la arquitectura
-- contexto estrategico y operativo reusable
+- contexto minimo para agentes y developers
+- documentacion viva del producto, la arquitectura y el estado tecnico actual
 - reglas operativas de trabajo
 - evidencia reusable de decisiones y validaciones
 
-No es un tablero de tareas manual. El estado transaccional de trabajo vive fuera del repo.
+No es un tablero de tareas manual. El estado transaccional del trabajo vive fuera del repo.
 
 ## Fuentes de verdad por prioridad
 
+### Contexto compartido
+
 1. `docs/03-process/working-agreement.md`
 2. `docs/03-process/task-lifecycle.md`
-3. `docs/03-process/agent-ops-contract.md`
-4. `docs/03-process/developer-tooling-onboarding.md`
-5. `docs/03-process/secrets-and-access.md`
-6. `docs/01-architecture/technical-base.md`
-7. `docs/01-architecture/operational-architecture.md`
-8. `docs/03-process/youtrack-structure.md`
-9. `docs/02-roadmap/roadmap-master.md`
-10. `README.md`
+3. `docs/03-process/README.md`
+4. `docs/03-process/technical-documentation-policy.md`
+5. `docs/03-process/branching-and-commits.md`
+6. `docs/03-process/secrets-and-access.md`
+7. `docs/03-process/youtrack-structure.md`
+
+### Contexto para agentes
+
+8. `docs/07-agents/README.md`
+9. `docs/07-agents/agent-ops-contract.md`
+10. `docs/07-agents/agent-ready-task-checklist.md`
+11. `docs/07-agents/plan-prompt.md`
+12. `docs/07-agents/implement-prompt.md`
+13. `docs/07-agents/review-prompt.md`
+
+### Contexto para developers
+
+14. `docs/08-developers/README.md`
+15. `docs/08-developers/developer-tooling-onboarding.md`
+
+### Arquitectura tecnica vigente
+
+16. `docs/00-product/vision.md`
+17. `docs/01-architecture/technical-base.md`
+18. `docs/01-architecture/agentic-brain.md`
+19. `docs/01-architecture/agentic-brain-system1-implementation-guide.md`
+20. `docs/01-architecture/identity-master-schema.md`
+21. `docs/01-architecture/traceability-contracts.md`
+22. `docs/01-architecture/visual-generation-engine.md`
+23. `docs/01-architecture/comfyui-copilot-governance.md`
+24. `docs/01-architecture/directus-s1-control-plane.md`
+25. `docs/02-roadmap/roadmap-master.md`
+26. `README.md`
 
 Si hay contradicciones, prevalece el documento de mayor prioridad o la ADR mas reciente.
+
+Los documentos en `docs/99-archive/` no son fuente de verdad activa. Solo pueden consultarse como contexto historico puntual.
 
 ## Stack autorizado inicial
 
@@ -72,7 +100,7 @@ No interpretar palabras ambiguas como aprobacion implicita.
 ## Reglas de edicion
 
 - Hacer cambios pequenos, verificables y trazables.
-- No mezclar feature, refactor y cambios cosméticos en la misma PR.
+- No mezclar feature, refactor y cambios cosmeticos en la misma PR.
 - No reescribir decisiones ya tomadas sin ADR o issue asociada.
 - No convertir este repo en un registro manual de bugs o tareas.
 - No duplicar el tracking entre `YouTrack` y archivos `.md`.
@@ -104,32 +132,40 @@ Ver detalle en `docs/05-qa/test-strategy.md`.
 
 ## Politica de documentacion
 
-- `docs/02-roadmap/` aporta vision flexible, contexto estrategico y contratos de alto nivel.
-- `docs/01-architecture/` define el como.
-- `docs/03-process/` define el modo de trabajo.
+- `docs/00-product/` define vision y foco de producto.
+- `docs/01-architecture/` describe la arquitectura y contratos tecnicos vigentes.
+- `docs/02-roadmap/` conserva direccion y contexto evolutivo sin reemplazar `YouTrack`.
+- `docs/03-process/` define reglas de trabajo compartidas.
 - `docs/04-decisions/` registra decisiones estables.
 - `docs/05-qa/` define validacion y cierre.
-- `docs/06-prompts/` estandariza pedidos a agentes.
+- `docs/07-agents/` contiene contratos, prompts y checklists especificos para agentes.
+- `docs/08-developers/` contiene onboarding y tooling especifico para developers.
+- `docs/99-archive/` conserva material historico fuera de la cadena de fuentes de verdad.
 
 Si una tarea cambia contratos, interfaces o decisiones de arquitectura, actualizar la documentacion correspondiente en el mismo cambio.
-La documentacion tecnica debe registrar tanto el objetivo futuro como el camino recorrido: que se hizo, como quedo y que aprendizaje o decision lo explica.
 
-El baseline de tooling compartido para developers y agentes vive en:
+## Baseline de tooling compartido
 
-- `.env.example`
+El baseline operativo compartido para developers y agentes vive en:
+
+- `env.example`
 - `templates/agent-tooling/mcp.servers.example.json`
 - `templates/agent-tooling/skills.manifest.example.yaml`
-- `docs/03-process/agent-ops-contract.md`
-- `docs/03-process/developer-tooling-onboarding.md`
+- `docs/07-agents/agent-ops-contract.md`
+- `docs/08-developers/developer-tooling-onboarding.md`
 - `docs/03-process/secrets-and-access.md`
-- `docs/03-process/agent-ready-task-checklist.md`
+- `docs/07-agents/agent-ready-task-checklist.md`
 - `docs/03-process/technical-documentation-policy.md`
 
 ## Instrucciones para agentes
 
-- Antes de implementar, leer este archivo y luego solo las fuentes minimas necesarias.
+- Antes de implementar, leer este archivo y luego solo las fuentes minimas necesarias segun la tarea.
+- Empezar siempre por `docs/03-process/working-agreement.md` y `docs/03-process/task-lifecycle.md`.
+- Leer `docs/07-agents/` solo si la tarea involucra prompts, tooling agentico, MCPs, skills o criterio agent-ready.
+- Leer `docs/08-developers/` solo si la tarea requiere bootstrap local, entorno o smoke checks de developer.
+- Consultar `docs/01-architecture/` solo en la superficie tecnica que realmente toca el cambio.
+- No usar `docs/99-archive/` como fuente de verdad activa salvo consulta historica puntual.
 - Priorizar cambios pequenos y con superficie acotada.
 - Si una tarea excede una sola superficie de cambio clara, proponer dividirla.
 - Si una decision afecta interfaces o comportamiento transversal, exigir ADR.
 - Si falta contexto operativo, consultar primero `working-agreement.md` y `task-lifecycle.md`.
-- Si la tarea depende de tooling, MCPs, skills o credenciales, consultar tambien `agent-ops-contract.md`, `developer-tooling-onboarding.md`, `secrets-and-access.md` y `agent-ready-task-checklist.md`.

@@ -1,5 +1,10 @@
 # Migracion de infraestructura a Modal
 
+> Estado: `archivado`
+> Fecha de archivo: `2026-04-10`
+> Motivo: plan de migracion historico que ya no debe competir con la estructura real de `infra/` y `runtime_providers/`.
+> Reemplazo vigente: `docs/01-architecture/technical-base.md`.
+
 ## Objetivo
 
 Sacar a `Runpod` del camino critico y dejar la infraestructura desacoplada del proveedor.

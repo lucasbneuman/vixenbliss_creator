@@ -1,5 +1,14 @@
 # Identity Master Schema
 
+## Audiencia
+
+- developers
+- agentes que tocan contratos de identidad
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Definir el contrato canonico y versionado de `Identity` y `technical_sheet_json` para `Sistema 1`, incorporando personalidad estructurada, metadata comercial y trazabilidad por campo.

@@ -1,5 +1,14 @@
 # Agent Ops Contract
 
+## Audiencia
+
+- agentes
+- developers que preparan entorno para agentes
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Definir el contrato operativo compartido para que multiples desarrolladores, agentes, MCPs y skills trabajen sobre el mismo repositorio sin ambiguedad, sin compartir secretos y sin duplicar tracking.

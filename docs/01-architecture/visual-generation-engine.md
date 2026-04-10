@@ -1,5 +1,14 @@
 # Visual Generation Engine
 
+## Audiencia
+
+- developers
+- agentes que tocan pipeline visual o runtimes
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Definir la primera capa ejecutable del motor visual sobre `ComfyUI` para generacion de imagen con consistencia facial y correccion regional trazable, separada por etapa operativa.

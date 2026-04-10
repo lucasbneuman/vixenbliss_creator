@@ -1,5 +1,14 @@
 # Prompt Base - Implementacion
 
+## Audiencia
+
+- agentes
+- developers que delegan en agentes
+
+## Vigencia
+
+- `vivo`
+
 Usar esta plantilla luego de aprobar un plan:
 
 ```text

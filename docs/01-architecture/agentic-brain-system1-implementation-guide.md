@@ -1,5 +1,14 @@
 # Guía de Implementación del Cerebro Agéntico de Sistema 1
 
+## Audiencia
+
+- developers
+- agentes que extienden `Sistema 1`
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Explicar a developers cómo funciona la implementación actual del cerebro agéntico de `Sistema 1`, qué responsabilidad tiene cada nodo, qué contratos consume y produce, y cómo depurar o extender el flujo sin romper trazabilidad ni validación fail-fast.

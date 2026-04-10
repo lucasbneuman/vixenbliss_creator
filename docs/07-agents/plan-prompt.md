@@ -1,5 +1,14 @@
 # Prompt Base - Plan
 
+## Audiencia
+
+- agentes
+- developers que delegan en agentes
+
+## Vigencia
+
+- `vivo`
+
 Usar esta plantilla para pedir a Codex el plan de una tarea:
 
 ```text

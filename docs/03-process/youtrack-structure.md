@@ -1,360 +1,46 @@
-Documento — Contexto YouTrack VixenBliss
-1. Contexto general
+# YouTrack Structure
 
-VixenBliss es un holding tecnológico enfocado en productos digitales, inteligencia artificial generativa y monetización de contenido.
+## Audiencia
 
-El holding tiene varias unidades de negocio activas:
+- developers
+- agentes
 
-VixenBliss School → plataforma de cursos
+## Vigencia
 
-VixenBliss TV → plataforma tipo OnlyFans con avatares IA
+- `vivo`
 
-VixenBliss Agency → gestión de modelos virtuales
+## Objetivo
 
-VixenBliss Create → SaaS para creación de avatares
+Conservar contexto estable sobre como se organiza `YouTrack` en el ecosistema `VixenBliss`, sin convertir este repo en una copia del tracking operativo.
 
-Todas las unidades comparten el mismo equipo técnico y operativo.
+## Regla de uso
 
-El equipo es pequeño (5 personas actualmente, máximo esperado 10), por lo que la organización se hace por área de trabajo y no por unidad de negocio.
+- usar este documento para entender la estructura general y la semantica de trabajo en `YouTrack`
+- usar `YouTrack` como fuente de verdad de backlog, prioridad, estado y evidencia enlazada
+- no duplicar tickets ni estados vivos en archivos `.md`
 
-2. Filosofía de organización
+## Contexto general
 
-Reglas principales:
+`VixenBliss` es un holding tecnologico enfocado en productos digitales, inteligencia artificial generativa y monetizacion de contenido.
 
-No separar proyectos por unidad de negocio
+Las unidades de negocio mencionadas historicamente en `YouTrack` pueden compartir el mismo equipo tecnico y operativo. La organizacion se hace por area de trabajo y por fuente de verdad operativa, no por replicacion documental dentro del repo.
 
-Usar pocos proyectos
+## Criterio para este repositorio
 
-Usar campos personalizados para clasificar
+Para `vixenbliss_creator`, `YouTrack` gobierna:
 
-Usar filtros y paneles para visualizar
+- backlog
+- prioridad
+- alcance vivo
+- estado de tareas
+- owners
+- evidencia enlazada
 
-Mantener estructura simple y escalable
+El repo conserva solo:
 
-YouTrack se usa como centro de organización de todo el holding.
-
-3. Proyectos actuales en YouTrack
-
-Los proyectos representan áreas de trabajo, no productos.
-
-Develop
-
-Todo lo relacionado con desarrollo técnico.
-
-Incluye:
-
-backend
-
-frontend
-
-APIs
-
-automatizaciones
-
-IA
-
-SaaS
-
-infraestructura
-
-integraciones
-
-plugins
-
-scripts
-
-Usado por:
-
-CTO
-
-desarrolladores
-
-Product
-
-Todo lo relacionado con lo que se vende.
-
-Incluye:
-
-cursos
-
-contenido
-
-packs
-
-features pagas
-
-modelos
-
-materiales
-
-funnels de producto
-
-Usado por:
-
-operaciones
-
-marketing
-
-desarrollo
-
-contenido
-
-Marketing
-
-Todo lo relacionado con tráfico y ventas.
-
-Incluye:
-
-campañas
-
-ads
-
-landings
-
-copy
-
-funnels
-
-tracking
-
-analytics
-
-Usado por:
-
-media buyers
-
-marketing
-
-operaciones
-
-General
-
-Tareas generales y operativas.
-
-Incluye:
-
-accesos
-
-cuentas
-
-organización
-
-configuraciones
-
-proveedores
-
-pagos
-
-tareas internas
-
-Ideas
-
-Backlog de ideas.
-
-Incluye:
-
-nuevas features
-
-nuevos negocios
-
-mejoras
-
-automatizaciones futuras
-
-experimentos
-
-No todo lo que está en Ideas se ejecuta.
-
-4. Campos personalizados
-
-Todos los proyectos usan los mismos campos.
-
-Unidad de negocio
-
-Valores:
-
-Create
-
-School
-
-TV
-
-Agencia
-
-Global
-
-Este campo indica a qué unidad pertenece la tarea.
-
-No se crean proyectos por unidad.
-
-Tipo
-
-Valores:
-
-Error
-
-Tarea
-
-Épica
-
-Brief
-
-Significado:
-
-Error → bug o problema
-Tarea → trabajo concreto
-Brief → objetivo grande o feature
-Épica → conjunto grande de tareas
-
-Jerarquía recomendada:
-
-Idea → Brief → Tarea → Subtarea → Error
-
-Estado
-
-Valores típicos:
-
-Pendiente
-
-En progreso
-
-En espera
-
-Bloqueado
-
-Terminado
-
-Cancelado
-
-Usuario asignado
-
-Persona responsable.
-
-Propiedad
-
-Indica quién es dueño funcional de la tarea.
-
-Puede ser distinto del asignado.
-
-Ejemplo:
-
-Max propietario
-Dev asignado
-
-Fecha de vencimiento
-
-Fecha límite.
-
-Se usa para paneles y seguimiento.
-
-5. Reglas de uso
-
-Reglas importantes:
-
-No crear nuevos proyectos sin necesidad
-
-Usar Unidad de negocio para clasificar
-
-Usar Brief para features grandes
-
-Usar Tarea para trabajo concreto
-
-Usar Error para bugs
-
-Usar Ideas para backlog
-
-No duplicar tickets
-
-No usar estructura rígida tipo Scrum
-
-Mantener el sistema simple
-
-6. Paneles
-
-Se usan paneles para visualizar.
-
-Paneles recomendados:
-
-Personal
-
-General
-
-Develop
-
-Marketing / Product
-
-Los paneles usan filtros por:
-
-Estado
-
-Asignado
-
-Unidad de negocio
-
-Tipo
-
-Fecha de vencimiento
-
-7. Objetivo del sistema
-
-El sistema debe permitir:
-
-trabajar con pocas personas
-
-manejar varias unidades de negocio
-
-escalar sin romper estructura
-
-automatizar tareas
-
-integrarse con IA
-
-integrarse con Codex
-
-integrarse con APIs
-
-No se busca estructura corporativa.
-Se busca flexibilidad.
-
-8. Uso con Codex
-
-Codex debe asumir que:
-
-los proyectos existentes son válidos
-
-no debe crear nuevos proyectos sin motivo
-
-debe usar Unidad de negocio para clasificar
-
-debe respetar Tipo
-
-debe respetar Estado
-
-debe usar Develop para código
-
-debe usar Product para contenido/producto
-
-debe usar Marketing para campañas
-
-debe usar General para tareas varias
-
-debe usar Ideas para backlog
-
-9. Fin del documento
-
-Este documento define el contexto actual de YouTrack en VixenBliss.
-
-6. Flujo operativo minimo por tarea
-
-Cuando una tarea se ejecuta en `YouTrack`, el flujo minimo esperado es:
-
-1. tomar la tarea
-2. moverla a `In Progress`
-3. ejecutar el trabajo
-4. dejar comentario con evidencia resumida
-5. cerrar la tarea
-6. realizar el commit trazable del cambio cerrado
-
-Si durante la ejecucion aparece una dependencia externa, un error, un bloqueo o una inquietud, debe dejarse comentario dentro de la misma tarea para que el contexto operativo no se pierda.
-
-Debe usarse como referencia para automatizaciones, scripts, MCP, Codex y herramientas internas.
+- proceso
+- arquitectura
+- contratos
+- decisiones
+- prompts
+- documentacion tecnica durable

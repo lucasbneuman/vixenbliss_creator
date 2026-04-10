@@ -1,5 +1,14 @@
 # Technical Documentation Policy
 
+## Audiencia
+
+- developers
+- agentes
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Definir como documentar tecnicamente el camino recorrido para que el repo no solo explique a donde quiere llegar el proyecto, sino tambien que se hizo, como quedo y que decisiones o aprendizajes lo explican.
@@ -30,17 +39,20 @@ Actualizar documentacion tecnica en el mismo cambio cuando se modifique alguno d
 
 ## Donde registrar cada cosa
 
-- `docs/01-architecture/`: como funciona o queda diseñada la solucion
+- `docs/01-architecture/`: como funciona o queda disenada la solucion
 - `docs/03-process/`: como se trabaja, aprueba, valida y entrega
 - `docs/04-decisions/`: decisiones estables que seria costoso reinterpretar
 - `docs/05-qa/`: como se valida, que evidencia se exige y que condiciones bloquean cierre
+- `docs/07-agents/`: contratos, prompts y checklists especificos para agentes
+- `docs/08-developers/`: onboarding tecnico y baseline de tooling para developers
+- `docs/99-archive/`: contexto historico que no gobierna decisiones actuales
 
 ## Lo que no hay que hacer
 
 - duplicar el estado transaccional de tareas en archivos `.md`
 - usar el roadmap como tablero rigido de ejecucion
 - dejar cambios tecnicos importantes solo en commits o comentarios de PR sin reflejo documental durable
-- registrar texto cosmético sin aportar entendimiento tecnico real
+- registrar texto cosmetico sin aportar entendimiento tecnico real
 
 ## Regla de cierre
 

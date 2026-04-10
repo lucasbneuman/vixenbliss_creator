@@ -1,6 +1,9 @@
 # Analisis de Factibilidad: Beam como Proveedor GPU
 
-> Nota: este documento sigue siendo util como analisis puntual de `Beam`, pero la investigacion comparativa vigente para decisiones de portfolio quedo consolidada en [serverless-provider-portfolio-analysis.md](/C:/Users/AVALITH/Desktop/Proyectos/vixenbliss_creator/docs/01-architecture/serverless-provider-portfolio-analysis.md).
+> Estado: `archivado`
+> Fecha de archivo: `2026-04-10`
+> Motivo: analisis historico de proveedor que ya no gobierna decisiones activas del repo.
+> Reemplazo vigente: `docs/01-architecture/technical-base.md` para estado tecnico actual. Este documento se conserva solo como referencia historica.
 
 ## Objetivo
 

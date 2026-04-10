@@ -1,5 +1,14 @@
 # Traceability Contracts
 
+## Audiencia
+
+- developers
+- agentes que tocan persistencia y trazabilidad
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Definir los contratos canonicos y persistibles de `Job`, `Artifact` y `ModelRegistry` para trazabilidad operativa del MVP de `VixenBliss Creator`.
