@@ -135,6 +135,7 @@ La implementacion viva hoy se concentra en:
 
 - Entorno base: `env.example`
 - Dependencias Python: `requirements.txt`
+- Deploy app monorepo en `Coolify`: `Dockerfile` en raiz
 - MCPs versionables: `templates/agent-tooling/mcp.servers.example.json`
 - Skills compartidas: `templates/agent-tooling/skills.manifest.example.yaml`
 - Secretos y accesos: `docs/03-process/secrets-and-access.md`
