@@ -4,13 +4,16 @@ import pytest
 from pydantic import ValidationError
 
 from vixenbliss_creator.visual_pipeline import (
+    BeamExecutionClient,
     ErrorCode,
     FakeVisualExecutionClient,
     ModelFamily,
+    ModalExecutionClient,
     Provider,
     ResumeCheckpoint,
     ResumePolicy,
     ResumeStage,
+    RoutedVisualExecutionClient,
     RuntimeStage,
     VisualArtifact,
     VisualArtifactRole,
@@ -21,6 +24,7 @@ from vixenbliss_creator.visual_pipeline import (
 )
 from vixenbliss_creator.visual_pipeline.adapters import RunpodServerlessExecutionClient
 from vixenbliss_creator.visual_pipeline.models import StepExecutionResult
+from vixenbliss_creator.runtime_providers import RuntimeProviderSettings, ServiceRuntime
 
 
 def build_request(**overrides: object) -> VisualGenerationRequest:
@@ -35,7 +39,7 @@ def build_request(**overrides: object) -> VisualGenerationRequest:
         "seed": 42,
         "width": 1024,
         "height": 1024,
-        "provider": Provider.COMFYUI,
+        "provider": Provider.COMFYUI_HTTP,
         "reference_face_image_url": "https://example.com/reference-face.png",
         "ip_adapter": {"enabled": True, "model_name": "plus_face", "weight": 0.9},
         "face_detailer": {"enabled": True, "confidence_threshold": 0.8, "inpaint_strength": 0.4},
@@ -76,7 +80,7 @@ def test_resume_checkpoint_rejects_incomplete_base_render_state() -> None:
             base_model_id="flux-schnell-v1",
             seed=42,
             stage=ResumeStage.BASE_RENDER,
-            provider=Provider.COMFYUI,
+            provider=Provider.COMFYUI_HTTP,
             provider_job_id="prompt-1",
             successful_node_ids=["ksampler"],
             intermediate_artifacts=[],
@@ -89,7 +93,7 @@ def test_orchestrator_returns_base_image_when_confidence_is_high() -> None:
         base_result=StepExecutionResult(
             stage=ResumeStage.BASE_RENDER,
             artifacts=[build_artifact(VisualArtifactRole.BASE_IMAGE, "memory://base.png")],
-            provider=Provider.COMFYUI,
+            provider=Provider.COMFYUI_HTTP,
             provider_job_id="prompt-1",
             successful_node_ids=["ksampler", "decode"],
             face_detection_confidence=0.92,
@@ -111,7 +115,7 @@ def test_orchestrator_triggers_face_detail_when_confidence_is_low() -> None:
         base_result=StepExecutionResult(
             stage=ResumeStage.BASE_RENDER,
             artifacts=[build_artifact(VisualArtifactRole.BASE_IMAGE, "memory://base.png")],
-            provider=Provider.COMFYUI,
+            provider=Provider.COMFYUI_HTTP,
             provider_job_id="prompt-1",
             successful_node_ids=["ksampler", "decode"],
             face_detection_confidence=0.61,
@@ -161,7 +165,7 @@ def test_orchestrator_resumes_without_repeating_base_render() -> None:
         base_model_id="flux-schnell-v1",
         seed=42,
         stage=ResumeStage.BASE_RENDER,
-        provider=Provider.COMFYUI,
+        provider=Provider.COMFYUI_HTTP,
         provider_job_id="prompt-1",
         successful_node_ids=["ksampler", "decode"],
         intermediate_artifacts=[build_artifact(VisualArtifactRole.BASE_IMAGE, "memory://base.png")],
@@ -188,7 +192,7 @@ def test_orchestrator_resumes_without_repeating_base_render() -> None:
 
 
 def test_settings_from_env_reads_visual_pipeline_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("VISUAL_EXECUTION_PROVIDER", "runpod")
+    monkeypatch.setenv("VISUAL_EXECUTION_PROVIDER", "routed")
     monkeypatch.setenv("COMFYUI_BASE_URL", "https://comfy.example.com")
     monkeypatch.setenv("COMFYUI_WORKFLOW_IMAGE_ID", "base-portrait-v1")
     monkeypatch.setenv("COMFYUI_WORKFLOW_IMAGE_VERSION", "2026-03-30")
@@ -199,19 +203,24 @@ def test_settings_from_env_reads_visual_pipeline_defaults(monkeypatch: pytest.Mo
     monkeypatch.setenv("COMFYUI_FACE_CONFIDENCE_THRESHOLD", "0.85")
     monkeypatch.setenv("COMFYUI_RESUME_CACHE_MODE", "checkpoint")
     monkeypatch.setenv("COMFYUI_HTTP_TIMEOUT_SECONDS", "45")
-    monkeypatch.setenv("RUNPOD_API_KEY", "secret")
-    monkeypatch.setenv("RUNPOD_ENDPOINT_IMAGE_IDENTITY", "https://api.runpod.ai/v2/identity")
-    monkeypatch.setenv("RUNPOD_ENDPOINT_IMAGE_CONTENT", "https://api.runpod.ai/v2/content")
-    monkeypatch.setenv("RUNPOD_ENDPOINT_IMAGE_GEN", "https://api.runpod.ai/v2/endpoint")
-    monkeypatch.setenv("RUNPOD_ENDPOINT_LORA_TRAIN", "https://api.runpod.ai/v2/train")
-    monkeypatch.setenv("RUNPOD_ENDPOINT_VIDEO_GEN", "https://api.runpod.ai/v2/video")
-    monkeypatch.setenv("RUNPOD_POLL_INTERVAL_SECONDS", "2")
-    monkeypatch.setenv("RUNPOD_JOB_TIMEOUT_SECONDS", "120")
-    monkeypatch.setenv("RUNPOD_USE_RUNSYNC", "true")
+    monkeypatch.setenv("S1_IMAGE_PROVIDER", "modal")
+    monkeypatch.setenv("S1_LORA_TRAIN_PROVIDER", "modal")
+    monkeypatch.setenv("S1_LLM_PROVIDER", "modal")
+    monkeypatch.setenv("S2_IMAGE_PROVIDER", "modal")
+    monkeypatch.setenv("S2_VIDEO_PROVIDER", "modal")
+    monkeypatch.setenv("MODAL_TOKEN_ID", "modal-id")
+    monkeypatch.setenv("MODAL_TOKEN_SECRET", "modal-secret")
+    monkeypatch.setenv("MODAL_ENDPOINT_S1_IMAGE", "https://modal.example.com/s1-image")
+    monkeypatch.setenv("MODAL_ENDPOINT_S1_LORA_TRAIN", "https://modal.example.com/s1-lora-train")
+    monkeypatch.setenv("MODAL_ENDPOINT_S1_LLM", "https://modal.example.com/s1-llm")
+    monkeypatch.setenv("MODAL_ENDPOINT_S2_IMAGE", "https://modal.example.com/s2-image")
+    monkeypatch.setenv("MODAL_ENDPOINT_S2_VIDEO", "https://modal.example.com/s2-video")
+    monkeypatch.setenv("PROVIDER_POLL_INTERVAL_SECONDS", "2")
+    monkeypatch.setenv("PROVIDER_JOB_TIMEOUT_SECONDS", "120")
 
     settings = VisualPipelineSettings.from_env()
 
-    assert settings.visual_execution_provider == Provider.RUNPOD
+    assert settings.visual_execution_provider == Provider.ROUTED
     assert settings.comfyui_base_url == "https://comfy.example.com"
     assert settings.comfyui_workflow_image_id == "base-portrait-v1"
     assert settings.comfyui_workflow_image_version == "2026-03-30"
@@ -222,24 +231,92 @@ def test_settings_from_env_reads_visual_pipeline_defaults(monkeypatch: pytest.Mo
     assert settings.comfyui_face_confidence_threshold == pytest.approx(0.85)
     assert settings.comfyui_resume_cache_mode == "checkpoint"
     assert settings.comfyui_http_timeout_seconds == 45
-    assert settings.runpod_api_key == "secret"
-    assert settings.runpod_endpoint_image_identity == "https://api.runpod.ai/v2/identity"
-    assert settings.runpod_endpoint_image_content == "https://api.runpod.ai/v2/content"
-    assert settings.runpod_endpoint_image_gen == "https://api.runpod.ai/v2/endpoint"
-    assert settings.runpod_endpoint_lora_train == "https://api.runpod.ai/v2/train"
-    assert settings.runpod_endpoint_video_gen == "https://api.runpod.ai/v2/video"
-    assert settings.runpod_poll_interval_seconds == 2
-    assert settings.runpod_job_timeout_seconds == 120
-    assert settings.runpod_use_runsync is True
+    assert settings.runtime_provider_settings.s1_image_provider == Provider.MODAL
+    assert settings.runtime_provider_settings.s1_lora_train_provider == Provider.MODAL
+    assert settings.runtime_provider_settings.s1_llm_provider == Provider.MODAL
+    assert settings.runtime_provider_settings.s2_image_provider == Provider.MODAL
+    assert settings.runtime_provider_settings.s2_video_provider == Provider.MODAL
+    assert settings.runtime_provider_settings.modal_endpoint_s1_image == "https://modal.example.com/s1-image"
+    assert settings.runtime_provider_settings.modal_endpoint_s1_lora_train == "https://modal.example.com/s1-lora-train"
+    assert settings.runtime_provider_settings.modal_endpoint_s2_image == "https://modal.example.com/s2-image"
+    assert settings.runtime_provider_settings.provider_poll_interval_seconds == 2
+    assert settings.runtime_provider_settings.provider_job_timeout_seconds == 120
 
 
-def test_build_visual_execution_client_selects_runpod() -> None:
+def test_runtime_provider_settings_preserve_beam_for_legacy_image_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("S1_IMAGE_PROVIDER", raising=False)
+    monkeypatch.delenv("S2_IMAGE_PROVIDER", raising=False)
+    monkeypatch.delenv("MODAL_ENDPOINT_S1_IMAGE", raising=False)
+    monkeypatch.delenv("MODAL_ENDPOINT_S2_IMAGE", raising=False)
+    monkeypatch.setenv("BEAM_ENDPOINT_S1_IMAGE", "https://beam.example.com/s1-image")
+    monkeypatch.setenv("BEAM_ENDPOINT_S2_IMAGE", "https://beam.example.com/s2-image")
+
+    settings = RuntimeProviderSettings.from_env()
+
+    assert settings.s1_image_provider == Provider.BEAM
+    assert settings.s2_image_provider == Provider.BEAM
+
+
+def test_runtime_provider_settings_support_private_modal_worker_without_http_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VISUAL_EXECUTION_PROVIDER", "routed")
+    monkeypatch.setenv("S1_IMAGE_PROVIDER", "modal")
+    monkeypatch.setenv("MODAL_TOKEN_ID", "modal-id")
+    monkeypatch.setenv("MODAL_TOKEN_SECRET", "modal-secret")
+    monkeypatch.setenv("S1_IMAGE_MODAL_APP_NAME", "vixenbliss-s1-image")
+    monkeypatch.setenv("S1_IMAGE_MODAL_FUNCTION_NAME", "run_s1_image_job")
+    monkeypatch.setenv("S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME", "runtime_healthcheck")
+    monkeypatch.delenv("MODAL_ENDPOINT_S1_IMAGE", raising=False)
+
+    settings = VisualPipelineSettings.from_env()
+
+    assert settings.runtime_provider_settings.s1_image_provider == Provider.MODAL
+    assert settings.runtime_provider_settings.modal_endpoint_s1_image is None
+    assert settings.runtime_provider_settings.modal_app_name_for(ServiceRuntime.S1_IMAGE) == "vixenbliss-s1-image"
+    assert settings.runtime_provider_settings.modal_job_function_for(ServiceRuntime.S1_IMAGE) == "run_s1_image_job"
+    assert (
+        settings.runtime_provider_settings.modal_healthcheck_function_for(ServiceRuntime.S1_IMAGE)
+        == "runtime_healthcheck"
+    )
+
+
+def test_build_visual_execution_client_selects_routed_by_default() -> None:
     client = build_visual_execution_client(
         VisualPipelineSettings(
-            visual_execution_provider=Provider.RUNPOD,
-            runpod_api_key="secret",
-            runpod_endpoint_image_content="https://api.runpod.ai/v2/content",
+            visual_execution_provider=Provider.ROUTED,
+            runtime_provider_settings=RuntimeProviderSettings(
+                s1_image_provider=Provider.MODAL,
+                s2_image_provider=Provider.MODAL,
+                s2_video_provider=Provider.MODAL,
+            ),
         )
     )
 
-    assert isinstance(client, RunpodServerlessExecutionClient)
+    assert isinstance(client, RoutedVisualExecutionClient)
+
+
+def test_build_visual_execution_client_selects_beam() -> None:
+    client = build_visual_execution_client(
+        VisualPipelineSettings(
+            visual_execution_provider=Provider.BEAM,
+            runtime_provider_settings=RuntimeProviderSettings(beam_endpoint_s2_image="https://beam.example.com/s2-image"),
+        )
+    )
+
+    assert isinstance(client, BeamExecutionClient)
+
+
+def test_build_visual_execution_client_selects_modal() -> None:
+    client = build_visual_execution_client(
+        VisualPipelineSettings(
+            visual_execution_provider=Provider.MODAL,
+            runtime_provider_settings=RuntimeProviderSettings(
+                modal_endpoint_s2_image="https://modal.example.com/s2-image",
+                modal_token_id="id",
+                modal_token_secret="secret",
+            ),
+        )
+    )
+
+    assert isinstance(client, ModalExecutionClient)

@@ -1,5 +1,14 @@
 # Current Focus
 
+## Audiencia
+
+- developers
+- agentes
+
+## Vigencia
+
+- `transicional`
+
 Documento opcional para capturar el foco actual del sprint o del bootstrap.
 
 ## Regla de uso

@@ -1,5 +1,14 @@
 # Visual Generation Engine
 
+## Audiencia
+
+- developers
+- agentes que tocan pipeline visual o runtimes
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Definir la primera capa ejecutable del motor visual sobre `ComfyUI` para generacion de imagen con consistencia facial y correccion regional trazable, separada por etapa operativa.
@@ -11,14 +20,27 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
 ## Mapa S1 y S2
 
 - `S1` cubre generacion de imagenes de identidad para dataset y entrenamiento LoRA.
+- `S1 llm` actua como preparador de manifiestos de generacion para `LangGraph`; no reemplaza la orquestacion.
+- el mismo runtime puede exponer un endpoint OpenAI-compatible en `/v1/chat/completions` para que `LangGraph` consuma el modelo sin cambiar su adapter
 - `S2` cubre generacion de contenido y generacion de video.
 - la separacion por runtime sigue siendo recomendada aunque `training` pertenezca al negocio de `S1` y `video` pertenezca al negocio de `S2`
 - `S1` y `S2` deben permanecer en la misma familia `Flux` para preservar compatibilidad del LoRA
 - dentro de `DEV-8`, el runtime objetivo es especificamente `S1 image`
+- `ComfyUI Copilot` solo actua como complemento de desarrollo y gobernanza de workflows; no participa del render productivo
+- desde `DEV-45`, la recomendacion aprobada de `Copilot` ya no queda solo como metadata del grafo: puede seleccionar una variante aprobada real de `S1 image` que el runtime de `Modal` consume por job
+
+## Gobernanza de Copilot
+
+- los runtimes productivos consumen workflows versionados y aprobados
+- `Copilot` puede sugerir cambios o extensiones, pero no reemplaza el registry interno
+- para `S1 image`, `Copilot` solo puede elegir entre variantes aprobadas del stage `s1_identity_image`; el runtime nunca arma un workflow dinamico fuera del registry
+- si `Copilot` no responde, el pipeline sigue con fallback aprobado
+- `S2 video` queda preparado para recomendaciones pre-runtime, no para adopcion automatica
 
 ### Request
 
 - `workflow_id` y `workflow_version` identifican el workflow operativo.
+- `workflow_family` y `workflow_registry_source` dejan trazabilidad de la variante aprobada elegida por `Copilot` o por fallback interno.
 - `model_family` fija la familia compatible del runtime; la implementacion actual solo admite `flux`.
 - `runtime_stage` distingue `identity_image`, `content_image` y `video`.
 - `base_model_id`, `prompt`, `negative_prompt`, `seed`, `width` y `height` describen la corrida reproducible.
@@ -36,6 +58,46 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
 - `face_detection_confidence` registra la confianza facial usada para decidir si hay correccion regional.
 - `ip_adapter_used` y `regional_inpaint_triggered` dejan trazabilidad explicita del camino ejecutado.
 - `error_code` y `error_message` normalizan fallos del pipeline visual.
+
+### Dataset LoRA curado de `S1 image`
+
+- `S1 image` ya no puede limitarse a un unico set final de `40` muestras renderizadas.
+- el runtime debe expandir el prompt tecnico del avatar a un `render shot plan` determinista con `80` muestras reales por identidad
+- luego debe curar un `training subset` final de `40` muestras para `S1 lora train`
+- cada muestra debe persistir al menos:
+  - `sample_id`
+  - `prompt`
+  - `negative_prompt`
+  - `caption`
+  - `seed`
+  - `wardrobe_state`
+  - `framing`
+  - `camera_angle`
+  - `pose_family`
+  - `camera_distance`
+  - `lens_hint`
+  - `lighting_setup`
+  - `background_style`
+  - `quality_priority`
+  - `realism_profile`
+  - `source_strategy`
+- la composicion canonica del render set es:
+  - `24` `full_body_clothed`
+  - `24` `full_body_nude`
+  - `12` `medium_clothed`
+  - `8` `medium_nude`
+  - `8` `close_up_face_clothed`
+  - `4` `close_up_face_nude`
+- el subset final de training mantiene balance `20/20`, prioriza `full_body` y exige presencia de los `5` angulos canonicos
+- el prompt final de cada muestra se construye por capas:
+  - bloque de identidad del avatar
+  - bloque de realismo fotografico adulto
+  - bloque de direccion de shot
+  - bloque de quality guard
+- el manifest de `S1 llm` puede enriquecer ese prompt con la `prompt_template` y `negative_prompt` recomendadas por `Copilot`, pero siempre dentro de un workflow aprobado del registry interno
+- el `dataset_package` final contiene solo el subset curado de training
+- el runtime puede conservar `render-manifest` y `render-package` como staging local de QA cuando la politica de retencion lo permite
+- si domina una sola carga binaria repetida o cae la cobertura minima, el handoff queda en `review_required`
 
 ## Fail-fast canonico
 
@@ -56,7 +118,7 @@ El motor visual expone un request/response estable bajo `src/vixenbliss_creator/
 
 ## Modos de ejecucion
 
-El contrato del motor visual admite dos despliegues validos y ambos pueden exponerse por etapa.
+El contrato del motor visual ahora prioriza proveedores neutrales y portables por etapa. En el estado operativo actual, la implementacion activa usa `Coolify` como host del orquestador HTTP y `Modal` como worker GPU.
 
 ### `ComfyUI` HTTP directo
 
@@ -70,9 +132,32 @@ Configuracion manual esperada:
 4. mapear `COMFYUI_IP_ADAPTER_NODE_ID`, `COMFYUI_FACE_DETECTOR_NODE_ID` y `COMFYUI_FACE_DETAILER_NODE_ID` a nodos reales del workflow
 5. garantizar acceso del runtime a la imagen de referencia facial o resolverla antes de inyectarla al workflow
 
-### `Runpod Serverless`
+### `Modal`
 
-Se usa cuando el backend habla contra endpoints separados por etapa y el worker encapsula a `ComfyUI` como motor interno.
+Se usa cuando el backend orquestado en `Coolify` necesita despertar un worker GPU para `ComfyUI`, entrenamiento o otra inferencia pesada.
+
+Configuracion manual esperada:
+
+1. publicar solo el worker GPU del servicio, no el HTTP publico
+2. usar `Modal Volumes` o `CloudBucketMount` segun la naturaleza del runtime
+3. invocarlo desde el runtime `FastAPI` alojado en `Coolify`
+4. dejar `WebSocket` y polling HTTP como responsabilidad del runtime/orquestador en `Coolify`
+5. consumirlo desde backend via `S1_IMAGE_PROVIDER=modal`, `S1_LORA_TRAIN_PROVIDER=modal`, `S1_LLM_PROVIDER=modal`, `S2_IMAGE_PROVIDER=modal` y `S2_VIDEO_PROVIDER=modal`
+
+Estado aterrizado en el repo:
+
+- `S1 image` publica su `FastAPI` en `Coolify` y delega ejecucion pesada al worker de `Modal`
+- el bundle de `S1 image` embebe `ComfyUI`, `ComfyUI-IPAdapter-Flux` y `ComfyUI-Impact-Pack`
+- el wrapper de `Modal` usa `Volume` para cache de modelos y no debe exponerse como API publica
+- el servicio mantiene `runtime_stage=identity_image`, no consume `LoRA` y devuelve artifacts y errores normalizados compatibles con `visual_pipeline`
+
+### `Beam` futuro
+
+La capa neutral mantiene soporte para `Beam`, pero hoy no forma parte del camino critico por indisponibilidad operativa.
+
+### `Runpod Serverless` legado
+
+Se mantiene solo como referencia historica mientras termina la migracion fuera de `Runpod`.
 
 Configuracion manual esperada:
 
@@ -86,38 +171,96 @@ Configuracion manual esperada:
 
 ## Runtime deployable recomendado
 
-Los runtimes productivos iniciales pueden versionarse en el repo como una familia comun y desplegarse como endpoints separados.
+Los runtimes productivos iniciales deben versionarse en el repo como una familia comun por servicio y desplegarse con wrappers por proveedor.
 
-La familia de bundles debe cubrir:
+La familia de bundles debe cubrir para cada servicio:
 
 - imagen `Docker` reproducible
 - bootstrap de `ComfyUI`
 - instalacion de `ComfyUI-IPAdapter-Flux` e `Impact Pack`
 - workflows versionados por etapa
 - scripts de arranque y healthcheck
-- handlers `Runpod Serverless` compatibles con `identity_image_generation`, `content_image_generation`, `lora_training`, `video_generation`, `base_render`, `face_detail` y `healthcheck` segun el runtime
+- handlers o entrypoints neutrales compatibles con `jobs`, `status`, `result`, `healthcheck`, `base_render` y `face_detail` segun el runtime
 
 El backend puede consumir ese runtime de dos maneras:
 
-- via `ComfyUIExecutionHTTPClient` cuando el proveedor real es `comfyui`
-- via `RunpodServerlessExecutionClient` cuando el proveedor real es `runpod`
+- via `ComfyUIHTTPExecutionClient` cuando el proveedor real es `comfyui_http`
+- via `ModalExecutionClient` cuando el proveedor real es `modal`
+- via `RoutedVisualExecutionClient` cuando la seleccion del proveedor se hace por etapa
+- via `BeamExecutionClient` cuando en el futuro vuelva a haber disponibilidad operativa
 
-### Bundle actual de `DEV-8`
+### Familia de bundles nueva
 
-- el bundle operativo actual para cerrar `DEV-8` es `infra/runpod-s1-image-serverless`
-- este runtime esta acotado a `identity_image`
-- `S1 train` queda previsto como runtime futuro separado y no forma parte del cierre de `DEV-8`
+- `infra/s1-image/`
+- `infra/s1-lora-train/`
+- `infra/s1-llm/`
+- `infra/s2-image/`
+- `infra/s2-video/`
+
+Los bundles `runpod-*` quedan como baseline previo, no como direccion futura.
 
 ## Direccion futura de orquestacion
 
 - dentro de `EPIC-3`, el front debera operar mediante un chatbot soportado por `LangGraph`
 - ese chatbot podra solicitar acciones de `S1` y `S2` usando el orquestador como capa de coordinacion
+- `LangGraph` y `FastAPI` viven en `Coolify`; no deben publicarse desde `Modal`
 - la comunicacion de progreso con la UI debera evolucionar hacia `WebSockets`
 - los serverless seguiran actuando como workers asincronos, mientras el orquestador centraliza estado, eventos y resultados
+- el contrato recomendado para progreso es `HTTP + WebSocket opcional`; el polling HTTP sigue siendo fallback operativo
 
 ## Variables de entorno
 
 - `VISUAL_EXECUTION_PROVIDER`
+- `S1_IMAGE_PROVIDER`
+- `S1_LORA_TRAIN_PROVIDER`
+- `S1_LLM_PROVIDER`
+- `S2_IMAGE_PROVIDER`
+- `S2_VIDEO_PROVIDER`
+- `BEAM_API_KEY`
+- `BEAM_ENDPOINT_S1_IMAGE`
+- `BEAM_ENDPOINT_S1_LORA_TRAIN`
+- `BEAM_ENDPOINT_S1_LLM`
+- `BEAM_ENDPOINT_S2_IMAGE`
+- `BEAM_ENDPOINT_S2_VIDEO`
+- `MODAL_TOKEN_ID`
+- `MODAL_TOKEN_SECRET`
+- `S1_IMAGE_MODAL_APP_NAME`
+- `S1_IMAGE_MODAL_FUNCTION_NAME`
+- `S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME`
+- `S1_LORA_TRAIN_MODAL_APP_NAME`
+- `S1_LORA_TRAIN_MODAL_WEB_FUNCTION_NAME`
+- `S1_LLM_MODAL_APP_NAME`
+- `S1_LLM_MODAL_WEB_FUNCTION_NAME`
+- `MODAL_ENDPOINT_S1_IMAGE`
+- `MODAL_ENDPOINT_S1_LORA_TRAIN`
+- `MODAL_ENDPOINT_S1_LLM`
+- `MODAL_ENDPOINT_S2_IMAGE`
+- `MODAL_ENDPOINT_S2_VIDEO`
+- `S1_IMAGE_EXECUTION_BACKEND`
+- `S1_LLM_RUNTIME_BASE_URL`
+- `S1_LLM_RUNTIME_API_KEY`
+- `S1_LLM_RUNTIME_MODEL`
+- `S1_LLM_RUNTIME_TIMEOUT_SECONDS`
+- `LLM_SERVERLESS_BASE_URL`
+- `LLM_SERVERLESS_API_KEY`
+- `LLM_SERVERLESS_MODEL`
+- `OLLAMA_MODEL`
+- `OLLAMA_TIMEOUT_SECONDS`
+- `progress_url` derivado desde el endpoint cuando el runtime soporte `WebSocket`
+
+Para `S1 image` en `Coolify`, el contrato operativo recomendado ya no depende de `MODAL_ENDPOINT_S1_IMAGE`.
+
+- `S1_IMAGE_EXECUTION_BACKEND=modal`
+- `S1_IMAGE_PROVIDER=modal`
+- `MODAL_TOKEN_ID` y `MODAL_TOKEN_SECRET`
+- `S1_IMAGE_MODAL_APP_NAME=vixenbliss-s1-image`
+- `S1_IMAGE_MODAL_FUNCTION_NAME=run_s1_image_job`
+- `S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME=runtime_healthcheck`
+
+`MODAL_ENDPOINT_S1_IMAGE` queda solo como fallback legado si se intercala un proxy HTTP externo.
+- `PROVIDER_HTTP_TIMEOUT_SECONDS`
+- `PROVIDER_POLL_INTERVAL_SECONDS`
+- `PROVIDER_JOB_TIMEOUT_SECONDS`
 - `RUNPOD_API_KEY`
 - `RUNPOD_ENDPOINT_IMAGE_IDENTITY`
 - `RUNPOD_ENDPOINT_IMAGE_CONTENT`
@@ -148,10 +291,60 @@ El backend puede consumir ese runtime de dos maneras:
 - `COMFYUI_FACE_CONFIDENCE_THRESHOLD`
 - `COMFYUI_RESUME_CACHE_MODE`
 - `COMFYUI_HTTP_TIMEOUT_SECONDS`
+- `MODEL_CACHE_ROOT`
+- `MODEL_CACHE_FLUX_DIFFUSION_PATH`
+- `MODEL_CACHE_FLUX_AE_PATH`
+- `MODEL_CACHE_FLUX_CLIP_L_PATH`
+- `MODEL_CACHE_FLUX_T5XXL_PATH`
+- `MODEL_CACHE_IPADAPTER_FLUX_PATH`
+- `MODEL_BOOTSTRAP_WAIT_SECONDS`
 
 ## Nota FLUX
 
 `Supabase` no es bloqueante para levantar este runtime. El bloqueante real son las URLs accesibles para los assets pesados y para `reference_face_image_url`.
+
+Mientras la DB no este lista, cada etapa de `S1` debe dejar manifests JSON persistibles fuera del repo:
+
+- `S1 llm`: `generation_manifest`
+- `S1 image`: `dataset_manifest` y `dataset_package`
+- `S1 lora train`: `training_manifest` y metadata del `lora_model`
+
+Direccion recomendada de persistencia para `S1 image`:
+
+- `Modal Volume`: modelos, caches y staging efimero
+- `Directus Files` o storage `S3-compatible`: solo imagenes y artifacts visuales
+- tablas de `Directus`: `dataset_manifest`, `dataset_package_path`, `seed_bundle` y metadata de QA
+
+Estado actual implementado:
+
+- `S1 image` genera un `base_render` trazable y luego expande un `render shot plan` real de `80` muestras
+- el handoff por defecto entrega `40` muestras curadas con prompts y seeds por muestra
+- el runtime resuelve el template de `ComfyUI` por `workflow_id` de cada job; ya no depende de un unico workflow fijo cableado al contenedor
+- el registry aprobado de `S1` ya contempla una variante especifica para dataset LoRA realista: `lora-dataset-ipadapter-batch`
+- esa variante es el workflow canonico para dataset curado salvo override aprobado
+- luego persiste `base_image` en `Directus Files`
+- `dataset_manifest` y `dataset_package` quedan registrados en `s1_artifacts` y snapshots tecnicos, no como files binarios
+- cuando `s1_image` termina bien y existe `identity_id`, `s1_control.bridge` promueve `s1_identities.pipeline_state` a `base_images_generated`
+- la identidad tambien conserva `base_image_urls`, `latest_base_image_file_id`, `latest_workflow_id`, `latest_workflow_version` y `latest_base_model_id`
+- el resultado del runtime expone metadata tecnica suficiente para trazabilidad y futuros consumers:
+  - seed efectiva
+  - `seed_bundle`
+  - `character_id`
+  - workflow y version
+  - workflow family y registry source
+  - modelo base
+  - configuracion visual efectiva de `ip_adapter` y `face_detailer`
+  - referencia facial usada
+  - prompts, captions y cobertura de shot por muestra
+- `s1_identities` conserva el snapshot tecnico canonico por avatar para futuros flujos de `S1 Training` y `S2 Image`
+
+Direccion recomendada del handoff:
+
+1. `S1 image` produce `dataset_manifest` con resumen de render set y subset curado
+2. `S1 image` persiste `dataset_package` solo para el subset final y deja staging temporal del render set para QA o retry
+3. en modo `review`, el operador valida calidad antes de disparar training
+4. en modo `autopromote`, el orquestador en `Coolify` dispara `S1 lora train` apenas termina la persistencia
+5. luego se aplica limpieza de artifacts temporales segun politica
 
 Para `FLUX.1-schnell`, el runtime ya no debe asumir un unico `checkpoint`. El deploy debe proveer assets separados para:
 

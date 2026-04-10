@@ -1,12 +1,28 @@
 # Roadmap Maestro MVP Reforzado - VixenBliss Creator
 
+## Audiencia
+
+- developers
+- agentes
+- stakeholders tecnicos
+
+## Vigencia
+
+- `transicional`
+
 ## Proposito
 
-Este roadmap maestro consolida el brief ejecutivo, los contratos tecnicos minimos, las reglas operativas transversales y la estructura general del MVP reforzado de VixenBliss Creator.
-Funciona como vision flexible y contexto tecnico del proyecto, no como orden rigido de ejecucion.
+Este roadmap maestro consolida el brief ejecutivo, los contratos tecnicos minimos y la direccion general del MVP reforzado de VixenBliss Creator.
+Funciona como vision flexible y contexto tecnico, no como orden rigido de ejecucion ni como reflejo automatico del estado implementado.
 
 Por tamano y mantenibilidad, el detalle operativo y el orden vivo de ejecucion no se gobiernan desde archivos de epica dentro del repo.
 Ese movimiento vive en `YouTrack`, mientras este documento conserva contexto tecnico y estrategico reusable.
+
+## Regla de lectura
+
+- usar este documento para entender direccion y alcance futuro
+- usar `docs/01-architecture/technical-base.md` para entender el estado tecnico vigente
+- no asumir que una fase descrita aqui ya esta implementada si no existe respaldo en `src/`, `infra/` o `tests/`
 
 ## BRIEF
 

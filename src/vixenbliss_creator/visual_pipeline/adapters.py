@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import copy
-import json
 import time
 from dataclasses import dataclass, field
 from typing import Callable
-from urllib import error, parse, request
+from urllib import parse
+
+from vixenbliss_creator.runtime_http import json_get, json_post
+from vixenbliss_creator.provider import Provider
+from vixenbliss_creator.runtime_providers.adapters import BeamRuntimeProviderClient, ModalRuntimeProviderClient
+from vixenbliss_creator.runtime_providers.config import RuntimeProviderSettings
+from vixenbliss_creator.runtime_providers.models import JobStatus, ServiceRuntime
 
 from .config import VisualPipelineSettings
 from .models import (
     ErrorCode,
     ModelFamily,
-    Provider,
     ResumeCheckpoint,
     ResumeStage,
     StepExecutionResult,
@@ -28,42 +32,20 @@ class VisualPipelineError(RuntimeError):
         self.code = code
 
 
-def _json_post(url: str, payload: dict, timeout_seconds: int, headers: dict[str, str] | None = None) -> dict:
-    body = json.dumps(payload).encode("utf-8")
-    req = request.Request(
-        url=url,
-        data=body,
-        headers={"Content-Type": "application/json", **(headers or {})},
-        method="POST",
-    )
-    try:
-        with request.urlopen(req, timeout=timeout_seconds) as response:
-            raw = response.read().decode("utf-8")
-    except error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP error calling {url}: {exc.code} {detail}") from exc
-    except error.URLError as exc:
-        raise RuntimeError(f"Network error calling {url}: {exc.reason}") from exc
-    return json.loads(raw)
-
-
-def _json_get(url: str, timeout_seconds: int, headers: dict[str, str] | None = None) -> dict:
-    req = request.Request(url=url, headers={"Content-Type": "application/json", **(headers or {})}, method="GET")
-    try:
-        with request.urlopen(req, timeout=timeout_seconds) as response:
-            raw = response.read().decode("utf-8")
-    except error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP error calling {url}: {exc.code} {detail}") from exc
-    except error.URLError as exc:
-        raise RuntimeError(f"Network error calling {url}: {exc.reason}") from exc
-    return json.loads(raw)
+_json_post = json_post
+_json_get = json_get
 
 
 def build_visual_execution_client(settings: VisualPipelineSettings):
+    if settings.visual_execution_provider == Provider.ROUTED:
+        return RoutedVisualExecutionClient(settings)
+    if settings.visual_execution_provider == Provider.BEAM:
+        return BeamExecutionClient(settings)
+    if settings.visual_execution_provider == Provider.MODAL:
+        return ModalExecutionClient(settings)
     if settings.visual_execution_provider == Provider.RUNPOD:
-        return RunpodServerlessExecutionClient(settings)
-    return ComfyUIExecutionHTTPClient(settings)
+        raise RuntimeError("runpod is no longer an active visual execution provider; migrate to beam or modal")
+    return ComfyUIHTTPExecutionClient(settings)
 
 
 def _raise_pipeline_error(payload: dict) -> None:
@@ -74,7 +56,7 @@ def _raise_pipeline_error(payload: dict) -> None:
 
 
 @dataclass
-class ComfyUIExecutionHTTPClient:
+class ComfyUIHTTPExecutionClient:
     settings: VisualPipelineSettings
 
     def render_base_image(self, request: VisualGenerationRequest) -> StepExecutionResult:
@@ -266,6 +248,156 @@ class ComfyUIExecutionHTTPClient:
         if artifacts:
             return artifacts
         raise RuntimeError("ComfyUI execution did not expose any artifacts")
+
+
+ComfyUIExecutionHTTPClient = ComfyUIHTTPExecutionClient
+
+
+@dataclass
+class RoutedVisualExecutionClient:
+    settings: VisualPipelineSettings
+
+    def render_base_image(self, request: VisualGenerationRequest) -> StepExecutionResult:
+        return self._client_for(request).render_base_image(request)
+
+    def run_face_detail(
+        self,
+        request: VisualGenerationRequest,
+        checkpoint: ResumeCheckpoint,
+    ) -> StepExecutionResult:
+        return self._client_for(request).run_face_detail(request, checkpoint)
+
+    def _client_for(self, request: VisualGenerationRequest):
+        provider = self.settings.provider_for_stage(request.runtime_stage.value)
+        if provider == Provider.BEAM:
+            return BeamExecutionClient(self.settings)
+        if provider == Provider.MODAL:
+            return ModalExecutionClient(self.settings)
+        if provider == Provider.RUNPOD:
+            raise RuntimeError("runpod is no longer an active routed provider")
+        return ComfyUIHTTPExecutionClient(self.settings)
+
+
+@dataclass
+class ProviderRuntimeExecutionClient:
+    settings: VisualPipelineSettings
+    provider_settings: RuntimeProviderSettings
+    provider_client: BeamRuntimeProviderClient | ModalRuntimeProviderClient
+
+    def render_base_image(self, request: VisualGenerationRequest) -> StepExecutionResult:
+        payload = self._submit(request=request, mode=ResumeStage.BASE_RENDER, checkpoint=None)
+        return self._parse_step_result(payload, expected_stage=ResumeStage.BASE_RENDER)
+
+    def run_face_detail(
+        self,
+        request: VisualGenerationRequest,
+        checkpoint: ResumeCheckpoint,
+    ) -> StepExecutionResult:
+        payload = self._submit(request=request, mode=ResumeStage.FACE_DETAIL, checkpoint=checkpoint)
+        return self._parse_step_result(payload, expected_stage=ResumeStage.FACE_DETAIL)
+
+    def _submit(
+        self,
+        *,
+        request: VisualGenerationRequest,
+        mode: ResumeStage,
+        checkpoint: ResumeCheckpoint | None,
+    ) -> dict:
+        service_runtime = self._resolve_service_runtime(request)
+        handle = self.provider_client.submit_job(
+            service_runtime,
+            self._build_job_input(request=request, mode=mode, checkpoint=checkpoint),
+        )
+        if handle.status == JobStatus.COMPLETED:
+            return self.provider_client.fetch_result(handle)
+        return self.provider_client.fetch_result(handle)
+
+    def _build_job_input(
+        self,
+        *,
+        request: VisualGenerationRequest,
+        mode: ResumeStage,
+        checkpoint: ResumeCheckpoint | None,
+    ) -> dict:
+        return {
+            "action": "generate",
+            "mode": mode.value,
+            "workflow_id": request.workflow_id,
+            "workflow_version": request.workflow_version,
+            "base_model_id": request.base_model_id,
+            "model_family": request.model_family,
+            "runtime_stage": request.runtime_stage,
+            "prompt": request.prompt,
+            "negative_prompt": request.negative_prompt,
+            "seed": request.seed,
+            "width": request.width,
+            "height": request.height,
+            "reference_face_image_url": request.reference_face_image_url,
+            "face_confidence_threshold": request.face_detailer.confidence_threshold,
+            "inpaint_strength": request.face_detailer.inpaint_strength,
+            "ip_adapter": request.ip_adapter.model_dump(mode="json"),
+            "face_detailer": request.face_detailer.model_dump(mode="json"),
+            "lora_version": request.lora_version,
+            "lora_validated": request.lora_validated,
+            "resume_checkpoint": checkpoint.model_dump(mode="json") if checkpoint is not None else None,
+            "metadata": request.metadata_json,
+        }
+
+    def _parse_step_result(self, payload: dict, *, expected_stage: ResumeStage) -> StepExecutionResult:
+        _raise_pipeline_error(payload)
+        artifacts = [VisualArtifact.model_validate(item) for item in payload.get("artifacts", [])]
+        if not artifacts:
+            raise RuntimeError(f"{self.provider_client.provider.value} execution did not expose any artifacts")
+        return StepExecutionResult(
+            stage=expected_stage,
+            artifacts=artifacts,
+            provider=self.provider_client.provider,
+            provider_job_id=payload.get("provider_job_id") or payload.get("job_id") or payload.get("id"),
+            successful_node_ids=payload.get("successful_node_ids", []),
+            face_detection_confidence=payload.get("face_detection_confidence"),
+            metadata_json={
+                **payload.get("metadata", {}),
+                "model_family": payload.get("model_family", ModelFamily.FLUX.value),
+                "service_runtime": payload.get("service_runtime") or self._infer_service_runtime_from_payload(payload),
+            },
+        )
+
+    @staticmethod
+    def _infer_service_runtime_from_payload(payload: dict) -> str:
+        runtime_stage = payload.get("runtime_stage")
+        if runtime_stage == RuntimeStage.IDENTITY_IMAGE.value:
+            return ServiceRuntime.S1_IMAGE.value
+        if runtime_stage == RuntimeStage.VIDEO.value:
+            return ServiceRuntime.S2_VIDEO.value
+        return ServiceRuntime.S2_IMAGE.value
+
+    @staticmethod
+    def _resolve_service_runtime(request: VisualGenerationRequest) -> ServiceRuntime:
+        if request.runtime_stage == RuntimeStage.IDENTITY_IMAGE:
+            return ServiceRuntime.S1_IMAGE
+        if request.runtime_stage == RuntimeStage.VIDEO:
+            return ServiceRuntime.S2_VIDEO
+        return ServiceRuntime.S2_IMAGE
+
+
+class BeamExecutionClient(ProviderRuntimeExecutionClient):
+    def __init__(self, settings: VisualPipelineSettings) -> None:
+        provider_settings = settings.runtime_provider_settings
+        super().__init__(
+            settings=settings,
+            provider_settings=provider_settings,
+            provider_client=BeamRuntimeProviderClient(provider_settings),
+        )
+
+
+class ModalExecutionClient(ProviderRuntimeExecutionClient):
+    def __init__(self, settings: VisualPipelineSettings) -> None:
+        provider_settings = settings.runtime_provider_settings
+        super().__init__(
+            settings=settings,
+            provider_settings=provider_settings,
+            provider_client=ModalRuntimeProviderClient(provider_settings),
+        )
 
 
 @dataclass

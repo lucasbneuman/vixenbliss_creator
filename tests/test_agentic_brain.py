@@ -7,17 +7,36 @@ import pytest
 
 from vixenbliss_creator.agentic.adapters import (
     ComfyUICopilotHTTPClient,
+    FakeLLMClient,
     OpenAICompatibleLLMClient,
 )
 from vixenbliss_creator.agentic.config import AgenticSettings
 from vixenbliss_creator.agentic.graph import build_agentic_brain
-from vixenbliss_creator.agentic.models import CompletionStatus, CritiqueIssue, ExpansionResult, GraphState, ValidationOutcome
+from vixenbliss_creator.agentic.models import (
+    CompletionStatus,
+    CopilotStage,
+    CreationMode,
+    CritiqueDomain,
+    CritiqueIssue,
+    ExpansionResult,
+    GraphState,
+    ValidationOutcome,
+)
 from vixenbliss_creator.agentic.runner import run_agentic_brain
 from vixenbliss_creator.agentic.validator import TechnicalSheetGraphValidator
 from vixenbliss_creator.contracts.identity import TechnicalSheet
 
 
-def build_technical_sheet(*, with_hard_limits: bool = True) -> TechnicalSheet:
+def build_technical_sheet(
+    *,
+    with_hard_limits: bool = True,
+    vertical: str = "lifestyle",
+    style: str = "premium",
+    archetype: str = "luxury_muse",
+    speech_style: str = "refined",
+    sarcasm: str = "medium",
+    fan_relationship_style: str = "aspirational_muse",
+) -> TechnicalSheet:
     timestamp = datetime(2026, 3, 30, 15, 0, tzinfo=timezone.utc).isoformat()
     hard_limits = (
         [
@@ -34,6 +53,13 @@ def build_technical_sheet(*, with_hard_limits: bool = True) -> TechnicalSheet:
     return TechnicalSheet.model_validate(
         {
             "schema_version": "1.0.0",
+            "identity_metadata": {
+                "avatar_id": "avatar_velvet_ember",
+                "category": "lifestyle_premium" if vertical == "lifestyle" else "adult_creator",
+                "vertical": vertical,
+                "style": style,
+                "occupation_or_content_basis": "luxury lifestyle creator" if vertical == "lifestyle" else "premium digital performer",
+            },
             "identity_core": {
                 "display_name": "Velvet Ember",
                 "fictional_age_years": 25,
@@ -55,25 +81,48 @@ def build_technical_sheet(*, with_hard_limits: bool = True) -> TechnicalSheet:
                 "visual_never_do": ["cartoon_style"],
             },
             "personality_profile": {
-                "voice_tone": "seductive",
+                "archetype": archetype,
+                "voice_tone": "authoritative" if vertical == "lifestyle" else "seductive",
                 "primary_traits": ["confident", "observant"],
                 "secondary_traits": ["warm", "strategic"],
                 "interaction_style": "Mantiene un tono directo, premium y consistente con la escena.",
                 "axes": {
-                    "formality": "medium",
+                    "dominance": "medium" if vertical == "lifestyle" else "high",
                     "warmth": "high",
-                    "dominance": "medium",
-                    "provocation": "high",
-                    "accessibility": "medium",
+                    "playfulness": "medium",
+                    "mystery": "high",
+                    "flirtiness": "high",
+                    "intelligence": "high",
+                    "sarcasm": sarcasm,
+                },
+                "communication_style": {
+                    "speech_style": speech_style,
+                    "message_length": "medium",
+                    "emoji_usage": "moderate",
+                    "emoji_style": "sparkles",
+                    "punctuation_style": "polished",
+                },
+                "social_behavior": {
+                    "fan_relationship_style": fan_relationship_style,
+                    "attention_strategy": "balanced",
+                    "response_energy": "medium",
+                    "jealousy_play": "light",
                 },
             },
             "narrative_profile": {
                 "archetype_summary": "Performer digital premium construida para hooks conversacionales y escenas editoriales.",
-                "origin_story": "Nace como una identidad sintética optimizada para glamour nocturno y monetización escalable.",
+                "origin_story": "Nace como una identidad sintetica optimizada para glamour nocturno y monetizacion escalable.",
                 "motivations": ["grow_premium_audience", "protect_brand_consistency"],
                 "interests": ["fashion", "nightlife"],
-                "audience_role": "fantasy_guide",
+                "audience_role": "aspirational" if vertical == "lifestyle" else "fantasy_guide",
                 "conversational_hooks": ["after_hours_stories", "style_breakdowns"],
+                "minimal_viable_profile": {
+                    "origin": "Construyo una presencia digital premium preparada para fantasia aspiracional y consistencia comercial.",
+                    "interests": ["fashion", "nightlife"],
+                    "daily_life": "Alterna sesiones de contenido curado, fitness suave y una presencia social muy medida.",
+                    "motivation": "Convertir estilo y presencia en una marca rentable y duradera.",
+                    "relationship_with_fans": "Se acerca con calidez medida y mantiene una sensacion de exclusividad controlada.",
+                },
             },
             "operational_limits": {
                 "allowed_content_modes": ["sfw", "sensual", "nsfw"],
@@ -102,38 +151,289 @@ def build_technical_sheet(*, with_hard_limits: bool = True) -> TechnicalSheet:
                 "contract_owner": "Codex",
                 "future_systems_ready": ["system_2", "system_5"],
                 "last_reviewed_at": timestamp,
+                "field_traces": [
+                    {
+                        "field_path": "metadata.vertical",
+                        "origin": "manual",
+                        "source_text": "operator_request",
+                        "confidence": 1.0,
+                        "rationale": "El operador fijo la vertical.",
+                    },
+                    {
+                        "field_path": "metadata.style",
+                        "origin": "manual" if style == "glam" else "inferred",
+                        "source_text": "operator_request",
+                        "confidence": 0.9,
+                        "rationale": "Runner de test.",
+                    },
+                    {
+                        "field_path": "archetype",
+                        "origin": "manual" if archetype == "dominant_queen" else "inferred",
+                        "source_text": "operator_request",
+                        "confidence": 0.9,
+                        "rationale": "Runner de test.",
+                    },
+                    {
+                        "field_path": "communication_style.speech_style",
+                        "origin": "manual" if speech_style == "casual" else "inferred",
+                        "source_text": "operator_request",
+                        "confidence": 0.9,
+                        "rationale": "Runner de test.",
+                    },
+                    {
+                        "field_path": "personality_axes.sarcasm",
+                        "origin": "manual" if sarcasm == "high" else "inferred",
+                        "source_text": "operator_request",
+                        "confidence": 0.9,
+                        "rationale": "Runner de test.",
+                    },
+                ],
             },
         }
     )
 
 
-def build_expansion_payload(*, with_hard_limits: bool = True) -> dict:
+def build_expansion_payload(
+    *,
+    with_hard_limits: bool = True,
+    vertical: str = "lifestyle",
+    style: str = "premium",
+    archetype: str = "luxury_muse",
+    speech_style: str = "refined",
+    sarcasm: str = "medium",
+    fan_relationship_style: str = "aspirational_muse",
+    missing_fields: list[str] | None = None,
+) -> dict:
+    technical_sheet = build_technical_sheet(
+        with_hard_limits=with_hard_limits,
+        vertical=vertical,
+        style=style,
+        archetype=archetype,
+        speech_style=speech_style,
+        sarcasm=sarcasm,
+        fan_relationship_style=fan_relationship_style,
+    )
+    manual_fields = [
+        trace.field_path for trace in technical_sheet.traceability.field_traces if trace.origin == "manual"
+    ]
+    inferred_fields = [
+        trace.field_path for trace in technical_sheet.traceability.field_traces if trace.origin != "manual"
+    ]
     return {
-        "expansion_summary": "Expansion inicial lista para generar una ficha tecnica narrativa y operativa estable.",
-        "prompt_blueprint": "Identity blueprint optimized for visual consistency, emotional hooks and safe operational limits.",
+        "expansion_summary": "Expansion inicial lista para construir identidad estructurada y ficha tecnica operativa.",
+        "prompt_blueprint": "Identity blueprint optimized for identity constraints, coherent personality, narrative and safe operational limits.",
         "assumptions": ["unit_test"],
-        "technical_sheet_payload": build_technical_sheet(with_hard_limits=with_hard_limits).model_dump(mode="json"),
+        "normalized_constraints": {
+            "category": technical_sheet.identity_metadata.category,
+            "vertical": technical_sheet.identity_metadata.vertical,
+            "style": technical_sheet.identity_metadata.style,
+            "occupation_or_content_basis": technical_sheet.identity_metadata.occupation_or_content_basis,
+            "archetype": technical_sheet.personality_profile.archetype,
+            "speech_style": technical_sheet.personality_profile.communication_style.speech_style,
+            "voice_tone": technical_sheet.personality_profile.voice_tone,
+            "explicitly_defined_fields": manual_fields,
+            "source_excerpt": "input de prueba",
+        },
+        "identity_draft": {
+            "metadata": technical_sheet.identity_metadata.model_dump(mode="json"),
+            "name": technical_sheet.identity_core.display_name,
+            "archetype": technical_sheet.personality_profile.archetype,
+            "personality_axes": technical_sheet.personality_profile.axes.model_dump(mode="json"),
+            "communication_style": technical_sheet.personality_profile.communication_style.model_dump(mode="json"),
+            "social_behavior": technical_sheet.personality_profile.social_behavior.model_dump(mode="json"),
+            "narrative_minimal": technical_sheet.narrative_profile.minimal_viable_profile.model_dump(mode="json"),
+            "field_traces": [trace.model_dump(mode="json") for trace in technical_sheet.traceability.field_traces],
+        },
+        "completion_report": {
+            "manually_defined_fields": manual_fields,
+            "inferred_fields": inferred_fields,
+            "missing_fields": missing_fields or [],
+        },
+        "technical_sheet_payload": technical_sheet.model_dump(mode="json"),
     }
 
 
 def build_copilot_payload(*, supported_modes: list[str] | None = None) -> dict:
     return {
-        "workflow_id": "copilot-editorial-v1",
+        "stage": CopilotStage.S1_IDENTITY_IMAGE.value,
+        "workflow_id": "base-image-ipadapter-impact",
+        "workflow_version": "2026-03-31",
+        "recommended_workflow_family": "flux_identity_reference",
         "base_model_id": "flux-schnell-v1",
-        "node_ids": ["load_model", "ip_adapter_plus", "ksampler", "vae_decode"],
-        "prompt_template": "Editorial nightlife portrait, premium lighting, identity-consistent facial features.",
+        "required_nodes": ["load_model", "ip_adapter_plus", "ksampler", "vae_decode"],
+        "optional_nodes": ["face_detector", "face_detailer"],
+        "model_hints": ["flux", "ipadapter-face", "impact-pack"],
+        "prompt_template": "Editorial nightlife portrait aligned with identity metadata and communication style.",
         "negative_prompt": "low quality, anatomy drift, minors, body horror, extra limbs",
-        "rationale": "Workflow preparado para glamour nocturno con control de identidad y sampler consumible.",
+        "reasoning_summary": "Workflow preparado para glamour premium con control de identidad.",
+        "risk_flags": ["identity_drift", "face_confidence_low"],
+        "compatibility_notes": ["Approved for System 1 identity generation."],
         "content_modes_supported": supported_modes or ["sfw", "sensual", "nsfw"],
+        "registry_source": "test_fixture",
     }
 
 
+def test_agentic_settings_reads_s1_llm_runtime_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("S1_LLM_PROVIDER", "modal")
+    monkeypatch.setenv("S1_LLM_RUNTIME_BASE_URL", "https://modal.example.com/s1-llm")
+    monkeypatch.setenv("S1_LLM_RUNTIME_API_KEY", "runtime-secret")
+    monkeypatch.setenv("S1_LLM_RUNTIME_MODEL", "qwen2.5:7b")
+    monkeypatch.setenv("S1_LLM_RUNTIME_TIMEOUT_SECONDS", "45")
+
+    settings = AgenticSettings.from_env()
+
+    assert settings.s1_llm_provider == "modal"
+    assert settings.s1_llm_runtime_base_url == "https://modal.example.com/s1-llm"
+    assert settings.s1_llm_runtime_api_key == "runtime-secret"
+    assert settings.s1_llm_runtime_model == "qwen2.5:7b"
+    assert settings.s1_llm_runtime_timeout_seconds == 45
+    assert settings.resolved_llm_base_url == "https://modal.example.com/s1-llm/v1"
+    assert settings.resolved_llm_api_key == "runtime-secret"
+    assert settings.resolved_llm_model == "qwen2.5:7b"
+
+
+def test_agentic_settings_can_fallback_to_repo_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("S1_LLM_RUNTIME_BASE_URL", raising=False)
+    monkeypatch.delenv("S1_LLM_RUNTIME_MODEL", raising=False)
+    monkeypatch.delenv("S1_LLM_RUNTIME_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.setattr(
+        "vixenbliss_creator.agentic.config._read_repo_dotenv",
+        lambda: {
+            "S1_LLM_RUNTIME_BASE_URL": "https://modal.example.com/runtime",
+            "S1_LLM_RUNTIME_MODEL": "gpt-4.1-mini",
+            "S1_LLM_RUNTIME_TIMEOUT_SECONDS": "120",
+        },
+    )
+
+    settings = AgenticSettings.from_env()
+
+    assert settings.s1_llm_runtime_base_url == "https://modal.example.com/runtime"
+    assert settings.s1_llm_runtime_model == "gpt-4.1-mini"
+    assert settings.s1_llm_runtime_timeout_seconds == 120
+    assert settings.resolved_llm_base_url == "https://modal.example.com/runtime/v1"
+
+
+def test_agentic_settings_ignores_placeholder_runtime_envs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("S1_LLM_RUNTIME_BASE_URL", "CHANGEME")
+    monkeypatch.setenv("S1_LLM_RUNTIME_MODEL", "CHANGEME")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-4.1-mini")
+    monkeypatch.setattr("vixenbliss_creator.agentic.config._read_repo_dotenv", lambda: {})
+
+    settings = AgenticSettings.from_env()
+
+    assert settings.s1_llm_runtime_base_url is None
+    assert settings.s1_llm_runtime_model is None
+    assert settings.resolved_llm_base_url == "https://api.openai.com/v1"
+    assert settings.resolved_llm_model == "gpt-4.1-mini"
+
+
+def test_openai_client_uses_runtime_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_json_post(url: str, payload: dict, headers: dict[str, str], *, timeout_seconds: int = 30) -> dict:
+        captured["timeout_seconds"] = timeout_seconds
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(build_expansion_payload(with_hard_limits=True)),
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr("vixenbliss_creator.agentic.adapters._json_post", fake_json_post)
+    client = OpenAICompatibleLLMClient(
+        AgenticSettings(
+            s1_llm_runtime_base_url="https://modal.example.com/s1-llm",
+            s1_llm_runtime_model="qwen2.5:3b",
+            s1_llm_runtime_timeout_seconds=120,
+        )
+    )
+
+    result = client.generate_expansion("Crea un avatar lifestyle premium", critique_history=[], attempt_count=1)
+
+    assert captured["timeout_seconds"] == 120
+    assert result.identity_draft.metadata.vertical == "lifestyle"
+
+
+def test_openai_client_bounds_long_summary_and_blueprint(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = build_expansion_payload(with_hard_limits=True)
+    payload["expansion_summary"] = ("Expansion realista con demasiados detalles para el limite permitido. " * 12).strip()
+    payload["prompt_blueprint"] = ("Blueprint detallado para identidad, narrativa y consistencia visual. " * 20).strip()
+
+    def fake_json_post(url: str, request_payload: dict, headers: dict[str, str], *, timeout_seconds: int = 30) -> dict:
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(payload),
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr("vixenbliss_creator.agentic.adapters._json_post", fake_json_post)
+
+    client = OpenAICompatibleLLMClient(
+        AgenticSettings(
+            s1_llm_runtime_base_url="https://modal.example.com/s1-llm",
+            s1_llm_runtime_model="qwen2.5:3b",
+        )
+    )
+
+    result = client.generate_expansion("Crea un avatar lifestyle premium", critique_history=[], attempt_count=1)
+
+    assert len(result.expansion_summary) <= 320
+    assert len(result.prompt_blueprint) <= 600
+    assert result.expansion_summary.startswith("Expansion realista")
+    assert result.prompt_blueprint.startswith("Blueprint detallado")
+
+
+def test_openai_client_infers_visual_hints_from_operator_idea_when_rebuilding_sheet(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = build_expansion_payload(with_hard_limits=True)
+    payload["technical_sheet_payload"] = {}
+    payload["identity_draft"]["narrative_minimal"] = {}
+
+    def fake_json_post(url: str, request_payload: dict, headers: dict[str, str], *, timeout_seconds: int = 30) -> dict:
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(payload),
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr("vixenbliss_creator.agentic.adapters._json_post", fake_json_post)
+
+    client = OpenAICompatibleLLMClient(
+        AgenticSettings(
+            s1_llm_runtime_base_url="https://modal.example.com/s1-llm",
+            s1_llm_runtime_model="qwen2.5:3b",
+        )
+    )
+
+    result = client.generate_expansion(
+        "Mujer pelirroja para contenido de adultos, vive cerca del mar y le gustan los animales marinos, su pasatiempo es andar en bici",
+        critique_history=[],
+        attempt_count=1,
+    )
+
+    assert result.technical_sheet_payload.visual_profile.hair_color == "red"
+    assert "animales marinos" in result.technical_sheet_payload.narrative_profile.interests
+    assert "andar en bici" in result.technical_sheet_payload.narrative_profile.interests
+
+
 def test_runner_returns_succeeded_graph_state() -> None:
-    result = run_agentic_brain("performer glam nocturna con tono seguro y premium")
+    result = run_agentic_brain("Creá un avatar nuevo para lifestyle premium")
 
     assert result.completion_status == CompletionStatus.SUCCEEDED
+    assert result.creation_mode == CreationMode.AUTOMATIC
+    assert result.identity_draft is not None
     assert result.final_technical_sheet_payload is not None
-    assert result.copilot_recommendation is not None
     assert result.validation_result is not None
     assert result.validation_result.valid is True
 
@@ -144,7 +444,10 @@ def test_validator_rejects_missing_hard_limits() -> None:
             "input_idea": "idea de prueba suficientemente larga",
             "attempt_count": 1,
             "max_attempts": 2,
+            "identity_draft": build_expansion_payload(with_hard_limits=False)["identity_draft"],
             "expanded_context": build_expansion_payload(with_hard_limits=False),
+            "manually_defined_fields": ["metadata.vertical"],
+            "inferred_fields": ["metadata.style"],
             "copilot_recommendation": build_copilot_payload(),
         }
     )
@@ -154,6 +457,7 @@ def test_validator_rejects_missing_hard_limits() -> None:
     assert outcome.valid is False
     assert outcome.final_payload_consumable is False
     assert outcome.issues[0].code == "missing_hard_limits"
+    assert outcome.issues[0].domain == CritiqueDomain.OPERATIONAL_LIMITS
 
 
 def test_graph_retries_after_validation_failure_and_recovers() -> None:
@@ -202,6 +506,30 @@ def test_graph_fails_when_retries_are_exhausted() -> None:
     assert result.final_technical_sheet_payload is None
 
 
+def test_graph_uses_registry_fallback_when_copilot_is_unavailable() -> None:
+    settings = AgenticSettings(max_attempts=2)
+
+    class BrokenCopilotClient:
+        def recommend_workflow(self, expansion: ExpansionResult) -> dict:
+            raise RuntimeError("network timeout")
+
+    brain = build_agentic_brain(
+        settings=settings,
+        llm_client=FakeLLMClient(factory=lambda idea, critique_history, attempt_count: build_expansion_payload(with_hard_limits=True)),
+        copilot_client=BrokenCopilotClient(),
+    )
+
+    result = brain.invoke(GraphState(input_idea="idea de prueba suficientemente larga"))
+
+    assert result.completion_status == CompletionStatus.SUCCEEDED
+    assert result.copilot_recommendation is not None
+    assert result.copilot_recommendation.workflow_id == "lora-dataset-ipadapter-batch"
+    assert result.copilot_recommendation.recommended_workflow_family == "flux_lora_dataset_reference"
+    assert result.copilot_recommendation.registry_source == "approved_internal_fallback"
+    assert result.copilot_notes
+    assert "fallback" in result.copilot_notes[0].lower()
+
+
 def test_graph_caps_critique_history_before_failing() -> None:
     settings = AgenticSettings(max_attempts=5)
 
@@ -213,7 +541,8 @@ def test_graph_caps_critique_history_before_failing() -> None:
                     CritiqueIssue(
                         code=f"issue_{index}",
                         message=f"Issue number {index} is retryable.",
-                        source_node="validator",
+                        source_node="validate_final_payload",
+                        target_node="complete_identity_profile",
                     )
                     for index in range(5)
                 ],
@@ -224,10 +553,8 @@ def test_graph_caps_critique_history_before_failing() -> None:
 
     brain = build_agentic_brain(
         settings=settings,
-        llm_client=FakeLLMClient(
-            factory=lambda idea, critique_history, attempt_count: build_expansion_payload(with_hard_limits=True)
-        ),
-        copilot_client=FakeCopilotClient(factory=lambda expansion: build_copilot_payload(supported_modes=["sfw", "sensual", "nsfw"])),
+        llm_client=FakeLLMClient(factory=lambda idea, critique_history, attempt_count: build_expansion_payload(with_hard_limits=True)),
+        copilot_client=FakeCopilotClient(factory=lambda expansion: build_copilot_payload()),
         validator=NoisyValidator(),
     )
 
@@ -236,6 +563,118 @@ def test_graph_caps_critique_history_before_failing() -> None:
     assert result.completion_status == CompletionStatus.FAILED
     assert "exhausted retries" in result.terminal_error_message
     assert len(result.critique_history) == 20
+
+
+def test_automatic_mode_infers_vertical_profile() -> None:
+    result = run_agentic_brain("Creá un avatar nuevo para lifestyle premium")
+
+    assert result.creation_mode == CreationMode.AUTOMATIC
+    assert result.identity_draft is not None
+    assert result.identity_draft.metadata.vertical == "lifestyle"
+    assert result.final_technical_sheet_payload.identity_metadata.style == "premium"
+
+
+def test_partial_manual_attributes_keep_traceability() -> None:
+    result = run_agentic_brain("Quiero alguien sarcástica y casual, el resto automático")
+
+    assert result.creation_mode == CreationMode.SEMI_AUTOMATIC
+    assert "communication_style.speech_style" in result.manually_defined_fields
+    assert "personality_axes.sarcasm" in result.manually_defined_fields
+    trace_map = result.identity_draft.trace_map()
+    assert trace_map["communication_style.speech_style"].origin == "manual"
+    assert trace_map["personality_axes.sarcasm"].origin == "manual"
+
+
+def test_archetype_manual_case_completes_remaining_fields() -> None:
+    result = run_agentic_brain("Definime solo el arquetipo, yo quiero dominant queen")
+
+    assert result.creation_mode == CreationMode.HYBRID_BY_ATTRIBUTE
+    assert result.identity_draft.archetype == "dominant_queen"
+    assert not result.missing_fields
+    assert "archetype" in result.manually_defined_fields
+
+
+def test_category_and_style_can_be_manual_while_narrative_is_generated() -> None:
+    result = run_agentic_brain("Quiero elegir categoría y estilo, pero la narrativa hacela sola")
+
+    assert result.creation_mode == CreationMode.HYBRID_BY_ATTRIBUTE
+    assert "metadata.category" in result.manually_defined_fields
+    assert "metadata.style" in result.manually_defined_fields
+    assert result.identity_draft.narrative_minimal.relationship_with_fans
+
+
+def test_system5_slots_are_enriched_for_chatbot_and_prompt_handoff() -> None:
+    result = run_agentic_brain("Modelo rubia ojos claros para contenidos NSFW, el resto automatico")
+
+    slots = result.final_technical_sheet_payload.system5_slots
+
+    assert "System 1" in slots.persona_summary
+    assert slots.greeting_style.startswith("Opens with confident curiosity")
+    assert slots.conversation_openers
+    assert slots.emotional_triggers
+    assert slots.fantasy_pillars
+    assert slots.relationship_progression
+    assert slots.tone_guardrails
+
+
+def test_validator_blocks_incoherent_vertical_personality_combination() -> None:
+    state = GraphState.model_validate(
+        {
+            "input_idea": "idea de prueba suficientemente larga",
+            "attempt_count": 1,
+            "max_attempts": 2,
+            "identity_draft": build_expansion_payload(
+                with_hard_limits=True,
+                vertical="lifestyle",
+                archetype="dominant_queen",
+                sarcasm="very_high",
+                speech_style="casual",
+                fan_relationship_style="commanding_presence",
+            )["identity_draft"],
+            "expanded_context": build_expansion_payload(
+                with_hard_limits=True,
+                vertical="lifestyle",
+                archetype="dominant_queen",
+                sarcasm="very_high",
+                speech_style="casual",
+                fan_relationship_style="commanding_presence",
+            ),
+            "manually_defined_fields": ["metadata.vertical", "archetype", "personality_axes.sarcasm"],
+            "inferred_fields": ["metadata.style"],
+            "copilot_recommendation": build_copilot_payload(),
+        }
+    )
+
+    outcome = TechnicalSheetGraphValidator().validate(state)
+
+    assert outcome.valid is False
+    issue_codes = {issue.code for issue in outcome.issues}
+    assert "vertical_business_violation" in issue_codes
+    assert {"premium_personality_conflict", "style_behavior_conflict"} & issue_codes
+
+
+def test_validator_rejects_unapproved_optional_nodes_from_copilot() -> None:
+    invalid_recommendation = build_copilot_payload()
+    invalid_recommendation["optional_nodes"] = ["face_detailer", "rogue_custom_node"]
+
+    state = GraphState.model_validate(
+        {
+            "input_idea": "idea de prueba suficientemente larga",
+            "attempt_count": 1,
+            "max_attempts": 2,
+            "identity_draft": build_expansion_payload(with_hard_limits=True)["identity_draft"],
+            "expanded_context": build_expansion_payload(with_hard_limits=True),
+            "manually_defined_fields": ["metadata.vertical"],
+            "inferred_fields": ["metadata.style"],
+            "copilot_recommendation": invalid_recommendation,
+        }
+    )
+
+    outcome = TechnicalSheetGraphValidator().validate(state)
+
+    assert outcome.valid is False
+    issue_codes = {issue.code for issue in outcome.issues}
+    assert "copilot_optional_nodes_not_approved" in issue_codes
 
 
 def test_openai_adapter_parses_openai_compatible_payload(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -247,7 +686,7 @@ def test_openai_adapter_parses_openai_compatible_payload(monkeypatch: pytest.Mon
 
     captured: dict[str, object] = {}
 
-    def fake_post(url: str, payload: dict, headers: dict[str, str]) -> dict:
+    def fake_post(url: str, payload: dict, headers: dict[str, str], **kwargs) -> dict:
         assert url == "https://example.com/v1/chat/completions"
         assert payload["model"] == "test-model"
         assert headers["Authorization"] == "Bearer secret"
@@ -271,7 +710,62 @@ def test_openai_adapter_parses_openai_compatible_payload(monkeypatch: pytest.Mon
     )
 
     assert captured["payload"] is not None
+    assert result.identity_draft.metadata.style == "premium"
     assert result.technical_sheet_payload.identity_core.display_name == "Velvet Ember"
+
+
+def test_settings_can_resolve_openai_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LLM_SERVERLESS_BASE_URL", raising=False)
+    monkeypatch.delenv("LLM_SERVERLESS_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_SERVERLESS_MODEL", raising=False)
+    monkeypatch.delenv("S1_LLM_RUNTIME_BASE_URL", raising=False)
+    monkeypatch.delenv("S1_LLM_RUNTIME_MODEL", raising=False)
+    monkeypatch.delenv("S1_LLM_RUNTIME_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.setattr("vixenbliss_creator.agentic.config._read_repo_dotenv", lambda: {})
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-4o-mini")
+
+    settings = AgenticSettings.from_env()
+
+    assert settings.resolved_llm_base_url == "https://api.openai.com/v1"
+    assert settings.resolved_llm_api_key == "openai-secret"
+    assert settings.resolved_llm_model == "gpt-4o-mini"
+
+
+def test_openai_adapter_uses_openai_fallback_when_serverless_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = AgenticSettings(
+        openai_api_key="openai-secret",
+        openai_model="gpt-4o-mini",
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_post(url: str, payload: dict, headers: dict[str, str], **kwargs) -> dict:
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["headers"] = headers
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(build_expansion_payload())
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr("vixenbliss_creator.agentic.adapters._json_post", fake_post)
+
+    result = OpenAICompatibleLLMClient(settings).generate_expansion(
+        idea="idea de prueba suficientemente larga",
+        critique_history=[],
+        attempt_count=1,
+    )
+
+    assert captured["url"] == "https://api.openai.com/v1/chat/completions"
+    assert captured["payload"]["model"] == "gpt-4o-mini"
+    assert captured["headers"]["Authorization"] == "Bearer openai-secret"
+    assert result.identity_draft.metadata.category == "lifestyle_premium"
 
 
 def test_copilot_adapter_parses_http_payload(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -283,7 +777,7 @@ def test_copilot_adapter_parses_http_payload(monkeypatch: pytest.MonkeyPatch) ->
 
     captured: dict[str, object] = {}
 
-    def fake_post(url: str, payload: dict, headers: dict[str, str]) -> dict:
+    def fake_post(url: str, payload: dict, headers: dict[str, str], **kwargs) -> dict:
         captured["url"] = url
         captured["headers"] = headers
         captured["payload"] = payload
@@ -296,4 +790,6 @@ def test_copilot_adapter_parses_http_payload(monkeypatch: pytest.MonkeyPatch) ->
     )
 
     assert captured["url"] == "https://copilot.example.com/api/recommend"
-    assert result.workflow_id == "copilot-editorial-v1"
+    assert captured["payload"]["stage"] == "s1_identity_image"
+    assert captured["payload"]["approved_workflows"]
+    assert result.workflow_id == "base-image-ipadapter-impact"

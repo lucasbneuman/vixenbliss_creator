@@ -1,5 +1,15 @@
 # Vision de Producto
 
+## Audiencia
+
+- developers
+- agentes
+- stakeholders tecnicos
+
+## Vigencia
+
+- `vivo`
+
 ## Resumen ejecutivo
 
 `VixenBliss Creator` es una infraestructura industrial para crear identidades digitales sinteticas persistentes y producir contenido automatizado con trazabilidad completa.
@@ -43,6 +53,5 @@ El sistema debe permitir:
 ## Documentos de referencia
 
 - base tecnica: `docs/01-architecture/technical-base.md`
-- arquitectura operativa: `docs/01-architecture/operational-architecture.md`
 - roadmap maestro flexible: `docs/02-roadmap/roadmap-master.md`
 - ejecucion operativa y backlog vivo: `YouTrack`

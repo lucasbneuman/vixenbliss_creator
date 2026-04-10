@@ -1,5 +1,12 @@
 {
   "mcpServers": {
+    "directus": {
+      "transport": "http",
+      "url": "${DIRECTUS_MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${DIRECTUS_API_TOKEN}"
+      }
+    },
     "youtrack": {
       "transport": "stdio",
       "command": "CHANGEME_MCP_COMMAND",

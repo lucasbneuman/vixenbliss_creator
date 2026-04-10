@@ -1,5 +1,14 @@
 # Branching and Commits
 
+## Audiencia
+
+- developers
+- agentes
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Reducir conflictos entre dos desarrolladores y mantener trazabilidad entre tarea, commit y PR con una politica minima de ramas.

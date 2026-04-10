@@ -11,9 +11,11 @@ from vixenbliss_creator.contracts.identity import Identity
 from vixenbliss_creator.contracts.job import Job, is_valid_job_transition
 from vixenbliss_creator.contracts.model_registry import ModelRegistry
 from vixenbliss_creator.contracts.pipeline_guards import (
+    assert_base_model_registered,
     assert_content_generation_allowed,
     assert_lora_training_allowed,
 )
+from vixenbliss_creator.s1_control import default_model_catalog
 
 
 def build_job_payload() -> dict:
@@ -297,6 +299,21 @@ def test_model_registry_rejects_lora_with_wrong_family() -> None:
 
     with pytest.raises(ValidationError):
         ModelRegistry.model_validate(payload)
+
+
+def test_registered_base_model_allows_identity_to_advance() -> None:
+    identity = Identity.model_validate(build_identity_payload())
+
+    assert_base_model_registered(identity, default_model_catalog())
+
+
+def test_identity_rejects_unknown_base_model_against_registry() -> None:
+    payload = build_identity_payload()
+    payload["base_model_id"] = "unknown-base-model"
+    identity = Identity.model_validate(payload)
+
+    with pytest.raises(ValueError, match="registered active base_model_id"):
+        assert_base_model_registered(identity, default_model_catalog())
 
 
 def test_lora_training_requires_ready_dataset() -> None:

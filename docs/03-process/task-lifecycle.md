@@ -1,5 +1,14 @@
 # Task Lifecycle
 
+## Audiencia
+
+- developers
+- agentes
+
+## Vigencia
+
+- `vivo`
+
 ## Flujo estandar
 
 1. `Seleccion`

@@ -1,5 +1,14 @@
 # Traceability Contracts
 
+## Audiencia
+
+- developers
+- agentes que tocan persistencia y trazabilidad
+
+## Vigencia
+
+- `vivo`
+
 ## Objetivo
 
 Definir los contratos canonicos y persistibles de `Job`, `Artifact` y `ModelRegistry` para trazabilidad operativa del MVP de `VixenBliss Creator`.
@@ -151,6 +160,52 @@ Este documento fija:
 - `base_model` de `S1` y `S2` debe permanecer en la familia `flux`
 - `video_placeholder` no persiste binario todavia y requiere `model_family=future_video`
 - `base_model_id` siempre debe persistirse para poder validar compatibilidad entre `S1`, `training` y `S2`
+
+## Catalogo inicial registrado
+
+El repositorio ahora define un seed minimo reusable en `src/vixenbliss_creator/s1_control/model_registry_store.py`.
+
+Entradas iniciales:
+
+- `flux-schnell-v1`
+  - rol: `base_model`
+  - familia: `flux`
+  - compatibilidades declaradas: `ComfyUI`, `LoRA`, `IP-Adapter`, `ControlNet`
+- `future-video-placeholder-v1`
+  - rol: `video_placeholder`
+  - familia: `future_video`
+  - objetivo: reservar contrato de video sin persistir binario todavia
+
+Politica de versionado inicial:
+
+- modelos base: `version_name` inmutable por familia y proveedor
+- LoRAs: version derivada de `base_model_id` y del entrenamiento efectivo
+- placeholders de video: contrato versionado hasta reemplazo por runtime real
+
+## Regla de persistencia para `S1 image`
+
+Para el handoff `S1 image -> S1 lora train`:
+
+- `dataset_manifest` es obligatorio como artifact persistido
+- `dataset_package` debe persistirse mientras exista QA manual o mientras el training no pueda reconstruir el dataset solo desde el manifest
+- la fuente de verdad recomendada para ambos es storage externo (`Directus Files`, `Supabase Storage` o `S3-compatible`)
+- `Modal Volume` puede usarse como cache o staging efimero, pero no como registro persistente entre servicios
+
+## Modos de handoff admitidos
+
+### `review`
+
+- `S1 image` genera `dataset_manifest`
+- `S1 image` genera `dataset_package`
+- el operador revisa calidad
+- `S1 lora train` se habilita solo despues de aprobacion
+
+### `autopromote`
+
+- `S1 image` genera `dataset_manifest`
+- `S1 image` persiste `dataset_package` con retencion corta o suficiente para retry
+- el orquestador dispara `lora_training` automaticamente
+- luego se aplica cleanup de artifacts temporales segun politica operativa
 
 ## Payloads validos de ejemplo
 

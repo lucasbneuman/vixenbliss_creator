@@ -5,11 +5,7 @@ from enum import Enum
 from pydantic import Field, model_validator
 
 from vixenbliss_creator.contracts.common import ContractBaseModel, JsonObject
-
-
-class Provider(str, Enum):
-    COMFYUI = "comfyui"
-    RUNPOD = "runpod"
+from vixenbliss_creator.provider import Provider
 
 
 class RuntimeStage(str, Enum):
@@ -74,7 +70,7 @@ class ResumeCheckpoint(ContractBaseModel):
     base_model_id: str = Field(min_length=3, max_length=120)
     seed: int = Field(ge=0, le=2**32 - 1)
     stage: ResumeStage
-    provider: Provider = Provider.COMFYUI
+    provider: Provider = Provider.COMFYUI_HTTP
     provider_job_id: str | None = Field(default=None, min_length=1, max_length=120)
     successful_node_ids: list[str] = Field(default_factory=list, max_length=64)
     intermediate_artifacts: list[VisualArtifact] = Field(default_factory=list, max_length=12)
@@ -103,7 +99,7 @@ class VisualGenerationRequest(ContractBaseModel):
     seed: int = Field(ge=0, le=2**32 - 1)
     width: int = Field(ge=256, le=4096)
     height: int = Field(ge=256, le=4096)
-    provider: Provider = Provider.COMFYUI
+    provider: Provider = Provider.COMFYUI_HTTP
     workflow_json: JsonObject | None = None
     reference_face_image_url: str | None = Field(default=None, min_length=3, max_length=500)
     ip_adapter: IpAdapterConfig = Field(default_factory=IpAdapterConfig)
@@ -141,7 +137,7 @@ class VisualGenerationRequest(ContractBaseModel):
 class StepExecutionResult(ContractBaseModel):
     stage: ResumeStage
     artifacts: list[VisualArtifact] = Field(min_length=1, max_length=12)
-    provider: Provider = Provider.COMFYUI
+    provider: Provider = Provider.COMFYUI_HTTP
     provider_job_id: str | None = Field(default=None, min_length=1, max_length=120)
     successful_node_ids: list[str] = Field(default_factory=list, max_length=64)
     face_detection_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
