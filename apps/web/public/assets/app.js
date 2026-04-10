@@ -32,6 +32,11 @@
     return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 10)}`;
   }
 
+  function isUsableReferenceUrl(value) {
+    const normalized = String(value || "").trim();
+    return Boolean(normalized) && !normalized.startsWith("https://example.com/") && !normalized.startsWith("http://example.com/");
+  }
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -217,6 +222,11 @@
   async function runHandoff() {
     if (!config.handoffEndpoint) {
       feedback.textContent = "Falta configurar el endpoint de handoff en la app web.";
+      return;
+    }
+    if (!isUsableReferenceUrl(referenceInput.value)) {
+      feedback.textContent = "NecesitÃ¡s una Reference face image URL real antes de disparar S1 Image.";
+      handoffButton.disabled = !lastPanel;
       return;
     }
     feedback.textContent = "Disparando handoff a S1 Image...";
