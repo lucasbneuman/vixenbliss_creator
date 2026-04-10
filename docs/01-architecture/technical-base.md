@@ -130,6 +130,19 @@ Tambien sobreviven bundles historicos de `Runpod` que hoy funcionan como referen
 - `infra/runpod-s1-model-loader/`
 - `infra/runpod-visual-serverless/`
 
+## Build de la app monorepo
+
+La aplicacion web/orquestador que se publica en `Coolify` se construye desde el `Dockerfile` en la raiz del repo.
+
+Responsabilidades de ese build:
+
+- servir `apps/web/` como puerta de entrada del monorepo
+- levantar el runtime HTTP actual basado en `infra/s1-image/runtime/app.py`
+- delegar inferencia pesada y runtimes GPU a `Modal`
+- excluir del contexto principal de `Coolify` el resto de `infra/` para evitar que bundles de servicios interfieran con la app web/orquestador
+
+El contenido de `infra/` sigue siendo fuente de verdad para runtimes por servicio y no debe interpretarse automaticamente como el build principal de `Coolify`.
+
 ## Integraciones y dependencias vigentes
 
 - `Python`
