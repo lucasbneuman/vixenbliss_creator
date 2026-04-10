@@ -141,6 +141,7 @@ def test_s1_image_runtime_serves_web_assets_from_monorepo_app(tmp_path: Path, mo
 
     assert response.status_code == 200
     assert "runLangGraph" in response.text
+    assert "buildSessionId" in response.text
     assert "defaultReferenceFaceImageUrl" in client.get("/").text
 
 

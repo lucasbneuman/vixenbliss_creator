@@ -1,7 +1,7 @@
 (function () {
   const config = window.VB_WEB_CONFIG || {};
   const sessionStorageKey = config.sessionStorageKey || "vb-web-session";
-  const sessionId = localStorage.getItem(sessionStorageKey) || `web-${crypto.randomUUID()}`;
+  const sessionId = localStorage.getItem(sessionStorageKey) || `web-${buildSessionId()}`;
   localStorage.setItem(sessionStorageKey, sessionId);
 
   const chatLog = document.getElementById("chatLog");
@@ -17,6 +17,20 @@
 
   referenceInput.value = config.defaultReferenceFaceImageUrl || "";
   sessionMeta.textContent = `Sesión: ${sessionId}`;
+
+  function buildSessionId() {
+    if (typeof crypto !== "undefined") {
+      if (typeof crypto.randomUUID === "function") {
+        return crypto.randomUUID();
+      }
+      if (typeof crypto.getRandomValues === "function") {
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+      }
+    }
+    return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 10)}`;
+  }
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -173,6 +187,10 @@
       feedback.textContent = "Necesitás escribir una idea antes de correr LangGraph.";
       return;
     }
+    if (!config.langgraphEndpoint) {
+      feedback.textContent = "Falta configurar el endpoint de LangGraph en la app web.";
+      return;
+    }
     feedback.textContent = "Ejecutando LangGraph...";
     runButton.disabled = true;
     handoffButton.disabled = true;
@@ -197,6 +215,10 @@
   }
 
   async function runHandoff() {
+    if (!config.handoffEndpoint) {
+      feedback.textContent = "Falta configurar el endpoint de handoff en la app web.";
+      return;
+    }
     feedback.textContent = "Disparando handoff a S1 Image...";
     handoffButton.disabled = true;
     try {
