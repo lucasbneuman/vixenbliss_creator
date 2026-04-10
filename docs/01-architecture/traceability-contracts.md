@@ -217,6 +217,45 @@ Ese snapshot evita depender de reconstrucciones futuras desde `Job`, `Artifact` 
 - `Artifact` sigue conservando metadata tecnica del archivo, checksum, locator y content type
 - `Content` conserva el significado de negocio del output final y su estado de QA
 
+### Correspondencia `Content` -> `content_catalog` -> `contents`
+
+La persistencia vigente del repo sigue siendo `content_catalog` en `Directus`, pero `DEV-14` agrega una representacion relacional formal en SQL para dashboard/API y trazabilidad cerrable.
+
+Correspondencia canónica:
+
+| Contrato Python | Directus `content_catalog` | SQL `contents` |
+|---|---|---|
+| `id` | `content_id` | `content_id` |
+| `identity_id` | `identity_id` | `identity_id` |
+| `content_mode` | `content_mode` | `content_mode` |
+| `video_generation_mode` | `video_generation_mode` | `video_generation_mode` |
+| `generation_status` | `generation_status` | `generation_status` |
+| `qa_status` | `qa_status` | `qa_status` |
+| `job_id` | `job_id` | `job_id` |
+| `primary_artifact_id` | `primary_artifact_id` | `primary_artifact_id` |
+| `related_artifact_ids` | `related_artifact_ids` | `related_artifact_ids` |
+| `base_model_id` | `base_model_id` | `base_model_id` |
+| `model_version_used` | `model_version_used` | `model_version_used` |
+| `provider` | `provider` | `provider` |
+| `workflow_id` | `workflow_id` | `workflow_id` |
+| `prompt` | `prompt` | `prompt` |
+| `negative_prompt` | `negative_prompt` | `negative_prompt` |
+| `seed` | `seed` | `seed` |
+| `source_content_id` | `source_content_id` | `source_content_id` |
+| `source_artifact_id` | `source_artifact_id` | `source_artifact_id` |
+| `duration_seconds` | `duration_seconds` | `duration_seconds` |
+| `frame_count` | `frame_count` | `frame_count` |
+| `frame_rate` | `frame_rate` | `frame_rate` |
+| `metadata_json` | `metadata_json` | `metadata_json` |
+| `created_at` | `created_at` | `created_at` |
+| `updated_at` | `updated_at` | `updated_at` |
+
+Regla operativa:
+
+- `content_catalog` sigue siendo la fuente viva del runtime actual
+- `contents` formaliza la misma entidad para persistencia relacional versionada
+- `content_mode` es la resolucion canónica del concepto `media_modality` mencionado en el ticket
+
 ### Cobertura minima pedida por `DEV-13`
 
 El contrato debe cubrir desde ahora:

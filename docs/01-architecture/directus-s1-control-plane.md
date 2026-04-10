@@ -132,6 +132,17 @@ Relaciones recomendadas:
 
 Esto evita usar `s1_artifacts` como si fuera a la vez registro tecnico y catalogo funcional.
 
+## Relacion con persistencia SQL formal
+
+Para cerrar `DEV-14`, el repo incorpora ademas una migracion SQL versionada de `contents`.
+
+Decision vigente:
+
+- `Directus/content_catalog` sigue siendo la persistencia operativa conectada al runtime
+- `migrations/001_initial_relational_persistence.sql` documenta y formaliza la tabla relacional `contents`
+- la tabla `contents` replica el contrato `Content` y agrega indices operativos para dashboard/API
+- no se reemplaza el recorder ni se agrega sincronizacion bidireccional nueva en esta tarea
+
 ## Persistencia canonica de identidad creada
 
 `s1_identities` ahora tambien puede guardar la entidad durable `Identity` creada al cerrar el generador estructurado.
