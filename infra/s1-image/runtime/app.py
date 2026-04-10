@@ -110,7 +110,7 @@ S1_IMAGE_EXECUTION_BACKEND = os.getenv("S1_IMAGE_EXECUTION_BACKEND", "local").st
 S1_IMAGE_MODAL_APP_NAME = os.getenv("S1_IMAGE_MODAL_APP_NAME", "vixenbliss-s1-image")
 S1_IMAGE_MODAL_FUNCTION_NAME = os.getenv("S1_IMAGE_MODAL_FUNCTION_NAME", "run_s1_image_job")
 S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME = os.getenv("S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME", "runtime_healthcheck")
-LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL = os.getenv("LAB_REFERENCE_FACE_IMAGE_URL", "https://example.com/reference.png")
+LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL = os.getenv("LAB_REFERENCE_FACE_IMAGE_URL", "")
 
 ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
 _COMFYUI_PROCESS: subprocess.Popen[str] | None = None
@@ -1428,6 +1428,8 @@ def _lab_s1_job_input(state: GraphState, *, reference_face_image_url: str | None
     copilot = state.copilot_recommendation
     identity_id = _lab_identity_id(state)
     reference_url = (reference_face_image_url or LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL).strip()
+    if reference_url.startswith("https://example.com/") or reference_url.startswith("http://example.com/"):
+        reference_url = ""
     return {
         "action": "generate",
         "mode": "base_render",
@@ -1444,7 +1446,7 @@ def _lab_s1_job_input(state: GraphState, *, reference_face_image_url: str | None
         "seed": 42,
         "width": 1024,
         "height": 1024,
-        "reference_face_image_url": reference_url,
+        "reference_face_image_url": reference_url or None,
         "ip_adapter": {"enabled": True, "model_name": "plus_face", "weight": 0.9},
         "face_detailer": {"enabled": True, "confidence_threshold": 0.8, "inpaint_strength": 0.35},
         "realism_profile": "photorealistic_adult_reference_v1",
@@ -1560,7 +1562,12 @@ def _lab_html() -> str:
     if not index_file.exists():
         raise RuntimeError(f"web app entrypoint is missing at {index_file}")
     config = {
-        "defaultReferenceFaceImageUrl": LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL,
+        "defaultReferenceFaceImageUrl": (
+            ""
+            if LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL.startswith("https://example.com/")
+            or LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL.startswith("http://example.com/")
+            else LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL
+        ),
         "langgraphEndpoint": "/lab/langgraph",
         "handoffEndpoint": "/lab/s1-image",
         "sessionStorageKey": "vb-web-session",
@@ -1668,6 +1675,11 @@ def handoff_langgraph_lab_to_s1(payload: dict) -> dict:
         raise HTTPException(status_code=409, detail="El último GraphState no quedó listo para handoff.")
     reference_face_image_url = str(payload.get("reference_face_image_url", "")).strip() or None
     job_input = _lab_s1_job_input(state, reference_face_image_url=reference_face_image_url)
+    if not job_input.get("reference_face_image_url"):
+        raise HTTPException(
+            status_code=422,
+            detail="reference_face_image_url is required for S1 Image handoff; provide one in the UI or configure LAB_REFERENCE_FACE_IMAGE_URL",
+        )
     job_response = submit_job({"input": job_input})
     panel = _lab_state_summary(state)
     panel["s1_payload_preview"] = job_input

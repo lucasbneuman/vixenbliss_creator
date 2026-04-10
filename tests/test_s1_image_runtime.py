@@ -178,7 +178,7 @@ def test_s1_image_runtime_lab_executes_langgraph_and_returns_panel(tmp_path: Pat
     assert payload["can_handoff"] is True
     assert payload["panel"]["identity"]["display_name"] == "Velvet Ember"
     assert payload["panel"]["copilot"]["workflow_id"] == "lora-dataset-ipadapter-batch"
-    assert payload["panel"]["s1_payload_preview"]["reference_face_image_url"] == "https://example.com/reference.png"
+    assert payload["panel"]["s1_payload_preview"]["reference_face_image_url"] is None
 
 
 def test_s1_image_runtime_lab_returns_controlled_error_when_langgraph_fails(tmp_path: Path, monkeypatch) -> None:
@@ -832,3 +832,19 @@ def test_s1_image_runtime_healthcheck_can_delegate_to_modal_worker(tmp_path: Pat
     assert payload["ok"] is True
     assert payload["orchestrator_host"] == "coolify"
     assert payload["startup_mode"] == "remote_gpu_worker"
+
+
+def test_s1_image_runtime_lab_handoff_requires_reference_face_url(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+
+    langgraph_response = client.post(
+        "/lab/langgraph",
+        json={"session_id": "session-4", "idea": "CreÃ¡ un avatar nuevo para lifestyle premium"},
+    )
+    assert langgraph_response.status_code == 200
+
+    response = client.post("/lab/s1-image", json={"session_id": "session-4"})
+
+    assert response.status_code == 422
+    assert "reference_face_image_url is required" in response.json()["detail"]
