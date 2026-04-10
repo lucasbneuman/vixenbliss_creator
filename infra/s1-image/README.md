@@ -17,6 +17,12 @@ Servicio neutral de `S1 image` para `DEV-8`, con orquestacion HTTP en `Coolify` 
 - `GET /jobs/{id}/result`
 - `GET /healthcheck`
 - `GET /ws/jobs/{id}`
+- `GET /`
+- `GET /app`
+- `GET /lab`
+- `GET /web/assets/{path}`
+- `POST /lab/langgraph`
+- `POST /lab/s1-image`
 
 El runtime devuelve payloads compatibles con el motor visual actual:
 
@@ -32,6 +38,42 @@ El runtime devuelve payloads compatibles con el motor visual actual:
 - `metadata`
 - `error_code`
 - `error_message`
+
+## LangGraph Lab
+
+El runtime ahora sirve la puerta de entrada web del monorepo desde `apps/web/`, manteniendo la UI separada del backend aunque siga deployada junto al orquestador actual.
+
+Capacidades iniciales:
+
+- landing inicial en `/` como entrada de la aplicacion
+- chat simple para mandar una idea del operador a `LangGraph`
+- panel derecho con identidad base, trazabilidad, perfil visual y recomendacion tecnica
+- preview del `identity_context` y del payload de handoff para `S1 Image`
+- boton para disparar el job real de `S1 Image` usando el ultimo `GraphState` exitoso
+
+Rutas del lab:
+
+- `GET /`: home actual de la aplicacion web
+- `GET /app`: alias de la entrada web
+- `GET /lab`: alias tecnico del workspace web
+- `GET /web/assets/{path}`: assets del front desde `apps/web/public/assets/`
+- `POST /lab/langgraph`: ejecuta `LangGraph` con runner determinista
+- `POST /lab/s1-image`: toma el ultimo resultado valido y crea el job de `S1 Image`
+
+Uso local minimo:
+
+1. levantar el runtime `FastAPI` de `S1 image`
+2. abrir `/` o `/app`
+3. escribir un prompt de operador y correr `LangGraph`
+4. revisar el panel derecho
+5. usar `Probar S1 Image` para disparar el handoff
+
+Default operativo del lab:
+
+- usa `run_agentic_brain` por defecto
+- no persiste conversaciones fuera de memoria
+- usa `LAB_REFERENCE_FACE_IMAGE_URL` si se quiere cambiar la URL default de referencia facial
+- sirve el front desde `apps/web/` para dejar listo el camino a un desacople posterior de front y back
 
 ## Estructura
 
@@ -118,6 +160,12 @@ Direccion recomendada:
 - `Modal Volume`: solo para modelos, caches de `ComfyUI` y staging efimero de muy corta vida
 - `Directus Files` sobre storage `S3-compatible`: fuente de verdad para `base_image` y evidencia visual de QA
 - `s1_artifacts`, `s1_generation_runs` y `s1_identities`: fuente de verdad para `dataset_manifest`, `dataset_package_path`, `character_id` y `seed_bundle`
+
+Regla operativa del gate predeploy:
+
+- `base_image` y evidencia visual siguen yendo a `Directus Files`
+- `dataset_manifest` y `dataset_package` quedan como metadata y URIs en rows de `Directus`
+- el deploy en `Coolify` no debe depender de subir artifacts no visuales a `Directus Files` para considerarse sano
 
 Modos operativos esperados:
 

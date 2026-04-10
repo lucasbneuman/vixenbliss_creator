@@ -72,39 +72,51 @@ class FakeControlPlane:
         return payload
 
 
-def _build_dataset_manifest(identity_id: str, *, package_path: Path, sample_count: int = 12) -> dict[str, Any]:
+def _build_dataset_manifest(identity_id: str, *, package_path: Path, sample_count: int = 40) -> dict[str, Any]:
     files: list[dict[str, Any]] = []
-    variation_cycle = ("close_up_face", "medium", "full_body")
-    pose_cycle = ("front", "three_quarter", "profile")
-    half = sample_count // 2
     sample_index = 0
-    for class_name, count in (("SFW", half), ("NSFW", half)):
-        for class_offset in range(count):
-            sample_index += 1
-            variation_group = variation_cycle[(sample_index - 1) % len(variation_cycle)]
-            files.append(
-                {
-                    "sample_id": f"dataset-{identity_id}-{sample_index:03d}",
-                    "identity_id": identity_id,
-                    "character_id": identity_id,
-                    "class_name": class_name,
-                    "variation_group": variation_group,
-                    "framing": variation_group,
-                    "shot_type": variation_group,
-                    "camera_angle": pose_cycle[(sample_index - 1) % len(pose_cycle)],
-                    "pose": pose_cycle[(sample_index - 1) % len(pose_cycle)],
-                    "pose_family": pose_cycle[(sample_index - 1) % len(pose_cycle)],
-                    "expression": "calm confident expression",
-                    "wardrobe_state": "clothed" if class_name == "SFW" else "nude",
-                    "prompt": f"adult real person {variation_group}",
-                    "negative_prompt": "cgi, illustration, anime, text, watermark",
-                    "caption": f"adult real person {variation_group} photorealistic reference photo",
-                    "path": f"images/{class_name}/sample-{class_offset + 1:03d}.png",
-                    "seed": sample_index * 111,
-                    "realism_profile": "photorealistic_adult_reference_v1",
-                    "source_strategy": "avatar_prompt_plus_shot_plan_v1",
-                }
-            )
+    for framing, per_angle_count in (("close_up_face", 2), ("medium", 2), ("full_body", 4)):
+        for camera_angle in ("front", "left_three_quarter", "right_three_quarter", "left_profile", "right_profile"):
+            for class_name, wardrobe_state in (("SFW", "clothed"), ("NSFW", "nude")):
+                iterations = 1 if framing != "full_body" else 2
+                for full_body_variant in range(iterations):
+                    sample_index += 1
+                    files.append(
+                        {
+                            "sample_id": f"dataset-{identity_id}-{sample_index:03d}",
+                            "identity_id": identity_id,
+                            "character_id": identity_id,
+                            "class_name": class_name,
+                            "variation_group": framing,
+                            "framing": framing,
+                            "shot_type": framing,
+                            "camera_angle": camera_angle,
+                            "pose": "editorial_standing",
+                            "pose_family": "editorial_standing" if framing != "full_body" else f"full_body_pose_{full_body_variant + 1}",
+                            "expression": "calm confident expression",
+                            "wardrobe_state": wardrobe_state,
+                            "camera_distance": "tight_portrait" if framing == "close_up_face" else ("editorial_mid" if framing == "medium" else "wide_full_body"),
+                            "lens_hint": "85mm portrait lens" if framing == "close_up_face" else ("50mm editorial lens" if framing == "medium" else "35mm fashion lens"),
+                            "lighting_setup": "soft studio key light with realistic skin falloff",
+                            "background_style": "minimal editorial backdrop",
+                            "quality_priority": "hero" if framing == "full_body" else "standard",
+                            "prompt": f"adult real person {framing} {camera_angle} {wardrobe_state}",
+                            "negative_prompt": "cgi, illustration, anime, duplicate body, text, watermark",
+                            "caption": f"adult real person {framing} {camera_angle} {wardrobe_state} photorealistic reference photo",
+                            "path": f"images/{class_name}/{camera_angle}/sample-{sample_index:03d}.png",
+                            "seed": sample_index * 111,
+                            "realism_profile": "photorealistic_adult_reference_v1",
+                            "source_strategy": "avatar_prompt_plus_shot_plan_v1",
+                        }
+                    )
+                    if len(files) == sample_count:
+                        break
+                if len(files) == sample_count:
+                    break
+            if len(files) == sample_count:
+                break
+        if len(files) == sample_count:
+            break
     return {
         "schema_version": "1.1.0",
         "identity_id": identity_id,
@@ -113,7 +125,9 @@ def _build_dataset_manifest(identity_id: str, *, package_path: Path, sample_coun
         "dataset_package_path": str(package_path),
         "sample_count": sample_count,
         "generated_samples": sample_count,
-        "composition": {"policy": "balanced_50_50", "SFW": half, "NSFW": half},
+        "render_sample_count": 80,
+        "selected_sample_count": sample_count,
+        "composition": {"policy": "balanced_50_50_curated", "SFW": sample_count // 2, "NSFW": sample_count // 2},
         "files": files,
         "workflow_id": "base-image-ipadapter-impact",
         "workflow_version": "2026-04-02",
@@ -172,22 +186,22 @@ def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:
                     "content_type": "image/png",
                     "metadata_json": {"sample_count": 1},
                 },
-                {
-                    "artifact_type": "dataset_manifest",
-                    "storage_path": str(manifest_path),
-                    "content_type": "application/json",
-                    "metadata_json": {"sample_count": 12},
-                },
-                {
-                    "artifact_type": "dataset_package",
-                    "storage_path": str(package_path),
-                    "content_type": "application/zip",
-                    "checksum_sha256": "abc123",
-                    "metadata_json": {"sample_count": 12},
-                },
-            ],
-        },
-    )
+                    {
+                        "artifact_type": "dataset_manifest",
+                        "storage_path": str(manifest_path),
+                        "content_type": "application/json",
+                        "metadata_json": {"sample_count": 40},
+                    },
+                    {
+                        "artifact_type": "dataset_package",
+                        "storage_path": str(package_path),
+                        "content_type": "application/zip",
+                        "checksum_sha256": "abc123",
+                        "metadata_json": {"sample_count": 40},
+                    },
+                ],
+            },
+        )
 
     assert fake.store["s1_generation_runs"][0]["external_job_id"] == "job-123"
     assert any(event["event_type"] == "runtime_job_recorded" for event in fake.store["s1_events"])
@@ -448,7 +462,7 @@ def test_recorder_uploads_critical_dataset_artifacts_from_modal_like_handoff(tmp
     fake = HttpLocatorControlPlane()
     identity = fake.create_item("s1_identities", {"avatar_id": "modal-42", "status": "draft"})
     recorder = S1RuntimeDirectusRecorder(client=fake)
-    manifest = _build_dataset_manifest("modal-42", package_path=Path("/app/data/artifacts/modal-42/dataset-package.zip"), sample_count=24)
+    manifest = _build_dataset_manifest("modal-42", package_path=Path("/app/data/artifacts/modal-42/dataset-package.zip"), sample_count=40)
     result_payload = {
         "provider": "modal",
         "base_model_id": "flux-schnell-v1",
@@ -550,7 +564,7 @@ def test_recorder_blocks_training_when_dataset_validation_fails(tmp_path: Path) 
         "identity_id": "blocked",
         "sample_count": 8,
         "generated_samples": 8,
-            "files": [{"path": "images/SFW/sample-001.png", "class_name": "SFW"}],
+        "files": [{"path": "images/SFW/sample-001.png", "class_name": "SFW"}],
         "seed_bundle": {"portrait_seed": 1, "variation_seed": 2},
     }
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")

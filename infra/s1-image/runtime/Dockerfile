@@ -108,6 +108,7 @@ RUN python -m pip install --index-url "${TORCH_INDEX_URL}" \
 WORKDIR /app
 
 COPY infra/s1-image/runtime /app/runtime
+COPY apps/web /app/apps/web
 COPY src /app/src
 
 RUN sed -i 's/\r$//' /app/runtime/scripts/*.sh && \

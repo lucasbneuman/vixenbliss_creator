@@ -121,6 +121,128 @@ def test_s1_image_runtime_healthcheck_reports_identity_contract(tmp_path: Path, 
     assert payload["runtime_contract"]["lora_supported"] is False
 
 
+def test_s1_image_runtime_root_page_renders_chat_layout(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "VixenBliss Creator" in response.text
+    assert "Correr LangGraph" in response.text
+    assert "Panel de Avatar" in response.text
+
+
+def test_s1_image_runtime_serves_web_assets_from_monorepo_app(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+
+    response = client.get("/web/assets/app.js")
+
+    assert response.status_code == 200
+    assert "runLangGraph" in response.text
+    assert "defaultReferenceFaceImageUrl" in client.get("/").text
+
+
+def test_s1_image_runtime_can_resolve_web_root_from_override(tmp_path: Path, monkeypatch) -> None:
+    public_root = tmp_path / "custom-web" / "public"
+    assets_root = public_root / "assets"
+    assets_root.mkdir(parents=True, exist_ok=True)
+    (public_root / "index.html").write_text("<html><body>__VB_WEB_CONFIG__</body></html>", encoding="utf-8")
+    (assets_root / "app.js").write_text("console.log('override');", encoding="utf-8")
+    monkeypatch.setenv("VB_WEB_PUBLIC_ROOT", str(public_root))
+
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+
+    root = client.get("/")
+    asset = client.get("/web/assets/app.js")
+
+    assert root.status_code == 200
+    assert "__VB_WEB_CONFIG__" not in root.text
+    assert asset.status_code == 200
+    assert "override" in asset.text
+
+
+def test_s1_image_runtime_lab_executes_langgraph_and_returns_panel(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+
+    response = client.post("/lab/langgraph", json={"session_id": "session-1", "idea": "Creá un avatar nuevo para lifestyle premium"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session_id"] == "session-1"
+    assert payload["chat_entry"]["status"] == "succeeded"
+    assert payload["can_handoff"] is True
+    assert payload["panel"]["identity"]["display_name"] == "Velvet Ember"
+    assert payload["panel"]["copilot"]["workflow_id"] == "lora-dataset-ipadapter-batch"
+    assert payload["panel"]["s1_payload_preview"]["reference_face_image_url"] == "https://example.com/reference.png"
+
+
+def test_s1_image_runtime_lab_returns_controlled_error_when_langgraph_fails(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "run_agentic_brain", lambda _idea: (_ for _ in ()).throw(RuntimeError("runner exploded")))
+    client = TestClient(module.app)
+
+    response = client.post("/lab/langgraph", json={"session_id": "session-2", "idea": "Probar fallo"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["chat_entry"]["status"] == "failed"
+    assert payload["chat_entry"]["error"] == "runner exploded"
+    assert payload["can_handoff"] is False
+
+
+def test_s1_image_runtime_lab_handoff_builds_job_payload_and_reuses_jobs_flow(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    captured: dict[str, object] = {}
+
+    def fake_submit_job(payload: dict) -> dict:
+        captured["payload"] = payload
+        return {
+            "job_id": "job-lab-123",
+            "status": "completed",
+            "result_url": "/jobs/job-lab-123/result",
+            "progress_url": "/ws/jobs/job-lab-123",
+            "metadata": {"progress_events": []},
+        }
+
+    monkeypatch.setattr(module, "submit_job", fake_submit_job)
+
+    langgraph_response = client.post(
+        "/lab/langgraph",
+        json={"session_id": "session-3", "idea": "Creá un avatar nuevo para lifestyle premium"},
+    )
+    assert langgraph_response.status_code == 200
+
+    response = client.post(
+        "/lab/s1-image",
+        json={"session_id": "session-3", "reference_face_image_url": "https://example.com/custom.png"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    job_input = captured["payload"]["input"]
+    assert job_input["runtime_stage"] == "identity_image"
+    assert job_input["workflow_id"] == "lora-dataset-ipadapter-batch"
+    assert job_input["reference_face_image_url"] == "https://example.com/custom.png"
+    assert job_input["metadata"]["source_mode"] == "langgraph_lab"
+    assert payload["handoff"]["job"]["job_id"] == "job-lab-123"
+    assert payload["panel"]["s1_payload_preview"]["reference_face_image_url"] == "https://example.com/custom.png"
+
+
+def test_s1_image_runtime_lab_handoff_requires_succeeded_graph_state(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+
+    response = client.post("/lab/s1-image", json={"session_id": "missing-session"})
+
+    assert response.status_code == 409
+    assert "No hay una ejecución previa" in response.json()["detail"]
+
+
 def test_s1_image_runtime_resolves_plus_face_to_ip_adapter_bin(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
 

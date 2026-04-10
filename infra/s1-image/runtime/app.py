@@ -17,7 +17,10 @@ from urllib import error, parse, request
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse
 
+from vixenbliss_creator.agentic.models import CompletionStatus, GraphState
+from vixenbliss_creator.agentic.runner import run_agentic_brain
 from vixenbliss_creator.provider import Provider
 from vixenbliss_creator.s1_control import S1ControlSettings, S1RuntimeDirectusRecorder
 from vixenbliss_creator.s1_services import (
@@ -32,6 +35,34 @@ from vixenbliss_creator.visual_pipeline import ResumeCheckpoint, ResumeStage, Ru
 
 
 RUNTIME_ROOT = Path(__file__).resolve().parent
+
+
+def _discover_web_public_root() -> Path:
+    override_root = os.getenv("VB_WEB_PUBLIC_ROOT", "").strip()
+    if override_root:
+        candidate = Path(override_root).expanduser().resolve()
+        if (candidate / "index.html").exists():
+            return candidate
+
+    for base in (RUNTIME_ROOT, *RUNTIME_ROOT.parents):
+        candidate = base / "apps" / "web" / "public"
+        if (candidate / "index.html").exists():
+            return candidate
+
+    # Coolify/container fallback when the web app is copied alongside the runtime.
+    for candidate in (
+        Path("/app/apps/web/public"),
+        Path("/workspace/apps/web/public"),
+    ):
+        if (candidate / "index.html").exists():
+            return candidate
+
+    raise RuntimeError("web app public root is missing; expected apps/web/public/index.html")
+
+
+WEB_PUBLIC_ROOT = _discover_web_public_root()
+WEB_APP_ROOT = WEB_PUBLIC_ROOT.parent
+WEB_ASSETS_ROOT = WEB_PUBLIC_ROOT / "assets"
 ARTIFACT_ROOT = Path(os.getenv("SERVICE_ARTIFACT_ROOT", "/tmp/vixenbliss/s1-image"))
 COMFYUI_HOME = Path(os.getenv("COMFYUI_HOME", "/opt/comfyui"))
 COMFYUI_PORT = int(os.getenv("COMFYUI_PORT", "8188"))
@@ -79,11 +110,13 @@ S1_IMAGE_EXECUTION_BACKEND = os.getenv("S1_IMAGE_EXECUTION_BACKEND", "local").st
 S1_IMAGE_MODAL_APP_NAME = os.getenv("S1_IMAGE_MODAL_APP_NAME", "vixenbliss-s1-image")
 S1_IMAGE_MODAL_FUNCTION_NAME = os.getenv("S1_IMAGE_MODAL_FUNCTION_NAME", "run_s1_image_job")
 S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME = os.getenv("S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME", "runtime_healthcheck")
+LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL = os.getenv("LAB_REFERENCE_FACE_IMAGE_URL", "https://example.com/reference.png")
 
 ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
 _COMFYUI_PROCESS: subprocess.Popen[str] | None = None
 _COMFYUI_LOG_HANDLE: TextIO | None = None
 COMFYUI_LOG_PATH = ARTIFACT_ROOT / "comfyui.log"
+_LAB_SESSIONS: dict[str, dict[str, object]] = {}
 
 ProgressEmitter = Callable[[str, str, float], None]
 
@@ -266,6 +299,14 @@ def _cache_runtime_paths(job_input: dict | None = None) -> dict[str, Path]:
     }
 
 
+def _clip_vision_runtime_path() -> Path:
+    return COMFYUI_MODELS_DIR / "clip_vision" / COMFYUI_IP_ADAPTER_CLIP_VISION_DIRNAME
+
+
+def _clip_vision_cache_path() -> Path:
+    return MODEL_CACHE_ROOT / "clip_vision" / COMFYUI_IP_ADAPTER_CLIP_VISION_DIRNAME
+
+
 def _runtime_checks(job_input: dict | None = None) -> dict[str, bool]:
     paths = _required_runtime_paths(job_input)
     cache_paths = _cache_runtime_paths(job_input)
@@ -283,12 +324,41 @@ def _runtime_checks(job_input: dict | None = None) -> dict[str, bool]:
         "face_detector_present": paths["face_detector"].exists(),
         "cache_face_detector_present": cache_paths["face_detector"].exists(),
         "workflow_baked": _workflow_template_path(job_input).exists(),
-        "clip_vision_cache_present": (COMFYUI_MODELS_DIR / "clip_vision" / COMFYUI_IP_ADAPTER_CLIP_VISION_DIRNAME).exists(),
+        "clip_vision_present": _clip_vision_runtime_path().exists(),
+        "clip_vision_cache_present": _clip_vision_cache_path().exists(),
         "comfyui_baked": (COMFYUI_HOME / "main.py").exists(),
         "impact_pack_baked": (COMFYUI_CUSTOM_NODES_DIR / "ComfyUI-Impact-Pack").exists(),
         "impact_subpack_baked": (COMFYUI_CUSTOM_NODES_DIR / "ComfyUI-Impact-Subpack").exists(),
         "ipadapter_flux_baked": (COMFYUI_CUSTOM_NODES_DIR / "ComfyUI-IPAdapter-Flux").exists(),
     }
+
+
+def _runtime_assets_ready(runtime_checks: dict[str, bool], *, allow_cache_only: bool) -> bool:
+    file_checks = (
+        ("flux_diffusion_model_present", "cache_flux_diffusion_model_present"),
+        ("flux_ae_present", "cache_flux_ae_present"),
+        ("flux_clip_l_present", "cache_flux_clip_l_present"),
+        ("flux_t5xxl_present", "cache_flux_t5xxl_present"),
+        ("ip_adapter_present", "cache_ip_adapter_present"),
+        ("face_detector_present", "cache_face_detector_present"),
+        ("clip_vision_present", "clip_vision_cache_present"),
+    )
+    for runtime_key, cache_key in file_checks:
+        if runtime_checks.get(runtime_key):
+            continue
+        if allow_cache_only and runtime_checks.get(cache_key):
+            continue
+        return False
+    return all(
+        runtime_checks.get(key, False)
+        for key in (
+            "workflow_baked",
+            "comfyui_baked",
+            "impact_pack_baked",
+            "impact_subpack_baked",
+            "ipadapter_flux_baked",
+        )
+    )
 
 
 def _assert_required_runtime_inputs(job_input: dict) -> None:
@@ -1271,6 +1341,243 @@ def _processor(payload: dict, *, emit_progress: ProgressEmitter | None = None) -
         return _response_error("COMFYUI_EXECUTION_FAILED", str(exc), job_input=payload)
 
 
+def _enum_or_value(value: object) -> object:
+    return getattr(value, "value", value)
+
+
+def _lab_session_store(session_id: str) -> dict[str, object]:
+    return _LAB_SESSIONS.setdefault(session_id, {})
+
+
+def _lab_identity_context(technical_sheet: object, state: GraphState | None = None) -> dict[str, object]:
+    context = {
+        "identity_summary": technical_sheet.system5_slots.persona_summary,
+        "summary": technical_sheet.identity_core.tagline,
+        "voice_tone": _enum_or_value(technical_sheet.personality_profile.voice_tone),
+        "style": _enum_or_value(technical_sheet.identity_metadata.style),
+        "vertical": _enum_or_value(technical_sheet.identity_metadata.vertical),
+        "occupation_or_content_basis": technical_sheet.identity_metadata.occupation_or_content_basis,
+        "display_name": technical_sheet.identity_core.display_name,
+        "archetype": _enum_or_value(technical_sheet.personality_profile.archetype),
+        "personality_axes": technical_sheet.personality_profile.axes.model_dump(mode="json"),
+        "visual_profile": technical_sheet.visual_profile.model_dump(mode="json"),
+        "interests": list(technical_sheet.narrative_profile.interests),
+    }
+    if state is not None and state.copilot_recommendation is not None:
+        context["copilot_workflow_id"] = state.copilot_recommendation.workflow_id
+        context["copilot_workflow_family"] = state.copilot_recommendation.recommended_workflow_family
+        context["copilot_registry_source"] = state.copilot_recommendation.registry_source
+    return context
+
+
+def _lab_identity_id(state: GraphState) -> str:
+    technical_sheet = state.final_technical_sheet_payload
+    if technical_sheet is None:
+        return uuid.uuid4().hex
+    avatar_id = technical_sheet.identity_metadata.avatar_id
+    if avatar_id:
+        try:
+            return str(UUID(str(avatar_id)))
+        except ValueError:
+            stable_basis = f"vb-lab:{avatar_id}"
+    else:
+        stable_basis = f"vb-lab:{technical_sheet.identity_core.display_name}"
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, stable_basis))
+
+
+def _summarize_visual_profile(visual_profile: dict[str, object]) -> dict[str, object]:
+    return {
+        "archetype": visual_profile.get("archetype"),
+        "hair": " / ".join(
+            str(bit) for bit in (visual_profile.get("hair_color"), visual_profile.get("hair_style")) if bit
+        ),
+        "eyes": visual_profile.get("eye_color"),
+        "body_type": visual_profile.get("body_type"),
+        "must_haves": visual_profile.get("visual_must_haves", []),
+        "wardrobe_styles": visual_profile.get("wardrobe_styles", []),
+    }
+
+
+def _lab_prompt_from_state(state: GraphState) -> str:
+    copilot = state.copilot_recommendation
+    technical_sheet = state.final_technical_sheet_payload
+    if copilot is not None and copilot.prompt_template:
+        return copilot.prompt_template
+    if technical_sheet is None:
+        return "Photorealistic identity portrait with premium editorial realism."
+    return (
+        f"Photorealistic portrait of {technical_sheet.identity_core.display_name}, "
+        f"{_enum_or_value(technical_sheet.identity_metadata.style)} style, "
+        f"{_enum_or_value(technical_sheet.identity_metadata.vertical)} vertical, "
+        f"{_enum_or_value(technical_sheet.personality_profile.archetype)} archetype."
+    )
+
+
+def _lab_negative_prompt_from_state(state: GraphState) -> str:
+    copilot = state.copilot_recommendation
+    if copilot is not None and copilot.negative_prompt:
+        return copilot.negative_prompt
+    return "low quality, anatomy drift, extra limbs, text, watermark, illustration, anime, minors"
+
+
+def _lab_s1_job_input(state: GraphState, *, reference_face_image_url: str | None = None) -> dict[str, object]:
+    technical_sheet = state.final_technical_sheet_payload
+    if technical_sheet is None:
+        raise ValueError("GraphState must include final_technical_sheet_payload before S1 handoff")
+    identity_context = _lab_identity_context(technical_sheet, state)
+    copilot = state.copilot_recommendation
+    identity_id = _lab_identity_id(state)
+    reference_url = (reference_face_image_url or LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL).strip()
+    return {
+        "action": "generate",
+        "mode": "base_render",
+        "workflow_id": copilot.workflow_id if copilot is not None else COMFYUI_WORKFLOW_IMAGE_ID,
+        "workflow_version": copilot.workflow_version if copilot is not None else COMFYUI_WORKFLOW_IMAGE_VERSION,
+        "workflow_family": (
+            copilot.recommended_workflow_family if copilot is not None else "flux_identity_reference"
+        ),
+        "workflow_registry_source": copilot.registry_source if copilot is not None else "approved_internal",
+        "base_model_id": copilot.base_model_id if copilot is not None else "flux-schnell-v1",
+        "runtime_stage": RuntimeStage.IDENTITY_IMAGE.value,
+        "prompt": _lab_prompt_from_state(state),
+        "negative_prompt": _lab_negative_prompt_from_state(state),
+        "seed": 42,
+        "width": 1024,
+        "height": 1024,
+        "reference_face_image_url": reference_url,
+        "ip_adapter": {"enabled": True, "model_name": "plus_face", "weight": 0.9},
+        "face_detailer": {"enabled": True, "confidence_threshold": 0.8, "inpaint_strength": 0.35},
+        "realism_profile": "photorealistic_adult_reference_v1",
+        "source_strategy": "copilot_workflow_plus_shot_plan_v2",
+        "copilot_prompt_template": copilot.prompt_template if copilot is not None else None,
+        "copilot_negative_prompt": copilot.negative_prompt if copilot is not None else None,
+        "metadata": {
+            "identity_id": identity_id,
+            "character_id": identity_id,
+            "autopromote": False,
+            "samples_target": 40,
+            "identity_context": identity_context,
+            "source_mode": "langgraph_lab",
+        },
+    }
+
+
+def _lab_state_summary(state: GraphState) -> dict[str, object]:
+    technical_sheet = state.final_technical_sheet_payload
+    draft = state.identity_draft
+    copilot = state.copilot_recommendation
+    identity_context = _lab_identity_context(technical_sheet, state) if technical_sheet is not None else {}
+    traces = draft.trace_map() if draft is not None else {}
+    return {
+        "completion_status": _enum_or_value(state.completion_status),
+        "identity": {
+            "display_name": technical_sheet.identity_core.display_name if technical_sheet is not None else None,
+            "vertical": _enum_or_value(technical_sheet.identity_metadata.vertical) if technical_sheet is not None else None,
+            "category": _enum_or_value(technical_sheet.identity_metadata.category) if technical_sheet is not None else None,
+            "style": _enum_or_value(technical_sheet.identity_metadata.style) if technical_sheet is not None else None,
+            "archetype": _enum_or_value(technical_sheet.personality_profile.archetype) if technical_sheet is not None else None,
+            "voice_tone": _enum_or_value(technical_sheet.personality_profile.voice_tone) if technical_sheet is not None else None,
+            "speech_style": (
+                _enum_or_value(technical_sheet.personality_profile.communication_style.speech_style)
+                if technical_sheet is not None
+                else None
+            ),
+        },
+        "personality_axes": draft.personality_axes.model_dump(mode="json") if draft is not None else {},
+        "visual_profile": _summarize_visual_profile(technical_sheet.visual_profile.model_dump(mode="json"))
+        if technical_sheet is not None
+        else {},
+        "traceability": {
+            "manual_fields": state.manually_defined_fields,
+            "inferred_fields": state.inferred_fields,
+            "missing_fields": state.missing_fields,
+            "field_traces": {field_path: trace.model_dump(mode="json") for field_path, trace in traces.items()},
+        },
+        "copilot": (
+            {
+                "workflow_id": copilot.workflow_id,
+                "workflow_version": copilot.workflow_version,
+                "base_model_id": copilot.base_model_id,
+                "workflow_family": copilot.recommended_workflow_family,
+                "registry_source": copilot.registry_source,
+                "prompt_template": copilot.prompt_template,
+                "negative_prompt": copilot.negative_prompt,
+                "reasoning_summary": copilot.reasoning_summary,
+                "risk_flags": copilot.risk_flags,
+            }
+            if copilot is not None
+            else {}
+        ),
+        "identity_context": identity_context,
+        "s1_payload_preview": _lab_s1_job_input(state),
+        "graph_state_json": state.model_dump(mode="json"),
+    }
+
+
+def _lab_response_from_state(session_id: str, idea: str, state: GraphState) -> dict[str, object]:
+    panel = _lab_state_summary(state)
+    display_name = panel["identity"].get("display_name") or "Avatar"
+    workflow_id = panel["copilot"].get("workflow_id") or panel["s1_payload_preview"]["workflow_id"]
+    return {
+        "session_id": session_id,
+        "chat_entry": {
+            "user_message": idea,
+            "assistant_message": f"{display_name} listo para handoff con workflow {workflow_id}.",
+            "status": _enum_or_value(state.completion_status),
+            "error": state.terminal_error_message,
+        },
+        "panel": panel,
+        "can_handoff": state.completion_status == CompletionStatus.SUCCEEDED,
+    }
+
+
+def _lab_error_response(session_id: str, idea: str, message: str) -> dict[str, object]:
+    return {
+        "session_id": session_id,
+        "chat_entry": {
+            "user_message": idea,
+            "assistant_message": "LangGraph no pudo completar la ejecución.",
+            "status": CompletionStatus.FAILED.value,
+            "error": message,
+        },
+        "panel": {
+            "completion_status": CompletionStatus.FAILED.value,
+            "identity": {},
+            "personality_axes": {},
+            "visual_profile": {},
+            "traceability": {"manual_fields": [], "inferred_fields": [], "missing_fields": [], "field_traces": {}},
+            "copilot": {},
+            "identity_context": {},
+            "s1_payload_preview": {},
+            "graph_state_json": {},
+        },
+        "can_handoff": False,
+    }
+
+
+def _lab_html() -> str:
+    index_file = WEB_PUBLIC_ROOT / "index.html"
+    if not index_file.exists():
+        raise RuntimeError(f"web app entrypoint is missing at {index_file}")
+    config = {
+        "defaultReferenceFaceImageUrl": LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL,
+        "langgraphEndpoint": "/lab/langgraph",
+        "handoffEndpoint": "/lab/s1-image",
+        "sessionStorageKey": "vb-web-session",
+    }
+    template = index_file.read_text(encoding="utf-8")
+    return template.replace("__VB_WEB_CONFIG__", json.dumps(config, ensure_ascii=False))
+
+
+def _web_asset_path(asset_path: str) -> Path:
+    candidate = (WEB_ASSETS_ROOT / asset_path).resolve()
+    if WEB_ASSETS_ROOT.resolve() not in candidate.parents and candidate != WEB_ASSETS_ROOT.resolve():
+        raise HTTPException(status_code=404, detail="asset not found")
+    if not candidate.exists() or not candidate.is_file():
+        raise HTTPException(status_code=404, detail="asset not found")
+    return candidate
+
+
 runtime = InMemoryServiceRuntime(processor=_processor)
 app = FastAPI(title="VixenBliss S1 Image Runtime", version="1.0.0")
 
@@ -1278,6 +1585,102 @@ try:
     _directus_recorder = S1RuntimeDirectusRecorder.from_settings(S1ControlSettings.from_env())
 except Exception:
     _directus_recorder = None
+
+
+def _record_directus_run(record: object, job_input: dict) -> None:
+    if _directus_recorder is None:
+        return
+    try:
+        run = _directus_recorder.record_job(
+            service_name="s1_image",
+            job_id=record.job_id,
+            status=record.status.value,
+            input_payload=job_input,
+            result_payload=record.result,
+            error_message=record.error_message,
+        )
+        if record.result is not None and isinstance(run, dict):
+            record.result.setdefault("metadata", {})
+            record.result["metadata"]["directus_run_id"] = str(run.get("id"))
+    except Exception as exc:
+        if record.result is not None:
+            record.result.setdefault("metadata", {})
+            record.result["metadata"]["directus_recording_failed"] = True
+            record.result["metadata"]["directus_recording_error"] = str(exc)
+
+
+@app.get("/lab", response_class=HTMLResponse)
+def langgraph_lab() -> HTMLResponse:
+    return HTMLResponse(_lab_html())
+
+
+@app.get("/", response_class=HTMLResponse)
+def web_home() -> HTMLResponse:
+    return HTMLResponse(_lab_html())
+
+
+@app.get("/app", response_class=HTMLResponse)
+def web_app() -> HTMLResponse:
+    return HTMLResponse(_lab_html())
+
+
+@app.get("/web/assets/{asset_path:path}")
+def web_asset(asset_path: str) -> FileResponse:
+    return FileResponse(_web_asset_path(asset_path))
+
+
+@app.post("/lab/langgraph")
+def run_langgraph_lab(payload: dict) -> dict:
+    idea = str(payload.get("idea", "")).strip()
+    session_id = str(payload.get("session_id", "")).strip() or f"lab-{uuid.uuid4().hex}"
+    if not idea:
+        raise HTTPException(status_code=422, detail="idea is required")
+    session = _lab_session_store(session_id)
+    session.setdefault("history", [])
+    try:
+        state = run_agentic_brain(idea)
+    except Exception as exc:
+        response = _lab_error_response(session_id, idea, str(exc))
+        session["last_response"] = response
+        history = list(session.get("history", []))
+        history.append(response["chat_entry"])
+        session["history"] = history[-10:]
+        return response
+    response = _lab_response_from_state(session_id, idea, state)
+    session["last_graph_state"] = state.model_dump(mode="json")
+    session["last_response"] = response
+    history = list(session.get("history", []))
+    history.append(response["chat_entry"])
+    session["history"] = history[-10:]
+    return response
+
+
+@app.post("/lab/s1-image")
+def handoff_langgraph_lab_to_s1(payload: dict) -> dict:
+    session_id = str(payload.get("session_id", "")).strip()
+    if not session_id:
+        raise HTTPException(status_code=422, detail="session_id is required")
+    session = _LAB_SESSIONS.get(session_id)
+    if not session or "last_graph_state" not in session:
+        raise HTTPException(status_code=409, detail="No hay una ejecución previa de LangGraph para esta sesión.")
+    state = GraphState.model_validate(session["last_graph_state"])
+    if state.completion_status != CompletionStatus.SUCCEEDED:
+        raise HTTPException(status_code=409, detail="El último GraphState no quedó listo para handoff.")
+    reference_face_image_url = str(payload.get("reference_face_image_url", "")).strip() or None
+    job_input = _lab_s1_job_input(state, reference_face_image_url=reference_face_image_url)
+    job_response = submit_job({"input": job_input})
+    panel = _lab_state_summary(state)
+    panel["s1_payload_preview"] = job_input
+    response = {
+        "session_id": session_id,
+        "panel": panel,
+        "handoff": {
+            "reference_face_image_url": job_input["reference_face_image_url"],
+            "job": job_response,
+        },
+    }
+    session["last_handoff"] = response["handoff"]
+    return response
 
 
 @app.get("/healthcheck")
@@ -1319,20 +1722,7 @@ def healthcheck(deep: bool = False) -> dict:
         return payload
 
     runtime_checks = _runtime_checks({})
-    asset_ready = all(
-        runtime_checks[key]
-        for key in (
-            "flux_diffusion_model_present",
-            "flux_ae_present",
-            "flux_clip_l_present",
-            "flux_t5xxl_present",
-            "ip_adapter_present",
-            "workflow_baked",
-            "comfyui_baked",
-            "impact_pack_baked",
-            "ipadapter_flux_baked",
-        )
-    )
+    asset_ready = _runtime_assets_ready(runtime_checks, allow_cache_only=True)
     provider_ready = asset_ready
     startup_error = None
     comfyui_reachable = _healthcheck()
@@ -1341,20 +1731,7 @@ def healthcheck(deep: bool = False) -> dict:
         if deep:
             _ensure_comfyui_running()
             runtime_checks = _runtime_checks({})
-            asset_ready = all(
-                runtime_checks[key]
-                for key in (
-                    "flux_diffusion_model_present",
-                    "flux_ae_present",
-                    "flux_clip_l_present",
-                    "flux_t5xxl_present",
-                    "ip_adapter_present",
-                    "workflow_baked",
-                    "comfyui_baked",
-                    "impact_pack_baked",
-                    "ipadapter_flux_baked",
-                )
-            )
+            asset_ready = _runtime_assets_ready(runtime_checks, allow_cache_only=False)
             comfyui_reachable = _healthcheck()
             provider_ready = (asset_ready or comfyui_reachable) and comfyui_reachable
     except Exception as exc:
@@ -1390,24 +1767,7 @@ def healthcheck(deep: bool = False) -> dict:
 def submit_job(payload: dict) -> dict:
     job_input = payload.get("input", payload)
     record = runtime.submit(job_input)
-    if _directus_recorder is not None:
-        try:
-            run = _directus_recorder.record_job(
-                service_name="s1_image",
-                job_id=record.job_id,
-                status=record.status.value,
-                input_payload=job_input,
-                result_payload=record.result,
-                error_message=record.error_message,
-            )
-            if record.result is not None and isinstance(run, dict):
-                record.result.setdefault("metadata", {})
-                record.result["metadata"]["directus_run_id"] = str(run.get("id"))
-        except Exception as exc:
-            if record.result is not None:
-                record.result.setdefault("metadata", {})
-                record.result["metadata"]["directus_recording_failed"] = True
-                record.result["metadata"]["directus_recording_error"] = str(exc)
+    _record_directus_run(record, job_input)
     response = record.status_payload(
         progress_url=f"/ws/jobs/{record.job_id}",
         result_url=f"/jobs/{record.job_id}/result",

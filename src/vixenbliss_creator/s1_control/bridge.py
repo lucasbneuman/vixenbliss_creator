@@ -22,7 +22,15 @@ from .model_registry_store import DirectusModelRegistryStore
 from .support import sha256_hex
 
 
-DIRECTUS_FILE_ARTIFACT_ROLES = {"base_image", "generated_image", "thumbnail"}
+# Only visual evidence should be promoted to Directus Files by default.
+# Dataset manifests and packages remain as row-backed metadata so the
+# control plane keeps the canonical traceability pointers without forcing
+# heavier non-visual artifacts into file storage during predeploy review.
+DIRECTUS_FILE_ARTIFACT_ROLES = {
+    "base_image",
+    "generated_image",
+    "thumbnail",
+}
 CRITICAL_DIRECTUS_FILE_ARTIFACT_ROLES = {"base_image"}
 
 

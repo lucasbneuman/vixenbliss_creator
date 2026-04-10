@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VixenBliss Creator</title>
+  <link rel="stylesheet" href="/web/assets/styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">VixenBliss Creator</p>
+        <h1>La puerta de entrada a Sistema 1 y Sistema 2 empieza acá.</h1>
+        <p class="hero-text">
+          Esta aplicación web vive dentro del monorepo y hoy funciona como entrada conversacional para
+          <strong>LangGraph</strong>, mientras prepara la base para alojar la operación completa de Sistema 1 y Sistema 2.
+        </p>
+        <div class="hero-pills">
+          <span>LangGraph</span>
+          <span>Sistema 1</span>
+          <span>Sistema 2</span>
+          <span>Coolify entrypoint</span>
+        </div>
+      </div>
+      <div class="hero-card">
+        <h2>Estado actual</h2>
+        <ul>
+          <li>Entrada conversacional para orquestar identidad.</li>
+          <li>Panel estructurado para inspección técnica.</li>
+          <li>Handoff directo hacia S1 Image.</li>
+        </ul>
+        <a class="hero-link" href="#workspace">Abrir workspace</a>
+      </div>
+    </header>
+
+    <main id="workspace" class="workspace">
+      <section class="workspace-panel chat-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Entrada</p>
+            <h2>Chat con LangGraph</h2>
+          </div>
+          <div class="meta" id="sessionMeta"></div>
+        </div>
+        <div class="chat-log" id="chatLog">
+          <div class="empty-state">Todavía no hay ejecución. Escribí una idea y corré LangGraph.</div>
+        </div>
+        <div class="composer">
+          <label class="field">
+            <span>Idea del operador</span>
+            <textarea id="ideaInput" placeholder="Ejemplo: Creá un avatar lifestyle premium, elegante, con tono seguro y preparado para una identidad visual fuerte."></textarea>
+          </label>
+          <label class="field">
+            <span>Reference face image URL</span>
+            <input id="referenceInput" type="text">
+          </label>
+          <div class="action-row">
+            <button id="runButton" type="button">Correr LangGraph</button>
+            <button id="handoffButton" class="secondary" type="button" disabled>Probar S1 Image</button>
+          </div>
+          <p class="meta" id="feedback"></p>
+        </div>
+      </section>
+
+      <section class="workspace-panel detail-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Inspección</p>
+            <h2>Panel de Avatar</h2>
+          </div>
+          <p class="meta">Identidad, trazabilidad, recomendación técnica y payload de handoff.</p>
+        </div>
+        <div class="detail-body" id="detailBody">
+          <div class="empty-state">El panel se completa después de la primera ejecución.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    window.VB_WEB_CONFIG = __VB_WEB_CONFIG__;
+  </script>
+  <script src="/web/assets/app.js"></script>
+</body>
+</html>

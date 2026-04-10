@@ -26,6 +26,7 @@ Base operativa y tecnica para `VixenBliss Creator`, enfocada en documentacion vi
 .
 |-- AGENTS.md
 |-- README.md
+|-- apps/
 |-- docs/
 |   |-- 00-product/
 |   |-- 01-architecture/
@@ -121,6 +122,7 @@ Archivo historico. No es fuente de verdad activa.
 
 La implementacion viva hoy se concentra en:
 
+- `apps/web/`: puerta de entrada web del monorepo para la aplicacion conversacional
 - `src/vixenbliss_creator/agentic/`: grafo y adapters del cerebro agentico
 - `src/vixenbliss_creator/contracts/`: contratos persistibles y tipos compartidos
 - `src/vixenbliss_creator/s1_control/`: servicios y puentes operativos de `Sistema 1`

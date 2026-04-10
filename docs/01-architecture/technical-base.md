@@ -19,6 +19,7 @@ La implementacion viva hoy se concentra en `Sistema 1`, contratos compartidos, p
 
 Las superficies principales son:
 
+- `apps/web/`
 - `src/vixenbliss_creator/agentic/`
 - `src/vixenbliss_creator/contracts/`
 - `src/vixenbliss_creator/s1_control/`
@@ -29,6 +30,17 @@ Las superficies principales son:
 - `tests/`
 
 ## Modulos vigentes
+
+### `apps/web`
+
+Define la puerta de entrada web del monorepo.
+
+Responsabilidades actuales:
+
+- servir la experiencia inicial de la aplicacion en `Coolify`
+- alojar la UI conversacional que dispara `LangGraph`
+- mostrar el estado estructurado del avatar y el handoff hacia `S1 image`
+- mantenerse separado del runtime backend para permitir desacople futuro de front y back
 
 ### `agentic`
 
@@ -121,6 +133,7 @@ Tambien sobreviven bundles historicos de `Runpod` que hoy funcionan como referen
 ## Integraciones y dependencias vigentes
 
 - `Python`
+- `HTML/CSS/JS` vanilla para la puerta de entrada web servida desde el backend
 - `Docker`
 - `Modal` y/o `Runpod`, segun runtime
 - `ComfyUI`
