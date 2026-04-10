@@ -1,6 +1,7 @@
 """Canonical contracts for VixenBliss Creator."""
 
 from .artifact import Artifact, ArtifactSchemaVersion
+from .content import Content, ContentSchemaVersion
 from .identity import Identity, IdentitySchemaVersion, TechnicalSheet, TechnicalSheetSchemaVersion
 from .job import Job, JobSchemaVersion
 from .model_registry import ModelRegistry, ModelRegistrySchemaVersion
@@ -9,6 +10,8 @@ from .pipeline_guards import assert_base_model_registered, assert_content_genera
 __all__ = [
     "Artifact",
     "ArtifactSchemaVersion",
+    "Content",
+    "ContentSchemaVersion",
     "Identity",
     "IdentitySchemaVersion",
     "Job",

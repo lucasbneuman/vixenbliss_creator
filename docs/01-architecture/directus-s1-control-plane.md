@@ -31,6 +31,7 @@ La integracion viva que se incorpora ahora es la capa de conexion y bootstrap:
 - bootstrap CLI: `python -m vixenbliss_creator.s1_control.bootstrap`
 - posibilidad de registrar jobs de runtimes `S1` sobre `run_id` existentes cuando el orquestador ya conozca el correlativo en Directus
 - persistencia mixta de artifacts materializados de `S1 image` en filas de control y storage persistente solo para imagenes
+- catalogo persistible de `Content` para outputs visuales catalogables
 - snapshot tecnico reutilizable del avatar en `s1_identities`
 
 No se adopta el flujo viejo de orquestacion remota como fuente principal de `S1`.
@@ -43,6 +44,7 @@ No se adopta el flujo viejo de orquestacion remota como fuente principal de `S1`
 - `s1_artifacts`
 - `s1_model_assets`
 - `s1_model_registry`
+- `content_catalog`
 - `s1_events`
 
 ## Rol recomendado para artifacts de `S1 image`
@@ -67,8 +69,68 @@ Estado implementado en el repo:
 - `s1_artifacts.file` guarda el UUID del file persistido solo cuando el artifact vive en storage visual
 - `s1_artifacts.uri` conserva el locator final del artifact, ya sea asset en `Directus` o path/uri tecnico del handoff
 - `metadata_json` conserva la trazabilidad entre `identity_id`, `character_id`, `seed_bundle`, path local y modo de persistencia
+- `content_catalog` conserva el output catalogado de negocio con `generation_status`, `qa_status` y snapshot de trazabilidad
 - la respuesta del runtime de `S1 image` expone `metadata.directus_run_id`, `metadata.dataset_storage_mode` y `metadata.persisted_artifacts`
 - el snapshot de `s1_identities` replica `dataset_storage_mode` y el resumen de `persisted_artifacts` dentro de `latest_visual_config_json`
+
+## Persistencia canonica de `Content`
+
+`content_catalog` agrega la capa faltante entre ejecucion tecnica y output catalogado.
+
+Campos persistidos:
+
+- `content_id`
+- `content_schema_version`
+- `identity_id`
+- `content_mode`
+- `video_generation_mode`
+- `generation_status`
+- `qa_status`
+- `job_id`
+- `primary_artifact_id`
+- `related_artifact_ids`
+- `base_model_id`
+- `model_version_used`
+- `provider`
+- `workflow_id`
+- `prompt`
+- `negative_prompt`
+- `seed`
+- `source_content_id`
+- `source_artifact_id`
+- `duration_seconds`
+- `frame_count`
+- `frame_rate`
+- `metadata_json`
+- `created_at`
+- `updated_at`
+
+Regla operativa:
+
+- `Job` sigue siendo la fuente de verdad de la ejecucion
+- `Artifact` sigue siendo la fuente de verdad del archivo
+- `Content` pasa a ser la fuente de verdad del output catalogado de negocio
+
+Estado implementado actual:
+
+- el recorder registra `Content` cuando una corrida `s1_image` ya produjo al menos un artifact visual catalogable
+- el artifact principal se resuelve con prioridad `generated_image -> base_image -> thumbnail`
+- `prompt`, `negative_prompt`, `seed`, `workflow_id`, `provider` y `model_version_used` se persisten directamente en `content_catalog`
+- `metadata_json` conserva el rol del artifact, el `run_id` y el resumen del origen runtime
+- `video` queda preparado contractualmente en schema, aunque el repo no tenga todavia render productivo de video
+- una solicitud `text_to_video` o `image_to_video` ya puede persistirse como `Content` en estado `pending`
+- `image_to_video` puede registrar `source_content_id` o `source_artifact_id` para evitar ambiguedad en el handoff hacia el primer proveedor real
+
+## Correspondencia `Content <-> Artifact`
+
+Relaciones recomendadas:
+
+- `content_catalog.primary_artifact_id` referencia la fila principal de `s1_artifacts`
+- `content_catalog.related_artifact_ids` lista la corrida visual asociada
+- `s1_artifacts` conserva locator, file id, content type y metadata tecnica
+- `content_catalog` conserva estados de negocio y snapshot de trazabilidad estable
+
+Esto evita usar `s1_artifacts` como si fuera a la vez registro tecnico y catalogo funcional.
 
 ## Persistencia canonica de identidad creada
 
