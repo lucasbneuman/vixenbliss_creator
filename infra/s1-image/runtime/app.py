@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import hmac
 import json
 import os
 import subprocess
@@ -16,8 +17,8 @@ from typing import TextIO
 from urllib import error, parse, request
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from vixenbliss_creator.agentic.models import CompletionStatus, GraphState
 from vixenbliss_creator.agentic.runner import run_agentic_brain
@@ -111,12 +112,20 @@ S1_IMAGE_MODAL_APP_NAME = os.getenv("S1_IMAGE_MODAL_APP_NAME", "vixenbliss-s1-im
 S1_IMAGE_MODAL_FUNCTION_NAME = os.getenv("S1_IMAGE_MODAL_FUNCTION_NAME", "run_s1_image_job")
 S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME = os.getenv("S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME", "runtime_healthcheck")
 LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL = os.getenv("LAB_REFERENCE_FACE_IMAGE_URL", "")
+WEB_SESSION_COOKIE_NAME = os.getenv("VB_WEB_SESSION_COOKIE_NAME", "vb_web_auth")
+WEB_SESSION_TTL_SECONDS = int(os.getenv("VB_WEB_SESSION_TTL_SECONDS", "43200"))
+WEB_SESSION_SECRET = os.getenv("VB_WEB_SESSION_SECRET", "vb-web-dev-secret")
+WEB_SESSION_SECURE = os.getenv("VB_WEB_SESSION_SECURE", "false").strip().lower() in {"1", "true", "yes", "on"}
+LAB_REFERENCE_UPLOAD_ROOT = ARTIFACT_ROOT / "lab-reference-uploads"
 
 ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+LAB_REFERENCE_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 _COMFYUI_PROCESS: subprocess.Popen[str] | None = None
 _COMFYUI_LOG_HANDLE: TextIO | None = None
 COMFYUI_LOG_PATH = ARTIFACT_ROOT / "comfyui.log"
 _LAB_SESSIONS: dict[str, dict[str, object]] = {}
+_LAB_REFERENCE_UPLOADS: dict[str, dict[str, str]] = {}
+_WEB_AUTH_SESSIONS: dict[str, dict[str, object]] = {}
 
 ProgressEmitter = Callable[[str, str, float], None]
 
@@ -1345,8 +1354,203 @@ def _enum_or_value(value: object) -> object:
     return getattr(value, "value", value)
 
 
+def _directus_base_url() -> str:
+    base_url = os.getenv("DIRECTUS_BASE_URL", "").strip()
+    if not base_url or base_url == "CHANGEME":
+        raise RuntimeError("DIRECTUS_BASE_URL must be configured before enabling web login")
+    return base_url.rstrip("/")
+
+
+def _directus_request_json(
+    method: str,
+    url: str,
+    *,
+    payload: dict[str, object] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout_seconds: int = 30,
+) -> dict[str, object]:
+    body = None if payload is None else json.dumps(payload).encode("utf-8")
+    req = request.Request(
+        url=url,
+        data=body,
+        headers={"Content-Type": "application/json", "Accept": "application/json", **(headers or {})},
+        method=method,
+    )
+    try:
+        with request.urlopen(req, timeout=timeout_seconds) as response:
+            raw = response.read().decode("utf-8")
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP error calling {url}: {exc.code} {detail}") from exc
+    except error.URLError as exc:
+        raise RuntimeError(f"Network error calling {url}: {exc.reason}") from exc
+    return {} if not raw else json.loads(raw)
+
+
+def _directus_login(email: str, password: str) -> dict[str, object]:
+    response = _directus_request_json(
+        "POST",
+        f"{_directus_base_url()}/auth/login",
+        payload={"email": email, "password": password},
+    )
+    data = response.get("data")
+    if not isinstance(data, dict) or not data.get("access_token"):
+        raise RuntimeError("Directus login response did not include an access_token")
+    return data
+
+
+def _directus_me(access_token: str) -> dict[str, object]:
+    response = _directus_request_json(
+        "GET",
+        f"{_directus_base_url()}/users/me?fields=id,email,first_name,last_name,status",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    data = response.get("data")
+    if not isinstance(data, dict) or not data.get("email"):
+        raise RuntimeError("Directus user response did not include an email")
+    return data
+
+
+def _auth_cookie_value(session_id: str) -> str:
+    signature = hmac.new(WEB_SESSION_SECRET.encode("utf-8"), session_id.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{session_id}.{signature}"
+
+
+def _auth_session_id_from_cookie(cookie_value: str | None) -> str | None:
+    if not cookie_value or "." not in cookie_value:
+        return None
+    session_id, signature = cookie_value.rsplit(".", 1)
+    expected = hmac.new(WEB_SESSION_SECRET.encode("utf-8"), session_id.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        return None
+    return session_id
+
+
+def _prune_auth_sessions() -> None:
+    now = time.time()
+    expired = [session_id for session_id, payload in _WEB_AUTH_SESSIONS.items() if float(payload.get("expires_at", 0)) <= now]
+    for session_id in expired:
+        _WEB_AUTH_SESSIONS.pop(session_id, None)
+
+
+def _create_auth_session(user_payload: dict[str, object], auth_payload: dict[str, object]) -> tuple[str, dict[str, object]]:
+    _prune_auth_sessions()
+    session_id = uuid.uuid4().hex
+    session = {
+        "session_id": session_id,
+        "email": str(user_payload.get("email", "")),
+        "user_id": str(user_payload.get("id", "")),
+        "first_name": str(user_payload.get("first_name", "") or ""),
+        "last_name": str(user_payload.get("last_name", "") or ""),
+        "status": str(user_payload.get("status", "") or ""),
+        "access_token": str(auth_payload.get("access_token", "")),
+        "expires_at": time.time() + WEB_SESSION_TTL_SECONDS,
+    }
+    _WEB_AUTH_SESSIONS[session_id] = session
+    return session_id, session
+
+
+def _auth_identity(session: dict[str, object]) -> dict[str, object]:
+    display_name = " ".join(
+        bit for bit in [str(session.get("first_name", "")).strip(), str(session.get("last_name", "")).strip()] if bit
+    )
+    return {
+        "email": session.get("email"),
+        "user_id": session.get("user_id"),
+        "first_name": session.get("first_name"),
+        "last_name": session.get("last_name"),
+        "display_name": display_name or session.get("email"),
+        "status": session.get("status"),
+    }
+
+
+def _set_auth_cookie(response: Response, session_id: str) -> None:
+    response.set_cookie(
+        key=WEB_SESSION_COOKIE_NAME,
+        value=_auth_cookie_value(session_id),
+        httponly=True,
+        secure=WEB_SESSION_SECURE,
+        samesite="lax",
+        max_age=WEB_SESSION_TTL_SECONDS,
+        path="/",
+    )
+
+
+def _clear_auth_cookie(response: Response) -> None:
+    response.delete_cookie(key=WEB_SESSION_COOKIE_NAME, path="/", samesite="lax")
+
+
+def _active_auth_session(request_obj: Request) -> dict[str, object] | None:
+    _prune_auth_sessions()
+    session_id = _auth_session_id_from_cookie(request_obj.cookies.get(WEB_SESSION_COOKIE_NAME))
+    if session_id is None:
+        return None
+    session = _WEB_AUTH_SESSIONS.get(session_id)
+    if session is None or float(session.get("expires_at", 0)) <= time.time():
+        _WEB_AUTH_SESSIONS.pop(session_id, None)
+        return None
+    return session
+
+
+def _require_auth(request_obj: Request) -> dict[str, object]:
+    session = _active_auth_session(request_obj)
+    if session is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return session
+
+
 def _lab_session_store(session_id: str) -> dict[str, object]:
     return _LAB_SESSIONS.setdefault(session_id, {})
+
+
+def _lab_reference_summary(session: dict[str, object], *, fallback_reference_url: str | None = None) -> dict[str, object]:
+    uploaded = session.get("uploaded_reference")
+    if isinstance(uploaded, dict) and uploaded.get("url"):
+        return {
+            "source": "file",
+            "label": uploaded.get("filename") or "reference upload",
+            "effective_url": uploaded.get("url"),
+            "filename": uploaded.get("filename"),
+            "content_type": uploaded.get("content_type"),
+        }
+    raw_url = str(fallback_reference_url or session.get("reference_face_image_url") or LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL).strip()
+    if raw_url.startswith("https://example.com/") or raw_url.startswith("http://example.com/"):
+        raw_url = ""
+    if raw_url:
+        return {
+            "source": "url",
+            "label": raw_url,
+            "effective_url": raw_url,
+            "filename": None,
+            "content_type": None,
+        }
+    return {
+        "source": "none",
+        "label": "Sin referencia",
+        "effective_url": None,
+        "filename": None,
+        "content_type": None,
+    }
+
+
+def _require_handoff_reference(reference_summary: dict[str, object]) -> None:
+    if reference_summary.get("effective_url"):
+        return
+    raise HTTPException(
+        status_code=422,
+        detail="reference_face_image_url is required for S1 Image handoff; provide one in the UI or configure LAB_REFERENCE_FACE_IMAGE_URL",
+    )
+
+
+def _lab_operator_brief(session: dict[str, object]) -> str:
+    messages = [str(item).strip() for item in list(session.get("operator_messages", [])) if str(item).strip()]
+    if not messages:
+        return ""
+    if len(messages) == 1:
+        return messages[0]
+    lines = ["Contexto acumulado del operador para VixenBliss Creator:"]
+    lines.extend(f"- Turno {index}: {message}" for index, message in enumerate(messages, start=1))
+    return "\n".join(lines)
 
 
 def _lab_identity_context(technical_sheet: object, state: GraphState | None = None) -> dict[str, object]:
@@ -1464,12 +1668,59 @@ def _lab_s1_job_input(state: GraphState, *, reference_face_image_url: str | None
     }
 
 
-def _lab_state_summary(state: GraphState) -> dict[str, object]:
+def _lab_panel_changes(previous_panel: dict[str, object] | None, current_panel: dict[str, object]) -> list[str]:
+    if not previous_panel:
+        return []
+    changes: list[str] = []
+    current_identity = current_panel.get("identity", {})
+    previous_identity = previous_panel.get("identity", {})
+    for key, label in (
+        ("display_name", "nombre"),
+        ("vertical", "vertical"),
+        ("category", "categoria"),
+        ("style", "style"),
+        ("archetype", "arquetipo"),
+        ("voice_tone", "tono"),
+        ("speech_style", "speech"),
+    ):
+        current_value = current_identity.get(key) if isinstance(current_identity, dict) else None
+        previous_value = previous_identity.get(key) if isinstance(previous_identity, dict) else None
+        if current_value and current_value != previous_value:
+            changes.append(f"{label}: {current_value}")
+    return changes[:4]
+
+
+def _lab_assistant_message(
+    state: GraphState,
+    panel: dict[str, object],
+    *,
+    previous_panel: dict[str, object] | None = None,
+) -> str:
+    if state.completion_status == CompletionStatus.FAILED:
+        return "No pude actualizar el draft con este turno. Revisa el error y probamos otro ajuste."
+    changes = _lab_panel_changes(previous_panel, panel)
+    missing_fields = list((panel.get("traceability") or {}).get("missing_fields") or [])
+    display_name = (panel.get("identity") or {}).get("display_name") or "el avatar"
+    prefix = "Arme un primer draft." if previous_panel is None else f"Actualice el draft de {display_name}."
+    details = f" Cambios detectados: {', '.join(changes)}." if changes else ""
+    if missing_fields:
+        return f"{prefix}{details} Todavia faltan definir: {', '.join(missing_fields[:4])}."
+    return f"{prefix}{details} Ya quedo listo para enviar a S1 Image cuando quieras."
+
+
+def _lab_state_summary(
+    state: GraphState,
+    *,
+    reference_summary: dict[str, object] | None = None,
+    conversation_summary: dict[str, object] | None = None,
+) -> dict[str, object]:
     technical_sheet = state.final_technical_sheet_payload
     draft = state.identity_draft
     copilot = state.copilot_recommendation
     identity_context = _lab_identity_context(technical_sheet, state) if technical_sheet is not None else {}
     traces = draft.trace_map() if draft is not None else {}
+    current_reference = reference_summary or _lab_reference_summary({})
+    preview_payload = _lab_s1_job_input(state, reference_face_image_url=current_reference.get("effective_url"))
     return {
         "completion_status": _enum_or_value(state.completion_status),
         "identity": {
@@ -1511,34 +1762,51 @@ def _lab_state_summary(state: GraphState) -> dict[str, object]:
             else {}
         ),
         "identity_context": identity_context,
-        "s1_payload_preview": _lab_s1_job_input(state),
+        "readiness": {
+            "can_handoff": state.completion_status == CompletionStatus.SUCCEEDED,
+            "missing_fields": state.missing_fields,
+        },
+        "reference_face": current_reference,
+        "conversation": conversation_summary or {},
+        "s1_payload_preview": preview_payload,
         "graph_state_json": state.model_dump(mode="json"),
     }
 
 
-def _lab_response_from_state(session_id: str, idea: str, state: GraphState) -> dict[str, object]:
-    panel = _lab_state_summary(state)
-    display_name = panel["identity"].get("display_name") or "Avatar"
-    workflow_id = panel["copilot"].get("workflow_id") or panel["s1_payload_preview"]["workflow_id"]
+def _lab_response_from_state(
+    session_id: str,
+    message: str,
+    state: GraphState,
+    *,
+    session: dict[str, object],
+    previous_panel: dict[str, object] | None = None,
+) -> dict[str, object]:
+    reference_summary = _lab_reference_summary(session)
+    conversation_summary = {
+        "turn_count": len(list(session.get("operator_messages", []))),
+        "operator_brief": _lab_operator_brief(session),
+    }
+    panel = _lab_state_summary(state, reference_summary=reference_summary, conversation_summary=conversation_summary)
     return {
         "session_id": session_id,
         "chat_entry": {
-            "user_message": idea,
-            "assistant_message": f"{display_name} listo para handoff con workflow {workflow_id}.",
+            "user_message": message,
+            "assistant_message": _lab_assistant_message(state, panel, previous_panel=previous_panel),
             "status": _enum_or_value(state.completion_status),
             "error": state.terminal_error_message,
         },
         "panel": panel,
         "can_handoff": state.completion_status == CompletionStatus.SUCCEEDED,
+        "history": list(session.get("history", [])),
     }
 
 
-def _lab_error_response(session_id: str, idea: str, message: str) -> dict[str, object]:
+def _lab_error_response(session_id: str, message_text: str, message: str, *, session: dict[str, object]) -> dict[str, object]:
     return {
         "session_id": session_id,
         "chat_entry": {
-            "user_message": idea,
-            "assistant_message": "LangGraph no pudo completar la ejecución.",
+            "user_message": message_text,
+            "assistant_message": "No pude actualizar el draft conversacional en este turno.",
             "status": CompletionStatus.FAILED.value,
             "error": message,
         },
@@ -1550,26 +1818,76 @@ def _lab_error_response(session_id: str, idea: str, message: str) -> dict[str, o
             "traceability": {"manual_fields": [], "inferred_fields": [], "missing_fields": [], "field_traces": {}},
             "copilot": {},
             "identity_context": {},
+            "readiness": {"can_handoff": False, "missing_fields": []},
+            "reference_face": _lab_reference_summary(session),
+            "conversation": {
+                "turn_count": len(list(session.get("operator_messages", []))),
+                "operator_brief": _lab_operator_brief(session),
+            },
             "s1_payload_preview": {},
             "graph_state_json": {},
         },
         "can_handoff": False,
+        "history": list(session.get("history", [])),
     }
 
 
-def _lab_html() -> str:
+def _lab_run_chat_turn(session_id: str, message: str, *, reference_face_image_url: str | None = None) -> dict[str, object]:
+    session = _lab_session_store(session_id)
+    session.setdefault("history", [])
+    session.setdefault("operator_messages", [])
+    if reference_face_image_url is not None:
+        normalized_reference = reference_face_image_url.strip()
+        session["reference_face_image_url"] = normalized_reference
+        if not normalized_reference:
+            session.pop("reference_face_image_url", None)
+    previous_response = session.get("last_response")
+    previous_panel = previous_response.get("panel") if isinstance(previous_response, dict) else None
+    operator_messages = list(session.get("operator_messages", []))
+    operator_messages.append(message)
+    session["operator_messages"] = operator_messages[-20:]
+    composed_idea = _lab_operator_brief(session)
+    try:
+        state = run_agentic_brain(composed_idea)
+    except Exception as exc:
+        response = _lab_error_response(session_id, message, str(exc), session=session)
+        history = list(session.get("history", []))
+        history.append(response["chat_entry"])
+        session["history"] = history[-20:]
+        response["history"] = list(session["history"])
+        session["last_response"] = response
+        return response
+    response = _lab_response_from_state(session_id, message, state, session=session, previous_panel=previous_panel)
+    session["last_graph_state"] = state.model_dump(mode="json")
+    history = list(session.get("history", []))
+    history.append(response["chat_entry"])
+    session["history"] = history[-20:]
+    response["history"] = list(session["history"])
+    session["last_response"] = response
+    return response
+
+
+def _lab_html(*, authenticated: bool, route_mode: str, user: dict[str, object] | None = None) -> str:
     index_file = WEB_PUBLIC_ROOT / "index.html"
     if not index_file.exists():
         raise RuntimeError(f"web app entrypoint is missing at {index_file}")
     config = {
+        "authenticated": authenticated,
+        "routeMode": route_mode,
+        "user": user or {},
         "defaultReferenceFaceImageUrl": (
             ""
             if LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL.startswith("https://example.com/")
             or LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL.startswith("http://example.com/")
             else LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL
         ),
+        "chatEndpoint": "/lab/chat",
         "langgraphEndpoint": "/lab/langgraph",
         "handoffEndpoint": "/lab/s1-image",
+        "loginEndpoint": "/auth/login",
+        "logoutEndpoint": "/auth/logout",
+        "sessionEndpoint": "/auth/session",
+        "referenceUploadEndpoint": "/lab/reference-uploads",
         "sessionStorageKey": "vb-web-session",
     }
     template = index_file.read_text(encoding="utf-8")
@@ -1617,18 +1935,68 @@ def _record_directus_run(record: object, job_input: dict) -> None:
 
 
 @app.get("/lab", response_class=HTMLResponse)
-def langgraph_lab() -> HTMLResponse:
-    return HTMLResponse(_lab_html())
+def langgraph_lab(request: Request) -> Response:
+    session = _active_auth_session(request)
+    if session is None:
+        return RedirectResponse(url="/login", status_code=303)
+    return HTMLResponse(_lab_html(authenticated=True, route_mode="app", user=_auth_identity(session)))
 
 
 @app.get("/", response_class=HTMLResponse)
-def web_home() -> HTMLResponse:
-    return HTMLResponse(_lab_html())
+def web_home(request: Request) -> Response:
+    session = _active_auth_session(request)
+    if session is None:
+        return RedirectResponse(url="/login", status_code=303)
+    return HTMLResponse(_lab_html(authenticated=True, route_mode="app", user=_auth_identity(session)))
 
 
 @app.get("/app", response_class=HTMLResponse)
-def web_app() -> HTMLResponse:
-    return HTMLResponse(_lab_html())
+def web_app(request: Request) -> Response:
+    session = _active_auth_session(request)
+    if session is None:
+        return RedirectResponse(url="/login", status_code=303)
+    return HTMLResponse(_lab_html(authenticated=True, route_mode="app", user=_auth_identity(session)))
+
+
+@app.get("/login", response_class=HTMLResponse)
+def web_login(request: Request) -> Response:
+    session = _active_auth_session(request)
+    if session is not None:
+        return RedirectResponse(url="/app", status_code=303)
+    return HTMLResponse(_lab_html(authenticated=False, route_mode="login"))
+
+
+@app.get("/auth/session")
+def auth_session(request: Request) -> dict[str, object]:
+    session = _active_auth_session(request)
+    if session is None:
+        return {"authenticated": False, "user": None}
+    return {"authenticated": True, "user": _auth_identity(session)}
+
+
+@app.post("/auth/login")
+def auth_login(payload: dict, response: Response) -> dict[str, object]:
+    email = str(payload.get("email", "")).strip()
+    password = str(payload.get("password", "")).strip()
+    if not email or not password:
+        raise HTTPException(status_code=422, detail="email and password are required")
+    try:
+        auth_payload = _directus_login(email, password)
+        user_payload = _directus_me(str(auth_payload["access_token"]))
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail=f"Directus login failed: {exc}") from exc
+    session_id, auth_session_payload = _create_auth_session(user_payload, auth_payload)
+    _set_auth_cookie(response, session_id)
+    return {"authenticated": True, "user": _auth_identity(auth_session_payload)}
+
+
+@app.post("/auth/logout")
+def auth_logout(request: Request, response: Response) -> dict[str, object]:
+    session = _active_auth_session(request)
+    if session is not None:
+        _WEB_AUTH_SESSIONS.pop(str(session.get("session_id")), None)
+    _clear_auth_cookie(response)
+    return {"authenticated": False}
 
 
 @app.get("/web/assets/{asset_path:path}")
@@ -1636,34 +2004,82 @@ def web_asset(asset_path: str) -> FileResponse:
     return FileResponse(_web_asset_path(asset_path))
 
 
+@app.get("/lab/reference-files/{reference_id}")
+def lab_reference_file(reference_id: str, request: Request) -> FileResponse:
+    _require_auth(request)
+    payload = _LAB_REFERENCE_UPLOADS.get(reference_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="reference file not found")
+    file_path = Path(str(payload["path"]))
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="reference file not found")
+    return FileResponse(file_path, media_type=str(payload.get("content_type") or "application/octet-stream"))
+
+
+@app.post("/lab/reference-uploads")
+def upload_lab_reference(payload: dict, request: Request) -> dict[str, object]:
+    _require_auth(request)
+    session_id = str(payload.get("session_id", "")).strip()
+    file_name = str(payload.get("filename", "")).strip()
+    content_type = str(payload.get("content_type", "")).strip() or "application/octet-stream"
+    inline_data = str(payload.get("data_base64", "")).strip()
+    if not session_id or not file_name or not inline_data:
+        raise HTTPException(status_code=422, detail="session_id, filename and data_base64 are required")
+    try:
+        file_bytes = base64.b64decode(inline_data, validate=True)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"invalid reference upload payload: {exc}") from exc
+    extension = Path(file_name).suffix or ".bin"
+    reference_id = uuid.uuid4().hex
+    target_path = LAB_REFERENCE_UPLOAD_ROOT / f"{reference_id}{extension}"
+    target_path.write_bytes(file_bytes)
+    public_url = str(request.base_url).rstrip("/") + f"/lab/reference-files/{reference_id}"
+    reference_payload = {
+        "id": reference_id,
+        "filename": file_name,
+        "content_type": content_type,
+        "path": str(target_path),
+        "url": public_url,
+    }
+    _LAB_REFERENCE_UPLOADS[reference_id] = reference_payload
+    session = _lab_session_store(session_id)
+    session["uploaded_reference"] = reference_payload
+    return {"reference": _lab_reference_summary(session)}
+
+
+@app.post("/lab/chat")
+def run_langgraph_chat(payload: dict, request: Request) -> dict:
+    _require_auth(request)
+    message = str(payload.get("message", "")).strip()
+    session_id = str(payload.get("session_id", "")).strip() or f"lab-{uuid.uuid4().hex}"
+    if not message:
+        raise HTTPException(status_code=422, detail="message is required")
+    reference_face_image_url = str(payload.get("reference_face_image_url", "")).strip()
+    return _lab_run_chat_turn(
+        session_id,
+        message,
+        reference_face_image_url=reference_face_image_url if reference_face_image_url else None,
+    )
+
+
 @app.post("/lab/langgraph")
-def run_langgraph_lab(payload: dict) -> dict:
+def run_langgraph_lab(payload: dict, request: Request) -> dict:
+    _require_auth(request)
     idea = str(payload.get("idea", "")).strip()
     session_id = str(payload.get("session_id", "")).strip() or f"lab-{uuid.uuid4().hex}"
     if not idea:
         raise HTTPException(status_code=422, detail="idea is required")
-    session = _lab_session_store(session_id)
-    session.setdefault("history", [])
-    try:
-        state = run_agentic_brain(idea)
-    except Exception as exc:
-        response = _lab_error_response(session_id, idea, str(exc))
-        session["last_response"] = response
-        history = list(session.get("history", []))
-        history.append(response["chat_entry"])
-        session["history"] = history[-10:]
-        return response
-    response = _lab_response_from_state(session_id, idea, state)
-    session["last_graph_state"] = state.model_dump(mode="json")
-    session["last_response"] = response
-    history = list(session.get("history", []))
-    history.append(response["chat_entry"])
-    session["history"] = history[-10:]
-    return response
+    reference_face_image_url = str(payload.get("reference_face_image_url", "")).strip()
+    return _lab_run_chat_turn(
+        session_id,
+        idea,
+        reference_face_image_url=reference_face_image_url if reference_face_image_url else None,
+    )
 
 
 @app.post("/lab/s1-image")
-def handoff_langgraph_lab_to_s1(payload: dict) -> dict:
+def handoff_langgraph_lab_to_s1(payload: dict, request: Request) -> dict:
+    _require_auth(request)
     session_id = str(payload.get("session_id", "")).strip()
     if not session_id:
         raise HTTPException(status_code=422, detail="session_id is required")
@@ -1674,20 +2090,25 @@ def handoff_langgraph_lab_to_s1(payload: dict) -> dict:
     if state.completion_status != CompletionStatus.SUCCEEDED:
         raise HTTPException(status_code=409, detail="El último GraphState no quedó listo para handoff.")
     reference_face_image_url = str(payload.get("reference_face_image_url", "")).strip() or None
-    job_input = _lab_s1_job_input(state, reference_face_image_url=reference_face_image_url)
-    if not job_input.get("reference_face_image_url"):
-        raise HTTPException(
-            status_code=422,
-            detail="reference_face_image_url is required for S1 Image handoff; provide one in the UI or configure LAB_REFERENCE_FACE_IMAGE_URL",
-        )
+    reference_summary = _lab_reference_summary(session, fallback_reference_url=reference_face_image_url)
+    _require_handoff_reference(reference_summary)
+    job_input = _lab_s1_job_input(state, reference_face_image_url=reference_summary.get("effective_url"))
     job_response = submit_job({"input": job_input})
-    panel = _lab_state_summary(state)
+    panel = _lab_state_summary(
+        state,
+        reference_summary=reference_summary,
+        conversation_summary={
+            "turn_count": len(list(session.get("operator_messages", []))),
+            "operator_brief": _lab_operator_brief(session),
+        },
+    )
     panel["s1_payload_preview"] = job_input
     response = {
         "session_id": session_id,
         "panel": panel,
         "handoff": {
-            "reference_face_image_url": job_input["reference_face_image_url"],
+            "reference_face_image_url": job_input.get("reference_face_image_url"),
+            "reference_face_source": reference_summary.get("source"),
             "job": job_response,
         },
     }

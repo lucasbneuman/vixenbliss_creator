@@ -38,8 +38,9 @@ Define la puerta de entrada web del monorepo.
 Responsabilidades actuales:
 
 - servir la experiencia inicial de la aplicacion en `Coolify`
-- alojar la UI conversacional que dispara `LangGraph`
-- mostrar el estado estructurado del avatar y el handoff hacia `S1 image`
+- alojar la UI conversacional multi-turno que acumula contexto para `LangGraph`
+- proteger el acceso web con login interno autenticado contra `Directus`
+- mostrar el estado estructurado del avatar y el handoff explicito hacia `S1 image`
 - mantenerse separado del runtime backend para permitir desacople futuro de front y back
 
 ### `agentic`
@@ -150,7 +151,7 @@ El contenido de `infra/` sigue siendo fuente de verdad para runtimes por servici
 - `Docker`
 - `Modal` y/o `Runpod`, segun runtime
 - `ComfyUI`
-- `Directus` como control plane opcional
+- `Directus` como control plane opcional y proveedor de autenticacion interna para la app web
 - `Supabase/Postgres` y storage compatible
 - `OpenTelemetry`
 
@@ -160,7 +161,6 @@ Estos frentes pueden existir como vision o direccion futura, pero no deben descr
 
 - distribucion automatizada multicanal
 - monetizacion operativa
-- chatbot conversacional productivo
 - SaaS multi-tenant
 
 Para contexto historico o analisis previos, revisar `docs/99-archive/` sin tratarlo como fuente de verdad activa.

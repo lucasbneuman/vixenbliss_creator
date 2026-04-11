@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 import json
 import sys
@@ -104,6 +105,19 @@ def _install_sequential_dataset_renderer(module: object) -> None:
     module._poll_history = fake_poll_history
 
 
+def _authenticate_test_client(module: object, client: TestClient) -> None:
+    module._directus_login = lambda email, password: {"access_token": f"token-for-{email}"}
+    module._directus_me = lambda access_token: {
+        "id": "user-1",
+        "email": "operator@vixenbliss.local",
+        "first_name": "Vixen",
+        "last_name": "Operator",
+        "status": "active",
+    }
+    response = client.post("/auth/login", json={"email": "operator@vixenbliss.local", "password": "secret"})
+    assert response.status_code == 200
+
+
 def test_s1_image_runtime_healthcheck_reports_identity_contract(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
@@ -129,8 +143,8 @@ def test_s1_image_runtime_root_page_renders_chat_layout(tmp_path: Path, monkeypa
 
     assert response.status_code == 200
     assert "VixenBliss Creator" in response.text
-    assert "Correr LangGraph" in response.text
-    assert "Panel de Avatar" in response.text
+    assert "Ingreso interno" in response.text
+    assert '"routeMode": "login"' in response.text
 
 
 def test_s1_image_runtime_serves_web_assets_from_monorepo_app(tmp_path: Path, monkeypatch) -> None:
@@ -140,7 +154,7 @@ def test_s1_image_runtime_serves_web_assets_from_monorepo_app(tmp_path: Path, mo
     response = client.get("/web/assets/app.js")
 
     assert response.status_code == 200
-    assert "runLangGraph" in response.text
+    assert "handleHandoff" in response.text
     assert "buildSessionId" in response.text
     assert "defaultReferenceFaceImageUrl" in client.get("/").text
 
@@ -165,9 +179,115 @@ def test_s1_image_runtime_can_resolve_web_root_from_override(tmp_path: Path, mon
     assert "override" in asset.text
 
 
+def test_s1_image_runtime_auth_login_sets_session_cookie(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+
+    _authenticate_test_client(module, client)
+
+    session_response = client.get("/auth/session")
+
+    assert session_response.status_code == 200
+    assert session_response.json()["authenticated"] is True
+    assert session_response.json()["user"]["email"] == "operator@vixenbliss.local"
+
+
+def test_s1_image_runtime_auth_rejects_invalid_credentials(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    module._directus_login = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("invalid credentials"))
+
+    response = client.post("/auth/login", json={"email": "operator@vixenbliss.local", "password": "bad"})
+
+    assert response.status_code == 401
+    assert "Directus login failed" in response.json()["detail"]
+
+
+def test_s1_image_runtime_lab_endpoints_require_auth(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+
+    response = client.post("/lab/chat", json={"session_id": "session-auth", "message": "hola"})
+
+    assert response.status_code == 401
+
+
+def test_s1_image_runtime_uploaded_reference_takes_priority_over_url(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    _authenticate_test_client(module, client)
+    captured: dict[str, object] = {}
+
+    def fake_submit_job(payload: dict) -> dict:
+        captured["payload"] = payload
+        return {
+            "job_id": "job-file-ref",
+            "status": "completed",
+            "result_url": "/jobs/job-file-ref/result",
+            "progress_url": "/ws/jobs/job-file-ref",
+            "metadata": {"progress_events": []},
+        }
+
+    monkeypatch.setattr(module, "submit_job", fake_submit_job)
+
+    upload = client.post(
+        "/lab/reference-uploads",
+        json={
+            "session_id": "session-file-ref",
+            "filename": "face.png",
+            "content_type": "image/png",
+            "data_base64": base64.b64encode(tiny_png_bytes()).decode("ascii"),
+        },
+    )
+    assert upload.status_code == 200
+
+    langgraph_response = client.post(
+        "/lab/langgraph",
+        json={"session_id": "session-file-ref", "idea": "Crea un avatar nuevo para lifestyle premium"},
+    )
+    assert langgraph_response.status_code == 200
+
+    response = client.post(
+        "/lab/s1-image",
+        json={"session_id": "session-file-ref", "reference_face_image_url": "https://example.com/custom.png"},
+    )
+
+    assert response.status_code == 200
+    assert "reference-files" in captured["payload"]["input"]["reference_face_image_url"]
+    assert response.json()["handoff"]["reference_face_source"] == "file"
+
+
+def test_s1_image_runtime_uploaded_reference_file_requires_auth(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    _authenticate_test_client(module, client)
+
+    upload = client.post(
+        "/lab/reference-uploads",
+        json={
+            "session_id": "session-protected-file",
+            "filename": "face.png",
+            "content_type": "image/png",
+            "data_base64": base64.b64encode(tiny_png_bytes()).decode("ascii"),
+        },
+    )
+    assert upload.status_code == 200
+
+    reference_url = upload.json()["reference"]["effective_url"]
+    protected_path = reference_url.replace("http://testserver", "")
+
+    authed_fetch = client.get(protected_path)
+    assert authed_fetch.status_code == 200
+
+    client.post("/auth/logout", json={})
+    unauthed_fetch = client.get(protected_path)
+    assert unauthed_fetch.status_code == 401
+
+
 def test_s1_image_runtime_lab_executes_langgraph_and_returns_panel(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     client = TestClient(module.app)
+    _authenticate_test_client(module, client)
 
     response = client.post("/lab/langgraph", json={"session_id": "session-1", "idea": "Creá un avatar nuevo para lifestyle premium"})
 
@@ -185,6 +305,7 @@ def test_s1_image_runtime_lab_returns_controlled_error_when_langgraph_fails(tmp_
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "run_agentic_brain", lambda _idea: (_ for _ in ()).throw(RuntimeError("runner exploded")))
     client = TestClient(module.app)
+    _authenticate_test_client(module, client)
 
     response = client.post("/lab/langgraph", json={"session_id": "session-2", "idea": "Probar fallo"})
 
@@ -198,6 +319,7 @@ def test_s1_image_runtime_lab_returns_controlled_error_when_langgraph_fails(tmp_
 def test_s1_image_runtime_lab_handoff_builds_job_payload_and_reuses_jobs_flow(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     client = TestClient(module.app)
+    _authenticate_test_client(module, client)
     captured: dict[str, object] = {}
 
     def fake_submit_job(payload: dict) -> dict:
@@ -220,7 +342,7 @@ def test_s1_image_runtime_lab_handoff_builds_job_payload_and_reuses_jobs_flow(tm
 
     response = client.post(
         "/lab/s1-image",
-        json={"session_id": "session-3", "reference_face_image_url": "https://example.com/custom.png"},
+        json={"session_id": "session-3", "reference_face_image_url": "https://cdn.vixenbliss.local/custom.png"},
     )
 
     assert response.status_code == 200
@@ -228,15 +350,16 @@ def test_s1_image_runtime_lab_handoff_builds_job_payload_and_reuses_jobs_flow(tm
     job_input = captured["payload"]["input"]
     assert job_input["runtime_stage"] == "identity_image"
     assert job_input["workflow_id"] == "lora-dataset-ipadapter-batch"
-    assert job_input["reference_face_image_url"] == "https://example.com/custom.png"
+    assert job_input["reference_face_image_url"] == "https://cdn.vixenbliss.local/custom.png"
     assert job_input["metadata"]["source_mode"] == "langgraph_lab"
     assert payload["handoff"]["job"]["job_id"] == "job-lab-123"
-    assert payload["panel"]["s1_payload_preview"]["reference_face_image_url"] == "https://example.com/custom.png"
+    assert payload["panel"]["s1_payload_preview"]["reference_face_image_url"] == "https://cdn.vixenbliss.local/custom.png"
 
 
 def test_s1_image_runtime_lab_handoff_requires_succeeded_graph_state(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     client = TestClient(module.app)
+    _authenticate_test_client(module, client)
 
     response = client.post("/lab/s1-image", json={"session_id": "missing-session"})
 
@@ -837,6 +960,7 @@ def test_s1_image_runtime_healthcheck_can_delegate_to_modal_worker(tmp_path: Pat
 def test_s1_image_runtime_lab_handoff_requires_reference_face_url(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     client = TestClient(module.app)
+    _authenticate_test_client(module, client)
 
     langgraph_response = client.post(
         "/lab/langgraph",

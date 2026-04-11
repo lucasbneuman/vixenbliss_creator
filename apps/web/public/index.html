@@ -8,72 +8,93 @@
 </head>
 <body>
   <div class="page-shell">
-    <header class="hero">
-      <div class="hero-copy">
+    <header class="page-header">
+      <div>
         <p class="eyebrow">VixenBliss Creator</p>
-        <h1>La puerta de entrada a Sistema 1 y Sistema 2 empieza acá.</h1>
-        <p class="hero-text">
-          Esta aplicación web vive dentro del monorepo y hoy funciona como entrada conversacional para
-          <strong>LangGraph</strong>, mientras prepara la base para alojar la operación completa de Sistema 1 y Sistema 2.
-        </p>
-        <div class="hero-pills">
-          <span>LangGraph</span>
-          <span>Sistema 1</span>
-          <span>Sistema 2</span>
-          <span>Coolify entrypoint</span>
-        </div>
+        <h1>VixenBliss Creator</h1>
+        <p class="subtitle">Chat conversacional para definir identidad, revisar el draft y enviarlo a S1 Image cuando este listo.</p>
       </div>
-      <div class="hero-card">
-        <h2>Estado actual</h2>
-        <ul>
-          <li>Entrada conversacional para orquestar identidad.</li>
-          <li>Panel estructurado para inspección técnica.</li>
-          <li>Handoff directo hacia S1 Image.</li>
-        </ul>
-        <a class="hero-link" href="#workspace">Abrir workspace</a>
+      <div class="session-box">
+        <div class="meta" id="sessionMeta"></div>
+        <div class="meta" id="userMeta"></div>
       </div>
     </header>
 
-    <main id="workspace" class="workspace">
-      <section class="workspace-panel chat-panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Entrada</p>
-            <h2>Chat con LangGraph</h2>
-          </div>
-          <div class="meta" id="sessionMeta"></div>
-        </div>
-        <div class="chat-log" id="chatLog">
-          <div class="empty-state">Todavía no hay ejecución. Escribí una idea y corré LangGraph.</div>
-        </div>
-        <div class="composer">
-          <label class="field">
-            <span>Idea del operador</span>
-            <textarea id="ideaInput" placeholder="Ejemplo: Creá un avatar lifestyle premium, elegante, con tono seguro y preparado para una identidad visual fuerte."></textarea>
-          </label>
-          <label class="field">
-            <span>Reference face image URL</span>
-            <input id="referenceInput" type="text">
-          </label>
-          <div class="action-row">
-            <button id="runButton" type="button">Correr LangGraph</button>
-            <button id="handoffButton" class="secondary" type="button" disabled>Probar S1 Image</button>
-          </div>
-          <p class="meta" id="feedback"></p>
+    <main>
+      <section class="auth-shell" id="loginView" hidden>
+        <div class="auth-card">
+          <p class="eyebrow">Login</p>
+          <h2>Ingreso interno</h2>
+          <p class="meta">Acceso para usuarios internos administrados desde Directus.</p>
+          <form class="auth-form" id="loginForm">
+            <label class="field">
+              <span>Email</span>
+              <input id="loginEmail" type="email" autocomplete="username" required>
+            </label>
+            <label class="field">
+              <span>Password</span>
+              <input id="loginPassword" type="password" autocomplete="current-password" required>
+            </label>
+            <button id="loginButton" type="submit">Ingresar</button>
+          </form>
+          <p class="meta" id="loginFeedback"></p>
         </div>
       </section>
 
-      <section class="workspace-panel detail-panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Inspección</p>
-            <h2>Panel de Avatar</h2>
+      <section class="workspace" id="appView" hidden>
+        <section class="workspace-panel chat-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Chat</p>
+              <h2>LangGraph Chat</h2>
+            </div>
+            <button id="logoutButton" class="ghost" type="button">Salir</button>
           </div>
-          <p class="meta">Identidad, trazabilidad, recomendación técnica y payload de handoff.</p>
-        </div>
-        <div class="detail-body" id="detailBody">
-          <div class="empty-state">El panel se completa después de la primera ejecución.</div>
-        </div>
+
+          <div class="chat-log" id="chatLog">
+            <div class="empty-state">Todavia no hay mensajes. Empeza explicando el avatar que queres construir o refinando uno ya iniciado.</div>
+          </div>
+
+          <div class="composer">
+            <label class="field">
+              <span>Mensaje</span>
+              <textarea id="messageInput" placeholder="Ejemplo: Quiero una identidad premium, segura, lifestyle, con menos sarcasmo y un perfil visual elegante."></textarea>
+            </label>
+
+            <div class="reference-grid">
+              <label class="field">
+                <span>URL de referencia facial opcional</span>
+                <input id="referenceUrlInput" type="url" placeholder="https://...">
+              </label>
+              <label class="field">
+                <span>Archivo de referencia opcional</span>
+                <input id="referenceFileInput" type="file" accept="image/*">
+              </label>
+            </div>
+
+            <p class="meta" id="referenceMeta">Referencia activa: sin referencia.</p>
+
+            <div class="action-row">
+              <button id="sendButton" type="button">Enviar mensaje</button>
+              <button id="handoffButton" class="secondary" type="button" disabled>Enviar a S1 Image</button>
+            </div>
+
+            <p class="meta" id="feedback"></p>
+          </div>
+        </section>
+
+        <section class="workspace-panel detail-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Inspeccion</p>
+              <h2>Draft actual</h2>
+            </div>
+            <p class="meta">Estado, trazabilidad y payload tecnico.</p>
+          </div>
+          <div class="detail-body" id="detailBody">
+            <div class="empty-state">El panel se llena a medida que avanza la conversacion.</div>
+          </div>
+        </section>
       </section>
     </main>
   </div>
