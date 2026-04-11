@@ -29,6 +29,7 @@ from vixenbliss_creator.contracts.identity import (
     Vertical,
     VoiceTone,
 )
+from vixenbliss_creator.traceability import normalize_trace_source_text
 from vixenbliss_creator.s1_control import S1ControlSettings, S1RuntimeDirectusRecorder
 from vixenbliss_creator.s1_services import GenerationServiceInput, InMemoryServiceRuntime, build_generation_manifest
 
@@ -259,7 +260,7 @@ def _build_field_traces(payload: dict[str, Any], idea: str) -> list[dict[str, An
             {
                 "field_path": field_path,
                 "origin": "manual",
-                "source_text": idea,
+                "source_text": normalize_trace_source_text(idea),
                 "confidence": 1.0,
                 "rationale": "Campo detectado como explicito en la instruccion del operador.",
             }
@@ -271,7 +272,7 @@ def _build_field_traces(payload: dict[str, Any], idea: str) -> list[dict[str, An
             {
                 "field_path": field_path,
                 "origin": "inferred",
-                "source_text": idea,
+                "source_text": normalize_trace_source_text(idea),
                 "confidence": 0.8,
                 "rationale": "Campo completado por inferencia para cerrar la identidad.",
             }

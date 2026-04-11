@@ -19,7 +19,9 @@ Capacidades actuales del front:
 
 - pantalla de login para usuarios internos autenticados contra `Directus`
 - workspace minimo en dos columnas: chat e inspeccion
-- chat multi-turno que acumula el brief del operador por `session_id`
+- chat multi-turno que mantiene un draft conversacional incremental por `session_id`
+- overwrite manual de atributos ya inferidos en turnos previos
+- gate de readiness antes del handoff a `S1 Image`
 - handoff explicito a `S1 Image`
 - referencia facial opcional via URL o archivo temporal
 

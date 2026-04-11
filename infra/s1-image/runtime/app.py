@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import subprocess
 import time
 import uuid
@@ -32,6 +33,7 @@ from vixenbliss_creator.s1_services import (
     build_dataset_result,
     build_dataset_shot_plan,
 )
+from vixenbliss_creator.traceability import normalize_trace_source_text
 from vixenbliss_creator.visual_pipeline import ResumeCheckpoint, ResumeStage, RuntimeStage, VisualArtifact, VisualArtifactRole
 
 
@@ -1503,6 +1505,336 @@ def _lab_session_store(session_id: str) -> dict[str, object]:
     return _LAB_SESSIONS.setdefault(session_id, {})
 
 
+_LAB_REQUIRED_MANUAL_FIELDS: tuple[str, ...] = (
+    "identity_core.fictional_age_years",
+    "metadata.category",
+    "metadata.vertical",
+    "metadata.occupation_or_content_basis",
+    "voice_tone",
+    "communication_style.speech_style",
+    "visual_profile.eye_color",
+    "visual_profile.hair_color",
+)
+
+_LAB_MISSING_FIELD_QUESTIONS: dict[str, str] = {
+    "identity_core.fictional_age_years": "Decime la edad adulta ficticia que querés usar.",
+    "metadata.occupation_or_content_basis": "Decime la profesión o base de contenido para cerrar la ficha.",
+    "metadata.vertical": "Confirmame la vertical principal del avatar.",
+    "metadata.category": "Confirmame la categoría comercial del avatar.",
+    "voice_tone": "Indicame el tono de voz principal, por ejemplo formal o seductor.",
+    "communication_style.speech_style": "Indicame el estilo de habla, por ejemplo formal, casual o glam.",
+    "visual_profile.eye_color": "Decime el color de ojos que querés usar.",
+    "visual_profile.hair_color": "Decime el color de pelo que querés usar.",
+    "conversation.scene_context": "Contame en qué contexto o escena principal opera, por ejemplo en su estudio.",
+}
+
+
+def _lab_turn_source_text(message: str) -> str:
+    return normalize_trace_source_text(message) or "turno_operador"
+
+
+def _lab_autofill_requested(message: str) -> bool:
+    normalized = " ".join(message.lower().split())
+    return any(
+        term in normalized
+        for term in (
+            "completa el resto",
+            "completá el resto",
+            "rellena el resto",
+            "rellená el resto",
+            "resto automatic",
+            "resto automático",
+            "autocompleta",
+            "autocompletá",
+            "hacelo automatic",
+            "hacelo automático",
+        )
+    )
+
+
+def _lab_extract_turn_updates(message: str) -> dict[str, dict[str, object]]:
+    normalized = " ".join(message.lower().split())
+    source_text = _lab_turn_source_text(message)
+    updates: dict[str, dict[str, object]] = {}
+
+    age_match = re.search(r"\b([1-9]\d)\s*a(?:n|ñ)os\b", normalized)
+    if age_match:
+        age_value = int(age_match.group(1))
+        if 18 <= age_value <= 99:
+            updates["identity_core.fictional_age_years"] = {"value": age_value, "source_text": source_text}
+
+    if "nsfw" in normalized or "adult" in normalized:
+        updates["metadata.vertical"] = {"value": "adult_entertainment", "source_text": source_text}
+        updates["metadata.category"] = {"value": "adult_creator", "source_text": source_text}
+
+    if "formal" in normalized:
+        updates["voice_tone"] = {"value": "formal", "source_text": source_text}
+        updates["communication_style.speech_style"] = {"value": "refined", "source_text": source_text}
+
+    if "psicolog" in normalized:
+        occupation = "licenciada en psicologia" if "licenciada" in normalized else "psicologa"
+        updates["metadata.occupation_or_content_basis"] = {"value": occupation, "source_text": source_text}
+
+    if "estudio" in normalized or "studio" in normalized:
+        updates["conversation.scene_context"] = {"value": "en su estudio", "source_text": source_text}
+
+    for terms, color in (
+        (("ojos verdes", "ojos color verde", "green eyes"), "green"),
+        (("ojos azules", "ojos color azul", "blue eyes"), "blue"),
+        (("ojos marrones", "ojos cafes", "ojos café", "brown eyes"), "brown"),
+        (("ojos avellana", "hazel eyes"), "hazel"),
+    ):
+        if any(term in normalized for term in terms):
+            updates["visual_profile.eye_color"] = {"value": color, "source_text": source_text}
+            break
+
+    for terms, color in (
+        (("rubia", "rubio", "blonde", "blond"), "blonde"),
+        (("pelirroja", "pelirrojo", "redhead", "red hair", "ginger"), "red"),
+        (("morena", "moreno", "brunette"), "dark_brown"),
+        (("castana", "castaña", "castano", "castaño"), "brown"),
+        (("negra", "negro", "black hair"), "black"),
+    ):
+        if any(term in normalized for term in terms):
+            updates["visual_profile.hair_color"] = {"value": color, "source_text": source_text}
+            break
+
+    return updates
+
+
+def _lab_apply_turn_to_session(session: dict[str, object], message: str) -> None:
+    operator_messages = list(session.get("operator_messages", []))
+    operator_messages.append(message)
+    session["operator_messages"] = operator_messages[-20:]
+    manual_overrides = dict(session.get("manual_overrides", {}))
+    manual_overrides.update(_lab_extract_turn_updates(message))
+    session["manual_overrides"] = manual_overrides
+    session["autofill_requested"] = bool(session.get("autofill_requested")) or _lab_autofill_requested(message)
+
+
+def _lab_eye_color_label(color: object) -> str | None:
+    labels = {
+        "green": "ojos verdes",
+        "blue": "ojos azules",
+        "brown": "ojos marrones",
+        "hazel": "ojos avellana",
+    }
+    return labels.get(str(color), str(color) if color else None)
+
+
+def _lab_hair_color_label(color: object) -> str | None:
+    labels = {
+        "blonde": "rubia",
+        "red": "pelirroja",
+        "dark_brown": "morena",
+        "brown": "castaña",
+        "black": "pelo negro",
+    }
+    return labels.get(str(color), str(color) if color else None)
+
+
+def _lab_composed_idea(session: dict[str, object]) -> str:
+    messages = [str(item).strip() for item in list(session.get("operator_messages", [])) if str(item).strip()]
+    operator_brief = normalize_trace_source_text(" ".join(messages[-6:]), max_length=150, min_length=0) or ""
+    manual_overrides = dict(session.get("manual_overrides", {}))
+    if not manual_overrides:
+        return operator_brief
+
+    parts: list[str] = []
+    age_value = manual_overrides.get("identity_core.fictional_age_years", {}).get("value")
+    if age_value:
+        parts.append(f"modelo de {age_value} años")
+    occupation = manual_overrides.get("metadata.occupation_or_content_basis", {}).get("value")
+    if occupation:
+        parts.append(str(occupation))
+    vertical = manual_overrides.get("metadata.vertical", {}).get("value")
+    if vertical == "adult_entertainment":
+        parts.append("crea contenido NSFW")
+    elif vertical:
+        parts.append(f"vertical {vertical}")
+    scene_context = manual_overrides.get("conversation.scene_context", {}).get("value")
+    if scene_context:
+        parts.append(str(scene_context))
+    speech_style = manual_overrides.get("communication_style.speech_style", {}).get("value")
+    if speech_style == "refined":
+        parts.append("es formal")
+    elif speech_style:
+        parts.append(f"speech style {speech_style}")
+    eye_color = manual_overrides.get("visual_profile.eye_color", {}).get("value")
+    eye_label = _lab_eye_color_label(eye_color)
+    if eye_label:
+        parts.append(eye_label)
+    hair_color = manual_overrides.get("visual_profile.hair_color", {}).get("value")
+    hair_label = _lab_hair_color_label(hair_color)
+    if hair_label:
+        parts.append(hair_label)
+
+    sentence = "Quiero una " + ", ".join(parts) if parts else "Quiero un avatar nuevo"
+    if bool(session.get("autofill_requested")) or _LAB_REQUIRED_MANUAL_FIELDS and not _lab_missing_manual_fields(session):
+        sentence = f"{sentence}. Completá el resto automáticamente."
+    if not operator_brief:
+        return sentence
+    return (
+        normalize_trace_source_text(
+            f"{operator_brief}. Atributos consolidados: {sentence}",
+            max_length=220,
+            min_length=3,
+        )
+        or sentence
+    )
+
+
+def _lab_missing_manual_fields(session: dict[str, object], state: GraphState | None = None) -> list[str]:
+    if bool(session.get("autofill_requested")):
+        return []
+    if state is not None and state.completion_status == CompletionStatus.SUCCEEDED:
+        return []
+    if state is None:
+        return []
+    return list(state.missing_fields)
+
+
+def _lab_chat_readiness_report(session: dict[str, object], state: GraphState | None) -> dict[str, object]:
+    missing_fields = _lab_missing_manual_fields(session, state)
+    next_question = _LAB_MISSING_FIELD_QUESTIONS.get(missing_fields[0]) if missing_fields else None
+    can_handoff = bool(
+        state is not None
+        and state.completion_status == CompletionStatus.SUCCEEDED
+        and not missing_fields
+    )
+    return {
+        "can_handoff": can_handoff,
+        "missing_fields": missing_fields,
+        "next_question": next_question,
+        "autofill_available": bool(missing_fields) and not bool(session.get("autofill_requested")),
+    }
+
+
+def _lab_upsert_manual_trace(
+    traces: list[dict[str, object]],
+    *,
+    field_path: str,
+    source_text: object,
+) -> list[dict[str, object]]:
+    normalized_source = normalize_trace_source_text(source_text) or "turno_operador"
+    updated = [dict(trace) for trace in traces if trace.get("field_path") != field_path]
+    updated.append(
+        {
+            "field_path": field_path,
+            "origin": "manual",
+            "source_text": normalized_source,
+            "confidence": 1.0,
+            "rationale": "Campo manual actualizado desde el turno conversacional mas reciente.",
+        }
+    )
+    return updated
+
+
+def _lab_overlay_state_with_session(state: GraphState, session: dict[str, object]) -> GraphState:
+    manual_overrides = dict(session.get("manual_overrides", {}))
+    if not manual_overrides:
+        return state
+
+    payload = state.model_dump(mode="json")
+    identity_draft = dict(payload.get("identity_draft", {}) or {})
+    final_sheet = dict(payload.get("final_technical_sheet_payload", {}) or {})
+    normalized_constraints = dict(payload.get("normalized_constraints", {}) or {})
+    traces = list(identity_draft.get("field_traces", []) or [])
+    sheet_traceability = dict(final_sheet.get("traceability", {}) or {})
+    sheet_traces = list(sheet_traceability.get("field_traces", []) or [])
+
+    metadata = dict(identity_draft.get("metadata", {}) or {})
+    identity_metadata = dict(final_sheet.get("identity_metadata", {}) or {})
+    communication_style = dict(identity_draft.get("communication_style", {}) or {})
+    personality_profile = dict(final_sheet.get("personality_profile", {}) or {})
+    profile_communication_style = dict(personality_profile.get("communication_style", {}) or {})
+    visual_profile = dict(final_sheet.get("visual_profile", {}) or {})
+    identity_core = dict(final_sheet.get("identity_core", {}) or {})
+
+    for field_path, update in manual_overrides.items():
+        value = update.get("value")
+        source_text = update.get("source_text")
+        should_trace = True
+        if field_path == "identity_core.fictional_age_years":
+            identity_core["fictional_age_years"] = value
+        elif field_path == "metadata.category":
+            metadata["category"] = value
+            identity_metadata["category"] = value
+            normalized_constraints["category"] = value
+        elif field_path == "metadata.vertical":
+            metadata["vertical"] = value
+            identity_metadata["vertical"] = value
+            normalized_constraints["vertical"] = value
+        elif field_path == "metadata.occupation_or_content_basis":
+            metadata["occupation_or_content_basis"] = value
+            identity_metadata["occupation_or_content_basis"] = value
+            normalized_constraints["occupation_or_content_basis"] = value
+        elif field_path == "voice_tone":
+            personality_profile["voice_tone"] = value
+            normalized_constraints["voice_tone"] = value
+        elif field_path == "communication_style.speech_style":
+            communication_style["speech_style"] = value
+            profile_communication_style["speech_style"] = value
+            normalized_constraints["speech_style"] = value
+        elif field_path == "visual_profile.eye_color":
+            visual_profile["eye_color"] = value
+        elif field_path == "visual_profile.hair_color":
+            visual_profile["hair_color"] = value
+        elif field_path != "conversation.scene_context":
+            should_trace = False
+        if should_trace:
+            traces = _lab_upsert_manual_trace(traces, field_path=field_path, source_text=source_text)
+            sheet_traces = _lab_upsert_manual_trace(sheet_traces, field_path=field_path, source_text=source_text)
+
+    identity_draft["metadata"] = metadata
+    identity_draft["communication_style"] = communication_style
+    identity_draft["field_traces"] = traces
+    final_sheet["identity_metadata"] = identity_metadata
+    personality_profile["communication_style"] = profile_communication_style
+    final_sheet["personality_profile"] = personality_profile
+    final_sheet["visual_profile"] = visual_profile
+    final_sheet["identity_core"] = identity_core
+    sheet_traceability["field_traces"] = sheet_traces[:40]
+    final_sheet["traceability"] = sheet_traceability
+    payload["identity_draft"] = identity_draft
+    payload["final_technical_sheet_payload"] = final_sheet
+    payload["normalized_constraints"] = normalized_constraints
+
+    manual_fields = list(dict.fromkeys([*payload.get("manually_defined_fields", []), *manual_overrides.keys()]))
+    inferred_fields = [
+        field_path
+        for field_path in payload.get("inferred_fields", [])
+        if field_path not in manual_overrides
+    ]
+    payload["manually_defined_fields"] = manual_fields[:24]
+    payload["inferred_fields"] = inferred_fields[:24]
+    return GraphState.model_validate(payload)
+
+
+def _lab_store_draft_snapshot(session: dict[str, object], state: GraphState) -> None:
+    technical_sheet = state.final_technical_sheet_payload
+    if technical_sheet is None:
+        return
+    session["draft_snapshot"] = {
+        "identity": {
+            "display_name": technical_sheet.identity_core.display_name,
+            "vertical": _enum_or_value(technical_sheet.identity_metadata.vertical),
+            "category": _enum_or_value(technical_sheet.identity_metadata.category),
+            "style": _enum_or_value(technical_sheet.identity_metadata.style),
+            "archetype": _enum_or_value(technical_sheet.personality_profile.archetype),
+            "voice_tone": _enum_or_value(technical_sheet.personality_profile.voice_tone),
+            "speech_style": _enum_or_value(technical_sheet.personality_profile.communication_style.speech_style),
+            "fictional_age_years": technical_sheet.identity_core.fictional_age_years,
+            "occupation_or_content_basis": technical_sheet.identity_metadata.occupation_or_content_basis,
+        },
+        "visual_profile": technical_sheet.visual_profile.model_dump(mode="json"),
+        "conversation": {
+            "scene_context": dict(session.get("manual_overrides", {})).get("conversation.scene_context", {}).get("value"),
+            "autofill_requested": bool(session.get("autofill_requested")),
+        },
+    }
+
+
 def _lab_reference_summary(session: dict[str, object], *, fallback_reference_url: str | None = None) -> dict[str, object]:
     uploaded = session.get("uploaded_reference")
     if isinstance(uploaded, dict) and uploaded.get("url"):
@@ -1699,13 +2031,19 @@ def _lab_assistant_message(
     if state.completion_status == CompletionStatus.FAILED:
         return "No pude actualizar el draft con este turno. Revisa el error y probamos otro ajuste."
     changes = _lab_panel_changes(previous_panel, panel)
-    missing_fields = list((panel.get("traceability") or {}).get("missing_fields") or [])
+    readiness = dict(panel.get("readiness", {}) or {})
+    missing_fields = list(readiness.get("missing_fields") or [])
+    next_question = readiness.get("next_question")
+    autofill_available = bool(readiness.get("autofill_available"))
     display_name = (panel.get("identity") or {}).get("display_name") or "el avatar"
-    prefix = "Arme un primer draft." if previous_panel is None else f"Actualice el draft de {display_name}."
+    prefix = "Armé un draft evolutivo." if previous_panel is None else f"Actualicé el draft de {display_name}."
     details = f" Cambios detectados: {', '.join(changes)}." if changes else ""
     if missing_fields:
-        return f"{prefix}{details} Todavia faltan definir: {', '.join(missing_fields[:4])}."
-    return f"{prefix}{details} Ya quedo listo para enviar a S1 Image cuando quieras."
+        guidance = f" {next_question}" if next_question else ""
+        if autofill_available:
+            guidance = f"{guidance} También podés decir 'completá el resto automáticamente'.".rstrip()
+        return f"{prefix}{details} Todavía no está lista para S1 Image. Faltan: {', '.join(missing_fields[:4])}.{guidance}"
+    return f"{prefix}{details} La ficha ya quedó lista para enviar a S1 Image cuando quieras."
 
 
 def _lab_state_summary(
@@ -1713,6 +2051,7 @@ def _lab_state_summary(
     *,
     reference_summary: dict[str, object] | None = None,
     conversation_summary: dict[str, object] | None = None,
+    readiness_report: dict[str, object] | None = None,
 ) -> dict[str, object]:
     technical_sheet = state.final_technical_sheet_payload
     draft = state.identity_draft
@@ -1721,6 +2060,7 @@ def _lab_state_summary(
     traces = draft.trace_map() if draft is not None else {}
     current_reference = reference_summary or _lab_reference_summary({})
     preview_payload = _lab_s1_job_input(state, reference_face_image_url=current_reference.get("effective_url"))
+    readiness = readiness_report or {"can_handoff": False, "missing_fields": [], "next_question": None, "autofill_available": False}
     return {
         "completion_status": _enum_or_value(state.completion_status),
         "identity": {
@@ -1743,7 +2083,7 @@ def _lab_state_summary(
         "traceability": {
             "manual_fields": state.manually_defined_fields,
             "inferred_fields": state.inferred_fields,
-            "missing_fields": state.missing_fields,
+            "missing_fields": list(readiness.get("missing_fields") or []),
             "field_traces": {field_path: trace.model_dump(mode="json") for field_path, trace in traces.items()},
         },
         "copilot": (
@@ -1763,8 +2103,10 @@ def _lab_state_summary(
         ),
         "identity_context": identity_context,
         "readiness": {
-            "can_handoff": state.completion_status == CompletionStatus.SUCCEEDED,
-            "missing_fields": state.missing_fields,
+            "can_handoff": bool(readiness.get("can_handoff")),
+            "missing_fields": list(readiness.get("missing_fields") or []),
+            "next_question": readiness.get("next_question"),
+            "autofill_available": bool(readiness.get("autofill_available")),
         },
         "reference_face": current_reference,
         "conversation": conversation_summary or {},
@@ -1781,12 +2123,19 @@ def _lab_response_from_state(
     session: dict[str, object],
     previous_panel: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    readiness = _lab_chat_readiness_report(session, state)
     reference_summary = _lab_reference_summary(session)
     conversation_summary = {
         "turn_count": len(list(session.get("operator_messages", []))),
         "operator_brief": _lab_operator_brief(session),
+        "autofill_requested": bool(session.get("autofill_requested")),
     }
-    panel = _lab_state_summary(state, reference_summary=reference_summary, conversation_summary=conversation_summary)
+    panel = _lab_state_summary(
+        state,
+        reference_summary=reference_summary,
+        conversation_summary=conversation_summary,
+        readiness_report=readiness,
+    )
     return {
         "session_id": session_id,
         "chat_entry": {
@@ -1796,7 +2145,7 @@ def _lab_response_from_state(
             "error": state.terminal_error_message,
         },
         "panel": panel,
-        "can_handoff": state.completion_status == CompletionStatus.SUCCEEDED,
+        "can_handoff": bool(readiness.get("can_handoff")),
         "history": list(session.get("history", [])),
     }
 
@@ -1836,6 +2185,9 @@ def _lab_run_chat_turn(session_id: str, message: str, *, reference_face_image_ur
     session = _lab_session_store(session_id)
     session.setdefault("history", [])
     session.setdefault("operator_messages", [])
+    session.setdefault("manual_overrides", {})
+    session.setdefault("draft_snapshot", {})
+    session.setdefault("autofill_requested", False)
     if reference_face_image_url is not None:
         normalized_reference = reference_face_image_url.strip()
         session["reference_face_image_url"] = normalized_reference
@@ -1843,12 +2195,10 @@ def _lab_run_chat_turn(session_id: str, message: str, *, reference_face_image_ur
             session.pop("reference_face_image_url", None)
     previous_response = session.get("last_response")
     previous_panel = previous_response.get("panel") if isinstance(previous_response, dict) else None
-    operator_messages = list(session.get("operator_messages", []))
-    operator_messages.append(message)
-    session["operator_messages"] = operator_messages[-20:]
-    composed_idea = _lab_operator_brief(session)
+    _lab_apply_turn_to_session(session, message)
+    composed_idea = _lab_composed_idea(session)
     try:
-        state = run_agentic_brain(composed_idea)
+        state = _lab_overlay_state_with_session(run_agentic_brain(composed_idea), session)
     except Exception as exc:
         response = _lab_error_response(session_id, message, str(exc), session=session)
         history = list(session.get("history", []))
@@ -1858,7 +2208,9 @@ def _lab_run_chat_turn(session_id: str, message: str, *, reference_face_image_ur
         session["last_response"] = response
         return response
     response = _lab_response_from_state(session_id, message, state, session=session, previous_panel=previous_panel)
+    _lab_store_draft_snapshot(session, state)
     session["last_graph_state"] = state.model_dump(mode="json")
+    session["last_readiness"] = dict(response["panel"].get("readiness", {}))
     history = list(session.get("history", []))
     history.append(response["chat_entry"])
     session["history"] = history[-20:]
@@ -2087,8 +2439,15 @@ def handoff_langgraph_lab_to_s1(payload: dict, request: Request) -> dict:
     if not session or "last_graph_state" not in session:
         raise HTTPException(status_code=409, detail="No hay una ejecución previa de LangGraph para esta sesión.")
     state = GraphState.model_validate(session["last_graph_state"])
+    readiness = _lab_chat_readiness_report(session, state)
     if state.completion_status != CompletionStatus.SUCCEEDED:
         raise HTTPException(status_code=409, detail="El último GraphState no quedó listo para handoff.")
+    if not readiness["can_handoff"]:
+        missing = ", ".join(readiness["missing_fields"])
+        raise HTTPException(
+            status_code=409,
+            detail=f"La ficha conversacional todavÃ­a no estÃ¡ lista para handoff. Faltan: {missing}",
+        )
     reference_face_image_url = str(payload.get("reference_face_image_url", "")).strip() or None
     reference_summary = _lab_reference_summary(session, fallback_reference_url=reference_face_image_url)
     _require_handoff_reference(reference_summary)
@@ -2100,7 +2459,9 @@ def handoff_langgraph_lab_to_s1(payload: dict, request: Request) -> dict:
         conversation_summary={
             "turn_count": len(list(session.get("operator_messages", []))),
             "operator_brief": _lab_operator_brief(session),
+            "autofill_requested": bool(session.get("autofill_requested")),
         },
+        readiness_report=readiness,
     )
     panel["s1_payload_preview"] = job_input
     response = {

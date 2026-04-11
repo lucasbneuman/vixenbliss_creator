@@ -20,6 +20,7 @@ from .models import (
 from .ports import CopilotClient, GraphValidator, LLMClient
 from .validator import TechnicalSheetGraphValidator
 from .workflow_registry import WorkflowRegistry
+from vixenbliss_creator.traceability import normalize_trace_source_text
 from vixenbliss_creator.contracts.identity import (
     ArchetypeCode,
     CreationCategory,
@@ -337,7 +338,7 @@ class AgenticBrain:
                     FieldTrace(
                         field_path=field_path,
                         origin=FieldOrigin.MANUAL,
-                        source_text=state.input_idea,
+                        source_text=normalize_trace_source_text(state.input_idea),
                         confidence=1.0,
                         rationale="Campo manual preservado desde la extraccion inicial de constraints.",
                     )
@@ -349,7 +350,7 @@ class AgenticBrain:
                     FieldTrace(
                         field_path=field_path,
                         origin=FieldOrigin.INFERRED,
-                        source_text=state.input_idea,
+                        source_text=normalize_trace_source_text(state.input_idea),
                         confidence=0.8,
                         rationale="Campo inferido preservado para mantener trazabilidad del draft final.",
                     )

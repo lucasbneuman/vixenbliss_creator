@@ -392,6 +392,18 @@ Si en el futuro la ficha técnica se arma fuera del LLM:
 - reemplazar la lógica de `generate_technical_sheet`
 - dejar `complete_identity_profile` concentrado solo en identidad
 
+## Capa conversacional del laboratorio web
+
+El laboratorio web de `S1 image` no usa el brief acumulado completo como `input_idea` bruto para trazabilidad. Desde la versión actual:
+
+- cada sesión mantiene `history`, `operator_brief`, `manual_overrides`, `draft_snapshot` y `autofill_requested`
+- cada turno actualiza solo los campos detectados en el mensaje actual
+- si el operador redefine un atributo ya inferido, el valor manual sobreescribe al anterior y la traza final queda como `manual`
+- `FieldTrace.source_text` siempre se normaliza y acota para no romper el contrato del schema
+- el handoff a `S1 Image` usa el `GraphState` validado como fuente de readiness y evita bloquear por heuristicas locales del chat
+
+Esto permite un chat evolutivo: primer draft parcial, completado progresivo y autofill controlado sin mandar a `S1 Image` una ficha incompleta.
+
 ## Smoke local
 
 ```powershell

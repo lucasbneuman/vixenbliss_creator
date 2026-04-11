@@ -118,6 +118,23 @@ def _authenticate_test_client(module: object, client: TestClient) -> None:
     assert response.status_code == 200
 
 
+def _ready_lab_session(client: TestClient, session_id: str) -> dict:
+    first = client.post(
+        "/lab/chat",
+        json={
+            "session_id": session_id,
+            "message": "Quiero una modelo de 40 años, licenciada en psicologia, crea contenido NSFW en su estudio, es formal.",
+        },
+    )
+    assert first.status_code == 200
+    second = client.post(
+        "/lab/chat",
+        json={"session_id": session_id, "message": "quiero que tenga ojos verdes y que sea rubia"},
+    )
+    assert second.status_code == 200
+    return second.json()
+
+
 def test_s1_image_runtime_healthcheck_reports_identity_contract(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
@@ -241,11 +258,8 @@ def test_s1_image_runtime_uploaded_reference_takes_priority_over_url(tmp_path: P
     )
     assert upload.status_code == 200
 
-    langgraph_response = client.post(
-        "/lab/langgraph",
-        json={"session_id": "session-file-ref", "idea": "Crea un avatar nuevo para lifestyle premium"},
-    )
-    assert langgraph_response.status_code == 200
+    ready_payload = _ready_lab_session(client, "session-file-ref")
+    assert ready_payload["can_handoff"] is True
 
     response = client.post(
         "/lab/s1-image",
@@ -289,7 +303,13 @@ def test_s1_image_runtime_lab_executes_langgraph_and_returns_panel(tmp_path: Pat
     client = TestClient(module.app)
     _authenticate_test_client(module, client)
 
-    response = client.post("/lab/langgraph", json={"session_id": "session-1", "idea": "Creá un avatar nuevo para lifestyle premium"})
+    response = client.post(
+        "/lab/chat",
+        json={
+            "session_id": "session-1",
+            "message": "Quiero una modelo de 40 años, licenciada en psicologia, crea contenido NSFW en su estudio, es formal.",
+        },
+    )
 
     assert response.status_code == 200
     payload = response.json()
@@ -298,7 +318,124 @@ def test_s1_image_runtime_lab_executes_langgraph_and_returns_panel(tmp_path: Pat
     assert payload["can_handoff"] is True
     assert payload["panel"]["identity"]["display_name"] == "Velvet Ember"
     assert payload["panel"]["copilot"]["workflow_id"] == "lora-dataset-ipadapter-batch"
+    assert payload["panel"]["traceability"]["missing_fields"] == []
+    assert "La ficha ya quedó lista para enviar a S1 Image" in payload["chat_entry"]["assistant_message"]
     assert payload["panel"]["s1_payload_preview"]["reference_face_image_url"] is None
+
+
+def test_s1_image_runtime_lab_chat_overwrites_visual_fields_and_trims_trace_sources(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    _authenticate_test_client(module, client)
+
+    first = client.post(
+        "/lab/chat",
+        json={
+            "session_id": "session-overwrite",
+            "message": "Quiero una modelo de 40 años, licenciada en psicologia, crea contenido NSFW en su estudio, es formal.",
+        },
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        "/lab/chat",
+        json={"session_id": "session-overwrite", "message": "quiero que tenga ojos verdes y que sea rubia"},
+    )
+
+    assert second.status_code == 200
+    payload = second.json()
+    assert payload["can_handoff"] is True
+    assert payload["panel"]["visual_profile"]["eyes"] == "green"
+    assert payload["panel"]["visual_profile"]["hair"].startswith("blonde")
+    eye_trace = payload["panel"]["traceability"]["field_traces"]["visual_profile.eye_color"]
+    hair_trace = payload["panel"]["traceability"]["field_traces"]["visual_profile.hair_color"]
+    assert eye_trace["origin"] == "manual"
+    assert hair_trace["origin"] == "manual"
+    assert len(eye_trace["source_text"]) <= 200
+    assert len(hair_trace["source_text"]) <= 200
+
+
+def test_s1_image_runtime_lab_handoff_uses_graph_state_readiness(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    _authenticate_test_client(module, client)
+
+    first = client.post(
+        "/lab/chat",
+        json={
+            "session_id": "session-incomplete",
+            "message": "Quiero una modelo de 40 años, licenciada en psicologia, crea contenido NSFW en su estudio, es formal.",
+        },
+    )
+    assert first.status_code == 200
+    assert first.json()["can_handoff"] is True
+
+    response = client.post(
+        "/lab/s1-image",
+        json={"session_id": "session-incomplete", "reference_face_image_url": "https://cdn.vixenbliss.local/custom.png"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["handoff"]["reference_face_image_url"] == "https://cdn.vixenbliss.local/custom.png"
+
+
+def test_s1_image_runtime_lab_follow_up_turns_keep_prior_operator_constraints(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    _authenticate_test_client(module, client)
+    real_runner = module.run_agentic_brain
+    captured_ideas: list[str] = []
+
+    def fake_run_agentic_brain(idea: str):
+        captured_ideas.append(idea)
+        return real_runner(idea)
+
+    monkeypatch.setattr(module, "run_agentic_brain", fake_run_agentic_brain)
+
+    first = client.post(
+        "/lab/chat",
+        json={
+            "session_id": "session-context",
+            "message": "Quiero un avatar llamada Luna, estilo glam y piel oliva para lifestyle premium.",
+        },
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        "/lab/chat",
+        json={"session_id": "session-context", "message": "ahora quiero que tenga ojos verdes"},
+    )
+
+    assert second.status_code == 200
+    assert len(captured_ideas) == 2
+    assert "Luna" in captured_ideas[1]
+    assert "glam" in captured_ideas[1].lower()
+    assert "piel oliva" in captured_ideas[1].lower()
+    assert "ojos verdes" in captured_ideas[1].lower()
+
+
+def test_s1_image_runtime_lab_autofill_can_complete_remaining_fields(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    _authenticate_test_client(module, client)
+
+    first = client.post(
+        "/lab/chat",
+        json={"session_id": "session-autofill", "message": "Quiero una modelo de 40 años y que sea formal."},
+    )
+    assert first.status_code == 200
+    assert first.json()["can_handoff"] is True
+
+    second = client.post(
+        "/lab/chat",
+        json={"session_id": "session-autofill", "message": "completá el resto automáticamente"},
+    )
+
+    assert second.status_code == 200
+    payload = second.json()
+    assert payload["can_handoff"] is True
+    assert payload["panel"]["readiness"]["can_handoff"] is True
+    assert payload["panel"]["readiness"]["missing_fields"] == []
 
 
 def test_s1_image_runtime_lab_returns_controlled_error_when_langgraph_fails(tmp_path: Path, monkeypatch) -> None:
@@ -334,11 +471,8 @@ def test_s1_image_runtime_lab_handoff_builds_job_payload_and_reuses_jobs_flow(tm
 
     monkeypatch.setattr(module, "submit_job", fake_submit_job)
 
-    langgraph_response = client.post(
-        "/lab/langgraph",
-        json={"session_id": "session-3", "idea": "Creá un avatar nuevo para lifestyle premium"},
-    )
-    assert langgraph_response.status_code == 200
+    ready_payload = _ready_lab_session(client, "session-3")
+    assert ready_payload["can_handoff"] is True
 
     response = client.post(
         "/lab/s1-image",
@@ -962,11 +1096,8 @@ def test_s1_image_runtime_lab_handoff_requires_reference_face_url(tmp_path: Path
     client = TestClient(module.app)
     _authenticate_test_client(module, client)
 
-    langgraph_response = client.post(
-        "/lab/langgraph",
-        json={"session_id": "session-4", "idea": "CreÃ¡ un avatar nuevo para lifestyle premium"},
-    )
-    assert langgraph_response.status_code == 200
+    ready_payload = _ready_lab_session(client, "session-4")
+    assert ready_payload["can_handoff"] is True
 
     response = client.post("/lab/s1-image", json={"session_id": "session-4"})
 
