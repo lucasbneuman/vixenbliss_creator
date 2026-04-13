@@ -274,9 +274,17 @@ def _read_recent_comfyui_log(*, max_lines: int = 120) -> str:
     return "\n".join(lines[-max_lines:]).strip()
 
 
+def _job_requires_reference_assets(job_input: dict | None = None) -> bool:
+    job_input = job_input or {}
+    ip_adapter = job_input.get("ip_adapter") or {}
+    if ip_adapter.get("enabled") is False:
+        return False
+    return bool(job_input.get("reference_face_image_url") or job_input.get("reference_face_image_name"))
+
+
 def _required_runtime_paths(job_input: dict | None = None) -> dict[str, Path]:
     job_input = job_input or {}
-    return {
+    paths = {
         "flux_diffusion_model": COMFYUI_MODELS_DIR
         / "diffusion_models"
         / str(job_input.get("flux_diffusion_model_name", COMFYUI_FLUX_DIFFUSION_MODEL_NAME)),
@@ -287,27 +295,31 @@ def _required_runtime_paths(job_input: dict | None = None) -> dict[str, Path]:
         "flux_t5xxl": COMFYUI_MODELS_DIR
         / "text_encoders"
         / str(job_input.get("flux_t5xxl_name", COMFYUI_FLUX_T5XXL_NAME)),
-        "ip_adapter_flux": COMFYUI_MODELS_DIR / "ipadapter-flux" / _resolve_ip_adapter_model_name(job_input),
         "face_detector": COMFYUI_MODELS_DIR / "ultralytics" / "bbox" / str(
             job_input.get("face_detector_model_name", COMFYUI_FACE_DETECTOR_MODEL)
         ),
     }
+    if _job_requires_reference_assets(job_input):
+        paths["ip_adapter_flux"] = COMFYUI_MODELS_DIR / "ipadapter-flux" / _resolve_ip_adapter_model_name(job_input)
+    return paths
 
 
 def _cache_runtime_paths(job_input: dict | None = None) -> dict[str, Path]:
     job_input = job_input or {}
-    return {
+    paths = {
         "flux_diffusion_model": MODEL_CACHE_ROOT
         / "diffusion_models"
         / str(job_input.get("flux_diffusion_model_name", COMFYUI_FLUX_DIFFUSION_MODEL_NAME)),
         "flux_ae": MODEL_CACHE_ROOT / "vae" / str(job_input.get("flux_ae_name", COMFYUI_FLUX_AE_NAME)),
         "flux_clip_l": MODEL_CACHE_ROOT / "text_encoders" / str(job_input.get("flux_clip_l_name", COMFYUI_FLUX_CLIP_L_NAME)),
         "flux_t5xxl": MODEL_CACHE_ROOT / "text_encoders" / str(job_input.get("flux_t5xxl_name", COMFYUI_FLUX_T5XXL_NAME)),
-        "ip_adapter_flux": MODEL_CACHE_ROOT / "ipadapter-flux" / _resolve_ip_adapter_model_name(job_input),
         "face_detector": MODEL_CACHE_ROOT / "ultralytics" / "bbox" / str(
             job_input.get("face_detector_model_name", COMFYUI_FACE_DETECTOR_MODEL)
         ),
     }
+    if _job_requires_reference_assets(job_input):
+        paths["ip_adapter_flux"] = MODEL_CACHE_ROOT / "ipadapter-flux" / _resolve_ip_adapter_model_name(job_input)
+    return paths
 
 
 def _clip_vision_runtime_path() -> Path:
@@ -321,26 +333,27 @@ def _clip_vision_cache_path() -> Path:
 def _runtime_checks(job_input: dict | None = None) -> dict[str, bool]:
     paths = _required_runtime_paths(job_input)
     cache_paths = _cache_runtime_paths(job_input)
+    requires_reference_assets = _job_requires_reference_assets(job_input)
     return {
         "flux_diffusion_model_present": paths["flux_diffusion_model"].exists(),
         "flux_ae_present": paths["flux_ae"].exists(),
         "flux_clip_l_present": paths["flux_clip_l"].exists(),
         "flux_t5xxl_present": paths["flux_t5xxl"].exists(),
-        "ip_adapter_present": paths["ip_adapter_flux"].exists(),
+        "ip_adapter_present": paths["ip_adapter_flux"].exists() if requires_reference_assets else True,
         "cache_flux_diffusion_model_present": cache_paths["flux_diffusion_model"].exists(),
         "cache_flux_ae_present": cache_paths["flux_ae"].exists(),
         "cache_flux_clip_l_present": cache_paths["flux_clip_l"].exists(),
         "cache_flux_t5xxl_present": cache_paths["flux_t5xxl"].exists(),
-        "cache_ip_adapter_present": cache_paths["ip_adapter_flux"].exists(),
+        "cache_ip_adapter_present": cache_paths["ip_adapter_flux"].exists() if requires_reference_assets else True,
         "face_detector_present": paths["face_detector"].exists(),
         "cache_face_detector_present": cache_paths["face_detector"].exists(),
         "workflow_baked": _workflow_template_path(job_input).exists(),
-        "clip_vision_present": _clip_vision_runtime_path().exists(),
-        "clip_vision_cache_present": _clip_vision_cache_path().exists(),
+        "clip_vision_present": _clip_vision_runtime_path().exists() if requires_reference_assets else True,
+        "clip_vision_cache_present": _clip_vision_cache_path().exists() if requires_reference_assets else True,
         "comfyui_baked": (COMFYUI_HOME / "main.py").exists(),
         "impact_pack_baked": (COMFYUI_CUSTOM_NODES_DIR / "ComfyUI-Impact-Pack").exists(),
         "impact_subpack_baked": (COMFYUI_CUSTOM_NODES_DIR / "ComfyUI-Impact-Subpack").exists(),
-        "ipadapter_flux_baked": (COMFYUI_CUSTOM_NODES_DIR / "ComfyUI-IPAdapter-Flux").exists(),
+        "ipadapter_flux_baked": (COMFYUI_CUSTOM_NODES_DIR / "ComfyUI-IPAdapter-Flux").exists() if requires_reference_assets else True,
     }
 
 
@@ -485,8 +498,13 @@ def _build_workflow_payload(job_input: dict) -> dict:
         fallback_reference = job_input.get("reference_face_image_name")
         if fallback_reference:
             workflow["load_reference_image"]["inputs"]["image"] = fallback_reference
-        else:
-            raise FileNotFoundError("reference_face_image_url could not be resolved")
+    else:
+        fallback_reference = None
+
+    if not reference_face_image_url and not fallback_reference:
+        # Allow S1 Image to render without a facial reference by bypassing IP-Adapter nodes.
+        for node_name in ("sampler_scheduler", "basic_guider", "face_detailer"):
+            workflow[node_name]["inputs"]["model"] = ["model_sampling_flux", 0]
 
     if mode == ResumeStage.BASE_RENDER.value:
         workflow.pop("save_final_image", None)
@@ -1865,15 +1883,6 @@ def _lab_reference_summary(session: dict[str, object], *, fallback_reference_url
     }
 
 
-def _require_handoff_reference(reference_summary: dict[str, object]) -> None:
-    if reference_summary.get("effective_url"):
-        return
-    raise HTTPException(
-        status_code=422,
-        detail="reference_face_image_url is required for S1 Image handoff; provide one in the UI or configure LAB_REFERENCE_FACE_IMAGE_URL",
-    )
-
-
 def _lab_operator_brief(session: dict[str, object]) -> str:
     messages = [str(item).strip() for item in list(session.get("operator_messages", [])) if str(item).strip()]
     if not messages:
@@ -1966,6 +1975,7 @@ def _lab_s1_job_input(state: GraphState, *, reference_face_image_url: str | None
     reference_url = (reference_face_image_url or LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL).strip()
     if reference_url.startswith("https://example.com/") or reference_url.startswith("http://example.com/"):
         reference_url = ""
+    ip_adapter_enabled = bool(reference_url)
     return {
         "action": "generate",
         "mode": "base_render",
@@ -1983,7 +1993,7 @@ def _lab_s1_job_input(state: GraphState, *, reference_face_image_url: str | None
         "width": 1024,
         "height": 1024,
         "reference_face_image_url": reference_url or None,
-        "ip_adapter": {"enabled": True, "model_name": "plus_face", "weight": 0.9},
+        "ip_adapter": {"enabled": ip_adapter_enabled, "model_name": "plus_face", "weight": 0.9},
         "face_detailer": {"enabled": True, "confidence_threshold": 0.8, "inpaint_strength": 0.35},
         "realism_profile": "photorealistic_adult_reference_v1",
         "source_strategy": "copilot_workflow_plus_shot_plan_v2",
@@ -2450,7 +2460,6 @@ def handoff_langgraph_lab_to_s1(payload: dict, request: Request) -> dict:
         )
     reference_face_image_url = str(payload.get("reference_face_image_url", "")).strip() or None
     reference_summary = _lab_reference_summary(session, fallback_reference_url=reference_face_image_url)
-    _require_handoff_reference(reference_summary)
     job_input = _lab_s1_job_input(state, reference_face_image_url=reference_summary.get("effective_url"))
     job_response = submit_job({"input": job_input})
     panel = _lab_state_summary(
@@ -2501,7 +2510,7 @@ def healthcheck(deep: bool = False) -> dict:
                     "runtime_stage": RuntimeStage.IDENTITY_IMAGE.value,
                     "workflow_scope": "s1_image",
                     "supabase_required": False,
-                    "reference_face_image_url_required": True,
+                    "reference_face_image_url_required": False,
                     "lora_supported": False,
                     "model_cache_root": str(MODEL_CACHE_ROOT),
                 },
@@ -2549,7 +2558,7 @@ def healthcheck(deep: bool = False) -> dict:
             "runtime_stage": RuntimeStage.IDENTITY_IMAGE.value,
             "workflow_scope": "s1_image",
             "supabase_required": False,
-            "reference_face_image_url_required": True,
+            "reference_face_image_url_required": False,
             "lora_supported": False,
             "model_cache_root": str(MODEL_CACHE_ROOT),
         },

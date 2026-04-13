@@ -72,7 +72,7 @@ Default operativo del lab:
 
 - usa `run_agentic_brain` por defecto
 - no persiste conversaciones fuera de memoria
-- usa `LAB_REFERENCE_FACE_IMAGE_URL` si se quiere cambiar la URL default de referencia facial
+- usa `LAB_REFERENCE_FACE_IMAGE_URL` si se quiere cambiar la URL default de referencia facial, pero la referencia es opcional para el handoff a `S1 Image`
 - sirve el front desde `apps/web/` para dejar listo el camino a un desacople posterior de front y back
 
 ## Estructura
@@ -134,7 +134,7 @@ Para una prueba local realista de `S1 image`, el stack minimo queda asi:
 - acceso autenticado a `Modal` para despertar el worker GPU
 - `HF_TOKEN` con acceso a `FLUX.1-schnell`
 - `Modal Volume` ya primado con los assets pesados o URLs de bootstrap validas
-- una `reference_face_image_url` accesible desde el worker
+- una `reference_face_image_url` accesible desde el worker solo si se quiere usar `IP-Adapter`
 
 Validacion minima recomendada:
 
