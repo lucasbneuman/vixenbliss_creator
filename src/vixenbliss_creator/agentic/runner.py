@@ -8,6 +8,7 @@ from .adapters import FakeCopilotClient, FakeLLMClient, OpenAICompatibleLLMClien
 from .config import AgenticSettings
 from .graph import build_agentic_brain
 from .models import CopilotRecommendation, GraphState
+from .naming import resolve_display_name
 from vixenbliss_creator.contracts.identity import (
     ArchetypeCode,
     CommunicationStyleProfile,
@@ -59,15 +60,17 @@ def _scenario_from_idea(idea: str) -> dict[str, object]:
     if sarcastic:
         manual_fields.append("personality_axes.sarcasm")
 
+    display_name = resolve_display_name(idea)
+
     return {
         "metadata": {
-            "avatar_id": "avatar_velvet_ember",
+            "avatar_id": None,
             "category": category.value,
             "vertical": vertical,
             "style": style.value,
             "occupation_or_content_basis": "luxury lifestyle creator" if lifestyle else "premium digital performer",
         },
-        "name": "Velvet Ember",
+        "name": display_name,
         "archetype": archetype.value,
         "personality_axes": {
             "dominance": "medium" if lifestyle else "high",

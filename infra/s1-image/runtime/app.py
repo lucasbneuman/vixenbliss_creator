@@ -1588,10 +1588,14 @@ def _lab_extract_turn_updates(message: str) -> dict[str, dict[str, object]]:
     if "formal" in normalized:
         updates["voice_tone"] = {"value": "formal", "source_text": source_text}
         updates["communication_style.speech_style"] = {"value": "refined", "source_text": source_text}
+    elif "seduct" in normalized or "sensual" in normalized:
+        updates["voice_tone"] = {"value": "seductive", "source_text": source_text}
 
     if "psicolog" in normalized:
         occupation = "licenciada en psicologia" if "licenciada" in normalized else "psicologa"
         updates["metadata.occupation_or_content_basis"] = {"value": occupation, "source_text": source_text}
+    elif "secretari" in normalized:
+        updates["metadata.occupation_or_content_basis"] = {"value": "secretaria", "source_text": source_text}
 
     if "estudio" in normalized or "studio" in normalized:
         updates["conversation.scene_context"] = {"value": "en su estudio", "source_text": source_text}
@@ -1705,11 +1709,8 @@ def _lab_composed_idea(session: dict[str, object]) -> str:
 def _lab_missing_manual_fields(session: dict[str, object], state: GraphState | None = None) -> list[str]:
     if bool(session.get("autofill_requested")):
         return []
-    if state is not None and state.completion_status == CompletionStatus.SUCCEEDED:
-        return []
-    if state is None:
-        return []
-    return list(state.missing_fields)
+    manual_overrides = dict(session.get("manual_overrides", {}))
+    return [field_path for field_path in _LAB_REQUIRED_MANUAL_FIELDS if field_path not in manual_overrides]
 
 
 def _lab_chat_readiness_report(session: dict[str, object], state: GraphState | None) -> dict[str, object]:
@@ -1863,7 +1864,7 @@ def _lab_reference_summary(session: dict[str, object], *, fallback_reference_url
             "filename": uploaded.get("filename"),
             "content_type": uploaded.get("content_type"),
         }
-    raw_url = str(fallback_reference_url or session.get("reference_face_image_url") or LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL).strip()
+    raw_url = str(fallback_reference_url or session.get("reference_face_image_url") or "").strip()
     if raw_url.startswith("https://example.com/") or raw_url.startswith("http://example.com/"):
         raw_url = ""
     if raw_url:
@@ -1972,7 +1973,7 @@ def _lab_s1_job_input(state: GraphState, *, reference_face_image_url: str | None
     identity_context = _lab_identity_context(technical_sheet, state)
     copilot = state.copilot_recommendation
     identity_id = _lab_identity_id(state)
-    reference_url = (reference_face_image_url or LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL).strip()
+    reference_url = (reference_face_image_url or "").strip()
     if reference_url.startswith("https://example.com/") or reference_url.startswith("http://example.com/"):
         reference_url = ""
     ip_adapter_enabled = bool(reference_url)
@@ -2237,12 +2238,7 @@ def _lab_html(*, authenticated: bool, route_mode: str, user: dict[str, object] |
         "authenticated": authenticated,
         "routeMode": route_mode,
         "user": user or {},
-        "defaultReferenceFaceImageUrl": (
-            ""
-            if LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL.startswith("https://example.com/")
-            or LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL.startswith("http://example.com/")
-            else LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL
-        ),
+        "defaultReferenceFaceImageUrl": "",
         "chatEndpoint": "/lab/chat",
         "langgraphEndpoint": "/lab/langgraph",
         "handoffEndpoint": "/lab/s1-image",

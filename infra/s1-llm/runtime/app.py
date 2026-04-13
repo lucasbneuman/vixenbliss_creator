@@ -12,6 +12,7 @@ from urllib import error, request
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 
+from vixenbliss_creator.agentic.naming import resolve_display_name
 from vixenbliss_creator.contracts.identity import (
     ArchetypeCode,
     AttentionStrategy,
@@ -370,7 +371,7 @@ def _build_technical_sheet_from_identity(payload: dict[str, Any], idea: str) -> 
     voice_tone = normalized_constraints.get("voice_tone") or (
         VoiceTone.AUTHORITATIVE.value if vertical == Vertical.LIFESTYLE.value else VoiceTone.SEDUCTIVE.value
     )
-    display_name = identity_draft.get("name") or "Velvet Ember"
+    display_name = resolve_display_name(idea, identity_draft.get("name"))
     interests = narrative_minimal.get("interests") or ["fashion", "nightlife"]
 
     return {
@@ -532,7 +533,7 @@ def _build_langgraph_payload(raw_payload: dict[str, Any], idea: str) -> dict[str
     }
     narrative_profile = dict(technical_sheet.get("narrative_profile", {}) or {})
     minimal_profile = dict(narrative_profile.get("minimal_viable_profile", {}) or {})
-    display_name = str(identity_core.get("display_name") or "Velvet Ember")
+    display_name = resolve_display_name(idea, identity_core.get("display_name") or identity_draft.get("name"))
     style = str(identity_metadata.get("style") or IdentityStyle.EDITORIAL.value)
     vertical = str(identity_metadata.get("vertical") or Vertical.ADULT_ENTERTAINMENT.value)
     archetype = str(personality_profile.get("archetype") or ArchetypeCode.PLAYFUL_TEASE.value)
@@ -570,7 +571,10 @@ def _build_langgraph_payload(raw_payload: dict[str, Any], idea: str) -> dict[str
 
     identity_draft = dict(payload.get("identity_draft", {}) or {})
     identity_draft["metadata"] = _merge_missing_values(identity_draft.get("metadata", {}) or {}, identity_metadata)
-    identity_draft["name"] = _non_empty_string(identity_draft.get("name")) or technical_sheet.get("identity_core", {}).get("display_name", "Velvet Ember")
+    identity_draft["name"] = resolve_display_name(
+        idea,
+        _non_empty_string(identity_draft.get("name")) or technical_sheet.get("identity_core", {}).get("display_name"),
+    )
     identity_draft["archetype"] = _non_empty_string(identity_draft.get("archetype")) or personality_profile.get("archetype", normalized_constraints["archetype"])
     identity_draft["personality_axes"] = _merge_missing_values(identity_draft.get("personality_axes", {}) or {}, personality_profile.get("axes", {}))
     identity_draft["communication_style"] = _merge_missing_values(identity_draft.get("communication_style", {}) or {}, communication_style)
