@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from vixenbliss_creator.contracts.artifact import Artifact
+from vixenbliss_creator.contracts.content import Content
 from vixenbliss_creator.contracts.identity import Identity
 from vixenbliss_creator.contracts.job import Job, is_valid_job_transition
 from vixenbliss_creator.contracts.model_registry import ModelRegistry
@@ -90,6 +91,32 @@ def build_model_registry_payload() -> dict:
         "created_at": timestamp,
         "updated_at": timestamp,
         "deprecated_at": None,
+    }
+
+
+def build_content_payload() -> dict:
+    timestamp = datetime(2026, 3, 30, 15, 0, tzinfo=timezone.utc).isoformat()
+    return {
+        "id": str(uuid4()),
+        "identity_id": str(uuid4()),
+        "content_mode": "image",
+        "generation_status": "generated",
+        "qa_status": "not_reviewed",
+        "job_id": "job-123",
+        "primary_artifact_id": "artifact-123",
+        "related_artifact_ids": ["artifact-123", "artifact-456"],
+        "base_model_id": "flux-schnell-v1",
+        "model_version_used": "content-v1",
+        "provider": "modal",
+        "workflow_id": "content-image-flux-lora",
+        "prompt": "editorial portrait with controlled visual consistency",
+        "negative_prompt": "bad anatomy, low quality, watermark",
+        "seed": 2026,
+        "metadata_json": {
+            "artifact_role": "generated_image",
+        },
+        "created_at": timestamp,
+        "updated_at": timestamp,
     }
 
 
@@ -244,6 +271,43 @@ def test_artifact_requires_checksum_for_lora() -> None:
 
     with pytest.raises(ValidationError):
         Artifact.model_validate(payload)
+
+
+def test_content_accepts_valid_payload() -> None:
+    content = Content.model_validate(build_content_payload())
+
+    assert content.content_mode == "image"
+    assert content.provider == "modal"
+
+
+def test_content_rejects_generated_image_without_job_id() -> None:
+    payload = build_content_payload()
+    payload["job_id"] = None
+
+    with pytest.raises(ValidationError):
+        Content.model_validate(payload)
+
+
+def test_content_accepts_prepared_image_to_video_payload() -> None:
+    payload = build_content_payload()
+    payload.update(
+        {
+            "content_mode": "video",
+            "video_generation_mode": "image_to_video",
+            "generation_status": "pending",
+            "job_id": None,
+            "primary_artifact_id": None,
+            "source_artifact_id": "artifact-123",
+            "duration_seconds": None,
+            "frame_count": None,
+            "frame_rate": None,
+        }
+    )
+
+    content = Content.model_validate(payload)
+
+    assert content.video_generation_mode == "image_to_video"
+    assert content.source_artifact_id == "artifact-123"
 
 
 def test_model_registry_accepts_valid_payload() -> None:

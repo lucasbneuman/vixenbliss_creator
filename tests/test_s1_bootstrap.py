@@ -26,3 +26,11 @@ def test_bootstrap_uses_schema_manager(monkeypatch) -> None:
 
     assert created == ["s1_identities", "s1_generation_runs"]
     assert created_collections == ["s1_identities", "s1_generation_runs"]
+
+
+def test_directus_schema_declares_content_catalog() -> None:
+    from vixenbliss_creator.s1_control import S1_DIRECTUS_SCHEMA
+
+    assert "content_catalog" in S1_DIRECTUS_SCHEMA
+    fields = {field["field"] for field in S1_DIRECTUS_SCHEMA["content_catalog"]["fields"]}
+    assert {"content_id", "content_mode", "generation_status", "qa_status", "workflow_id"} <= fields

@@ -75,7 +75,7 @@ class FakeControlPlane:
 def _build_dataset_manifest(identity_id: str, *, package_path: Path, sample_count: int = 40) -> dict[str, Any]:
     files: list[dict[str, Any]] = []
     sample_index = 0
-    for framing, per_angle_count in (("close_up_face", 2), ("medium", 2), ("full_body", 4)):
+    for framing, _per_angle_count in (("close_up_face", 2), ("medium", 2), ("full_body", 4)):
         for camera_angle in ("front", "left_three_quarter", "right_three_quarter", "left_profile", "right_profile"):
             for class_name, wardrobe_state in (("SFW", "clothed"), ("NSFW", "nude")):
                 iterations = 1 if framing != "full_body" else 2
@@ -92,11 +92,17 @@ def _build_dataset_manifest(identity_id: str, *, package_path: Path, sample_coun
                             "shot_type": framing,
                             "camera_angle": camera_angle,
                             "pose": "editorial_standing",
-                            "pose_family": "editorial_standing" if framing != "full_body" else f"full_body_pose_{full_body_variant + 1}",
+                            "pose_family": "editorial_standing"
+                            if framing != "full_body"
+                            else f"full_body_pose_{full_body_variant + 1}",
                             "expression": "calm confident expression",
                             "wardrobe_state": wardrobe_state,
-                            "camera_distance": "tight_portrait" if framing == "close_up_face" else ("editorial_mid" if framing == "medium" else "wide_full_body"),
-                            "lens_hint": "85mm portrait lens" if framing == "close_up_face" else ("50mm editorial lens" if framing == "medium" else "35mm fashion lens"),
+                            "camera_distance": "tight_portrait"
+                            if framing == "close_up_face"
+                            else ("editorial_mid" if framing == "medium" else "wide_full_body"),
+                            "lens_hint": "85mm portrait lens"
+                            if framing == "close_up_face"
+                            else ("50mm editorial lens" if framing == "medium" else "35mm fashion lens"),
                             "lighting_setup": "soft studio key light with realistic skin falloff",
                             "background_style": "minimal editorial backdrop",
                             "quality_priority": "hero" if framing == "full_body" else "standard",
@@ -130,7 +136,7 @@ def _build_dataset_manifest(identity_id: str, *, package_path: Path, sample_coun
         "composition": {"policy": "balanced_50_50_curated", "SFW": sample_count // 2, "NSFW": sample_count // 2},
         "files": files,
         "workflow_id": "base-image-ipadapter-impact",
-        "workflow_version": "2026-04-02",
+        "workflow_version": "2026-04-08",
         "base_model_id": "flux-schnell-v1",
         "prompt": "test prompt",
         "negative_prompt": "bad anatomy",
@@ -235,7 +241,18 @@ def test_recorder_persists_run_event_and_artifacts(tmp_path: Path) -> None:
     base_artifact = next(item for item in fake.store["s1_artifacts"] if item["role"] == "base_image")
     assert base_artifact["metadata_json"]["registration_status"] == "registered"
     assert base_artifact["metadata_json"]["source_job_id"] == "job-123"
+    content = fake.store["content_catalog"][0]
+    assert content["identity_id"] == "42"
+    assert content["content_mode"] == "image"
+    assert content["generation_status"] == "generated"
+    assert content["qa_status"] == "not_reviewed"
+    assert content["job_id"] == "job-123"
+    assert content["primary_artifact_id"] == str(base_artifact["id"])
+    assert content["provider"] == "modal"
+    assert content["workflow_id"] == "base-image-ipadapter-impact"
+    assert content["seed"] == 11
     assert any(event["event_type"] == "dataset_validation_passed" for event in fake.store["s1_events"])
+    assert any(event["event_type"] == "content_registered" for event in fake.store["s1_events"])
 
 
 def test_recorder_persists_model_asset_for_training_results() -> None:
@@ -444,6 +461,10 @@ def test_recorder_materializes_base_image_from_runtime_artifact_inline_payload(t
     assert identity["latest_base_image_file_id"] == base_artifact["file"]
     assert result_payload["metadata"]["persisted_artifacts"][0]["persistence_target"] == "directus_file"
     assert base_artifact["metadata_json"]["registration_status"] == "registered"
+    content = fake.store["content_catalog"][0]
+    assert content["content_mode"] == "image"
+    assert content["seed"] == 1
+    assert content["primary_artifact_id"] == str(base_artifact["id"])
     tmp_package.unlink(missing_ok=True)
     tmp_package.with_suffix(".json").unlink(missing_ok=True)
 
@@ -462,7 +483,7 @@ def test_recorder_uploads_critical_dataset_artifacts_from_modal_like_handoff(tmp
     fake = HttpLocatorControlPlane()
     identity = fake.create_item("s1_identities", {"avatar_id": "modal-42", "status": "draft"})
     recorder = S1RuntimeDirectusRecorder(client=fake)
-    manifest = _build_dataset_manifest("modal-42", package_path=Path("/app/data/artifacts/modal-42/dataset-package.zip"), sample_count=40)
+    manifest = _build_dataset_manifest("modal-42", package_path=Path("/app/data/artifacts/modal-42/dataset-package.zip"))
     result_payload = {
         "provider": "modal",
         "base_model_id": "flux-schnell-v1",

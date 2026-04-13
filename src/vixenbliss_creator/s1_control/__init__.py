@@ -1,5 +1,6 @@
 from .bootstrap import bootstrap_directus_schema
 from .base_image_registry import BaseImageRegistrationResult, S1BaseImageRegistry
+from .content_store import DirectusContentStore
 from .dataset_validator import DatasetValidationResult, validate_s1_dataset
 from .config import S1ControlSettings
 from .bridge import S1RuntimeDirectusRecorder
@@ -16,6 +17,7 @@ __all__ = [
     "build_identity_from_graph_state",
     "build_identity_from_technical_sheet",
     "default_model_catalog",
+    "DirectusContentStore",
     "DirectusControlPlaneClient",
     "DirectusIdentityStore",
     "DirectusModelRegistryStore",

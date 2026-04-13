@@ -11,11 +11,14 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from vixenbliss_creator.contracts.content import Content, ContentMode, GenerationStatus, QAStatus
 from vixenbliss_creator.contracts.identity import DatasetStatus, PipelineState
 from vixenbliss_creator.contracts.model_registry import ModelFamily, ModelProvider, ModelRegistry, ModelRole
+from vixenbliss_creator.provider import Provider
 
 from .base_image_registry import S1BaseImageRegistry
 from .config import S1ControlSettings
+from .content_store import DirectusContentStore
 from .dataset_validator import validate_s1_dataset
 from .directus import ControlPlanePort, DirectusControlPlaneClient
 from .model_registry_store import DirectusModelRegistryStore
@@ -189,6 +192,16 @@ class S1RuntimeDirectusRecorder:
                 result_payload=result_payload,
                 runtime_metadata=runtime_metadata,
                 uploaded_artifacts=uploaded_artifacts,
+            )
+            self._register_content(
+                identity_id=identity_id,
+                job_id=job_id,
+                run_id=run_id,
+                service_name=service_name,
+                input_payload=input_payload,
+                result_payload=result_payload,
+                uploaded_artifacts=uploaded_artifacts,
+                artifact_rows=artifact_rows,
             )
         training_manifest = result_payload.get("training_manifest")
         if isinstance(training_manifest, dict):
@@ -728,3 +741,174 @@ class S1RuntimeDirectusRecorder:
             return self.client.read_item("s1_identities", identity_id)
         except Exception:
             return None
+
+    def _register_content(
+        self,
+        *,
+        identity_id: str,
+        job_id: str,
+        run_id: str,
+        service_name: str,
+        input_payload: dict[str, Any],
+        result_payload: dict[str, Any],
+        uploaded_artifacts: list[dict[str, Any]],
+        artifact_rows: list[dict[str, Any]],
+    ) -> None:
+        content_candidate = self._build_content_from_runtime(
+            identity_id=identity_id,
+            job_id=job_id,
+            run_id=run_id,
+            service_name=service_name,
+            input_payload=input_payload,
+            result_payload=result_payload,
+            uploaded_artifacts=uploaded_artifacts,
+            artifact_rows=artifact_rows,
+        )
+        if content_candidate is None:
+            return
+        DirectusContentStore(client=self.client).upsert_content(content_candidate)
+        self.client.create_item(
+            "s1_events",
+            {
+                "identity_id": identity_id,
+                "run_id": run_id,
+                "event_type": "content_registered",
+                "message": "Content record registered from catalogable runtime output",
+                "payload_json": {
+                    "content_id": content_candidate.id,
+                    "content_mode": content_candidate.content_mode,
+                    "primary_artifact_id": content_candidate.primary_artifact_id,
+                },
+                "created_by": service_name,
+            },
+        )
+
+    def _build_content_from_runtime(
+        self,
+        *,
+        identity_id: str,
+        job_id: str,
+        run_id: str,
+        service_name: str,
+        input_payload: dict[str, Any],
+        result_payload: dict[str, Any],
+        uploaded_artifacts: list[dict[str, Any]],
+        artifact_rows: list[dict[str, Any]],
+    ) -> Content | None:
+        visual_roles = ("generated_image", "base_image", "thumbnail")
+        selected_row: dict[str, Any] | None = None
+        selected_artifact: dict[str, Any] | None = None
+        # The current runtime stack does not yet emit a dedicated "content final"
+        # record, so we promote the first stable visual artifact we can catalog.
+        for role in visual_roles:
+            for artifact, row in zip(uploaded_artifacts, artifact_rows, strict=False):
+                if _artifact_role(artifact) == role:
+                    selected_artifact = artifact
+                    selected_row = row
+                    break
+            if selected_row is not None:
+                break
+        if selected_row is None or selected_artifact is None:
+            return None
+
+        artifact_metadata = dict(selected_row.get("metadata_json") or {})
+        artifact_metadata.update(selected_artifact.get("metadata_json") or {})
+        runtime_metadata = result_payload.get("metadata", {}) if isinstance(result_payload.get("metadata"), dict) else {}
+        generation_manifest = result_payload.get("generation_manifest") or result_payload.get("dataset_manifest") or {}
+        seed = self._resolve_content_seed(
+            input_payload=input_payload,
+            result_payload=result_payload,
+            runtime_metadata=runtime_metadata,
+            artifact_metadata=artifact_metadata,
+        )
+        provider_value = str(result_payload.get("provider") or runtime_metadata.get("provider") or "modal")
+        try:
+            provider = Provider(provider_value)
+        except ValueError:
+            provider = Provider.MODAL
+        model_version_used = (
+            artifact_metadata.get("workflow_version")
+            or runtime_metadata.get("workflow_version")
+            or result_payload.get("workflow_version")
+            or result_payload.get("training_manifest", {}).get("version")
+        )
+        prompt = runtime_metadata.get("prompt") or generation_manifest.get("prompt") or input_payload.get("prompt")
+        negative_prompt = (
+            runtime_metadata.get("negative_prompt")
+            or generation_manifest.get("negative_prompt")
+            or input_payload.get("negative_prompt")
+        )
+        workflow_id = (
+            artifact_metadata.get("workflow_id")
+            or runtime_metadata.get("workflow_id")
+            or result_payload.get("workflow_id")
+            or input_payload.get("workflow_id")
+        )
+        base_model_id = (
+            artifact_metadata.get("base_model_id")
+            or runtime_metadata.get("base_model_id")
+            or result_payload.get("base_model_id")
+            or input_payload.get("base_model_id")
+        )
+        return Content.model_validate(
+            {
+                "id": str(uuid4()),
+                "identity_id": identity_id,
+                "content_mode": ContentMode.IMAGE,
+                "generation_status": GenerationStatus.GENERATED,
+                "qa_status": QAStatus.NOT_REVIEWED,
+                "job_id": job_id,
+                "primary_artifact_id": str(selected_row["id"]),
+                "related_artifact_ids": [str(row["id"]) for row in artifact_rows],
+                "base_model_id": base_model_id,
+                "model_version_used": model_version_used,
+                "provider": provider,
+                "workflow_id": workflow_id,
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
+                "seed": seed,
+                "metadata_json": {
+                    "artifact_role": _artifact_role(selected_artifact),
+                    "artifact_uri": _artifact_uri(selected_artifact),
+                    "directus_run_id": run_id,
+                    "service_name": service_name,
+                    "persisted_artifact_count": len(artifact_rows),
+                },
+            }
+        )
+
+    @staticmethod
+    def _resolve_content_seed(
+        *,
+        input_payload: dict[str, Any],
+        result_payload: dict[str, Any],
+        runtime_metadata: dict[str, Any],
+        artifact_metadata: dict[str, Any],
+    ) -> int | None:
+        direct_candidates = (
+            artifact_metadata.get("seed"),
+            runtime_metadata.get("seed"),
+            result_payload.get("seed"),
+            input_payload.get("seed"),
+        )
+        for candidate in direct_candidates:
+            if isinstance(candidate, int):
+                return candidate
+            if isinstance(candidate, str) and candidate.isdigit():
+                return int(candidate)
+
+        seed_bundle = (
+            artifact_metadata.get("seed_bundle")
+            or runtime_metadata.get("seed_bundle")
+            or result_payload.get("dataset_manifest", {}).get("seed_bundle")
+            or {}
+        )
+        if not isinstance(seed_bundle, dict):
+            return None
+        for key in ("portrait_seed", "seed", "dataset_seed", "variation_seed"):
+            candidate = seed_bundle.get(key)
+            if isinstance(candidate, int):
+                return candidate
+            if isinstance(candidate, str) and candidate.isdigit():
+                return int(candidate)
+        return None

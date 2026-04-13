@@ -11,13 +11,14 @@
 
 ## Objetivo
 
-Definir los contratos canonicos y persistibles de `Job`, `Artifact` y `ModelRegistry` para trazabilidad operativa del MVP de `VixenBliss Creator`.
+Definir los contratos canonicos y persistibles de `Job`, `Artifact`, `ModelRegistry` y `Content` para trazabilidad operativa del MVP de `VixenBliss Creator`.
 
 Este documento fija:
 
 - tipos y estados minimos de ejecucion asincrona
 - artefactos tecnicos obligatorios por flujo
 - catalogo minimo de modelos base, LoRAs y placeholders de video
+- contrato canonico del output catalogado de negocio
 - relaciones principales hacia `Identity`
 
 ## Version vigente
@@ -25,7 +26,8 @@ Este documento fija:
 - `Job.schema_version`: `1.0.0`
 - `Artifact.schema_version`: `1.0.0`
 - `ModelRegistry.schema_version`: `1.0.0`
-- contratos fuente Python: `src/vixenbliss_creator/contracts/job.py`, `artifact.py`, `model_registry.py`
+- `Content.schema_version`: `1.0.0`
+- contratos fuente Python: `src/vixenbliss_creator/contracts/job.py`, `artifact.py`, `model_registry.py`, `content.py`
 
 ## Contrato `Job`
 
@@ -139,17 +141,195 @@ Este documento fija:
 | `updated_at` | timestamp UTC | si | sincronizacion |
 | `deprecated_at` | timestamp UTC nullable | no | retiro controlado |
 
+## Contrato `Content`
+
+### Rol canonico
+
+- `Content` representa el output catalogado de negocio
+- `Artifact` representa el archivo o evidencia tecnica del output
+- `Job` representa la ejecucion que produjo el output
+- `ModelRegistry` representa la version y compatibilidad del modelo usado
+
+### Modos y estados minimos
+
+- `content_mode`: `image`, `video`
+- `video_generation_mode`: `text_to_video`, `image_to_video`
+- `generation_status`: `pending`, `generated`, `failed`, `archived`
+- `qa_status`: `not_reviewed`, `approved`, `rejected`
+
+### Campos operativos minimos
+
+| Campo | Tipo | Req. | Razon |
+|---|---|---|---|
+| `id` | string estable | si | identificador canonico del contenido |
+| `identity_id` | string estable | si | relacion principal con la identidad |
+| `content_mode` | enum | si | distingue imagen y video |
+| `video_generation_mode` | enum nullable | no | modalidad de video cuando `content_mode=video` |
+| `generation_status` | enum | si | estado del output catalogado |
+| `qa_status` | enum | si | estado de revision del contenido final |
+| `job_id` | string nullable | no | job origen del output |
+| `primary_artifact_id` | string nullable | no | artifact principal catalogado |
+| `related_artifact_ids` | lista | no | artifacts auxiliares o vinculados |
+| `base_model_id` | string nullable | no | modelo base efectivo |
+| `model_version_used` | string nullable | no | version efectiva del workflow o modelo usado |
+| `provider` | enum nullable | no | proveedor de ejecucion persistido como snapshot |
+| `workflow_id` | string nullable | no | workflow aplicado |
+| `prompt` | text nullable | no | prompt final que genero el output |
+| `negative_prompt` | text nullable | no | negative prompt final |
+| `seed` | entero nullable | no | semilla efectiva persistida |
+| `source_content_id` | string nullable | no | contenido fuente cuando el video deriva de un contenido previo |
+| `source_artifact_id` | string nullable | no | artifact fuente cuando el video deriva de una imagen o clip |
+| `duration_seconds` | float nullable | no | duracion para video |
+| `frame_count` | entero nullable | no | cantidad de frames para video |
+| `frame_rate` | float nullable | no | frame rate para video |
+| `metadata_json` | json | si | extensibilidad controlada |
+| `created_at` | timestamp UTC | si | auditoria |
+| `updated_at` | timestamp UTC | si | sincronizacion |
+
+### Reglas de consistencia
+
+- una imagen generada debe poder persistirse con trazabilidad minima completa
+- un video queda preparado contractualmente aunque el runtime productivo aun no exista
+- `video` requiere `video_generation_mode` para que la solicitud no quede ambigua
+- `text_to_video` no debe arrastrar referencias de origen visual
+- `image_to_video` debe persistir al menos `source_content_id` o `source_artifact_id`
+- `image` no define `duration_seconds`, `frame_count` ni `frame_rate`
+- `video` puede dejar esos campos en null mientras este en estados previos, pero si queda en `generated` debe persistirlos completos
+- `qa_status` solo puede aprobar o rechazar contenido ya generado
+
+### Persistencia canonica de trazabilidad
+
+Para `Content`, la fuente de verdad persistida debe ser explicita, no derivada implicitamente de otros registros:
+
+- `prompt`: se persiste en `Content.prompt`
+- `negative_prompt`: se persiste en `Content.negative_prompt`
+- `seed`: se persiste en `Content.seed`
+- `workflow_id`: se persiste en `Content.workflow_id`
+- `provider`: se persiste en `Content.provider`
+- `model_version_used`: se persiste en `Content.model_version_used`
+
+Ese snapshot evita depender de reconstrucciones futuras desde `Job`, `Artifact` o manifests runtime.
+
+### Correspondencia `Content <-> Artifact`
+
+- `Content.primary_artifact_id` apunta al artifact principal del output catalogado
+- `Content.related_artifact_ids` apunta a artifacts auxiliares persistidos en la misma corrida
+- `Artifact` sigue conservando metadata tecnica del archivo, checksum, locator y content type
+- `Content` conserva el significado de negocio del output final y su estado de QA
+
+### Correspondencia `Content` -> `content_catalog` -> `contents`
+
+La persistencia vigente del repo sigue siendo `content_catalog` en `Directus`, pero `DEV-14` agrega una representacion relacional formal en SQL para dashboard/API y trazabilidad cerrable.
+
+Correspondencia canónica:
+
+| Contrato Python | Directus `content_catalog` | SQL `contents` |
+|---|---|---|
+| `id` | `content_id` | `content_id` |
+| `identity_id` | `identity_id` | `identity_id` |
+| `content_mode` | `content_mode` | `content_mode` |
+| `video_generation_mode` | `video_generation_mode` | `video_generation_mode` |
+| `generation_status` | `generation_status` | `generation_status` |
+| `qa_status` | `qa_status` | `qa_status` |
+| `job_id` | `job_id` | `job_id` |
+| `primary_artifact_id` | `primary_artifact_id` | `primary_artifact_id` |
+| `related_artifact_ids` | `related_artifact_ids` | `related_artifact_ids` |
+| `base_model_id` | `base_model_id` | `base_model_id` |
+| `model_version_used` | `model_version_used` | `model_version_used` |
+| `provider` | `provider` | `provider` |
+| `workflow_id` | `workflow_id` | `workflow_id` |
+| `prompt` | `prompt` | `prompt` |
+| `negative_prompt` | `negative_prompt` | `negative_prompt` |
+| `seed` | `seed` | `seed` |
+| `source_content_id` | `source_content_id` | `source_content_id` |
+| `source_artifact_id` | `source_artifact_id` | `source_artifact_id` |
+| `duration_seconds` | `duration_seconds` | `duration_seconds` |
+| `frame_count` | `frame_count` | `frame_count` |
+| `frame_rate` | `frame_rate` | `frame_rate` |
+| `metadata_json` | `metadata_json` | `metadata_json` |
+| `created_at` | `created_at` | `created_at` |
+| `updated_at` | `updated_at` | `updated_at` |
+
+Regla operativa:
+
+- `content_catalog` sigue siendo la fuente viva del runtime actual
+- `contents` formaliza la misma entidad para persistencia relacional versionada
+- `content_mode` es la resolucion canónica del concepto `media_modality` mencionado en el ticket
+
+### Cobertura minima pedida por `DEV-13`
+
+El contrato debe cubrir desde ahora:
+
+- imagen final catalogable de `S2`
+- thumbnail o evidencia visual asociada como artifact auxiliar
+- video futuro sin rediseño del modelo, usando `content_mode=video` y metadata temporal
+
+Esto no significa que las tareas `2.5` a `2.10` ya esten implementadas hoy. Significa que el contrato de `Content` ya puede representar sus outputs esperados sin tener que cambiar estructura base cuando esas tareas se desarrollen.
+
+### Payload minimo de video preparado
+
+Ejemplo `text_to_video` persistible y consultable:
+
+```json
+{
+  "id": "content-video-001",
+  "identity_id": "identity-001",
+  "content_mode": "video",
+  "video_generation_mode": "text_to_video",
+  "generation_status": "pending",
+  "qa_status": "not_reviewed",
+  "base_model_id": "future-video-placeholder-v1",
+  "model_version_used": "future-video-placeholder-v1",
+  "provider": "modal",
+  "workflow_id": "video-image-to-video-prep",
+  "prompt": "editorial slow pan with warm backlight",
+  "negative_prompt": "temporal drift, low quality",
+  "metadata_json": {
+    "video_backend_hint": "wan2.2",
+    "options": {
+      "aspect_ratio": "9:16"
+    }
+  }
+}
+```
+
+Ejemplo `image_to_video` persistible y consultable:
+
+```json
+{
+  "id": "content-video-002",
+  "identity_id": "identity-001",
+  "content_mode": "video",
+  "video_generation_mode": "image_to_video",
+  "generation_status": "pending",
+  "qa_status": "not_reviewed",
+  "base_model_id": "future-video-placeholder-v1",
+  "model_version_used": "future-video-placeholder-v1",
+  "provider": "modal",
+  "workflow_id": "video-image-to-video-prep",
+  "prompt": "subtle motion from the hero still",
+  "negative_prompt": "temporal drift, low quality",
+  "source_artifact_id": "artifact-base-image-001",
+  "metadata_json": {
+    "video_backend_hint": "animatediff",
+    "options": {
+      "motion_strength": 0.45
+    }
+  }
+}
+```
+
 ## Matriz flujo -> registros obligatorios
 
-| Flujo | `Job` | `Artifact` | `ModelRegistry` |
-|---|---|---|---|
-| creacion de identidad | si | no obligatorio | no |
-| generacion S1 de identidad | si (`identity_image_generation`) | si (`base_image`, `workflow_json`) | referencia a modelo base Flux |
-| armado de dataset | si | si (`dataset_manifest`, `dataset_package`) | no |
-| entrenamiento LoRA | si (`lora_training`) | si (`lora_model`) | si (`lora`) |
-| generacion S2 de contenido | si (`content_image_generation`) | si (`generated_image`, `thumbnail`) | referencia a modelo activo |
-| generacion de video | si (`video_generation`) | si (`generated_image`, `thumbnail`) o artefacto futuro de video | placeholder o modelo futuro |
-| QA | si | si (`qa_report`) | no |
+| Flujo | `Job` | `Artifact` | `ModelRegistry` | `Content` |
+|---|---|---|---|---|
+| creacion de identidad | si | no obligatorio | no | no |
+| generacion S1 de identidad | si (`identity_image_generation`) | si (`base_image`, `workflow_json`) | referencia a modelo base Flux | opcional si se cataloga output visual reutilizable |
+| armado de dataset | si | si (`dataset_manifest`, `dataset_package`) | no | no |
+| entrenamiento LoRA | si (`lora_training`) | si (`lora_model`) | si (`lora`) | no |
+| generacion S2 de contenido | si (`content_image_generation`) | si (`generated_image`, `thumbnail`) | referencia a modelo activo | si, como output canonico final |
+| generacion de video | si (`video_generation`) | si (`generated_image`, `thumbnail`) o artefacto futuro de video | placeholder o modelo futuro | si, preparado contractualmente |
+| QA | si | si (`qa_report`) | no | actualiza `qa_status` del contenido |
 
 ## Reglas de consistencia
 
