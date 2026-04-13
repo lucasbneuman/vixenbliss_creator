@@ -5,7 +5,7 @@ Servicio neutral de `S1 image` para `DEV-8`, con orquestacion HTTP en `Coolify` 
 ## Objetivo operativo
 
 - generar imagenes base de identidad con `FLUX.1-schnell`
-- mantener consistencia facial con `IP Adapter Plus`
+- mantener consistencia facial con `IP Adapter Plus` cuando exista una referencia visual/facial
 - corregir degradaciones faciales con `Impact Pack FaceDetailer`
 - exponer un runtime neutral consumible por `runtime_providers`
 - dejar explicitamente a `FastAPI` y `LangGraph` fuera de `Modal`
@@ -73,6 +73,7 @@ Default operativo del lab:
 - usa `run_agentic_brain` por defecto
 - no persiste conversaciones fuera de memoria
 - usa `LAB_REFERENCE_FACE_IMAGE_URL` si se quiere cambiar la URL default de referencia facial
+- la referencia visual es una imagen facial opcional para guiar `IP-Adapter`; si no existe, el handoff a `S1 Image` sigue siendo valido
 - sirve el front desde `apps/web/` para dejar listo el camino a un desacople posterior de front y back
 
 ## Estructura
@@ -134,7 +135,7 @@ Para una prueba local realista de `S1 image`, el stack minimo queda asi:
 - acceso autenticado a `Modal` para despertar el worker GPU
 - `HF_TOKEN` con acceso a `FLUX.1-schnell`
 - `Modal Volume` ya primado con los assets pesados o URLs de bootstrap validas
-- una `reference_face_image_url` accesible desde el worker
+- una `reference_face_image_url` accesible desde el worker solo si se quiere usar `IP-Adapter` con una imagen facial de referencia
 
 Validacion minima recomendada:
 
@@ -211,4 +212,7 @@ El worker de Modal queda alineado al flujo curado `80 -> 40` y al workflow aprob
 
 ## Nota sobre Runpod
 
-`Runpod` queda como referencia histórica de la implementación original y fuente de comparación técnica, pero no como baseline nuevo de `S1 image`.
+Runpod queda deprecado para S1 image.
+
+Se conserva solo como referencia historica de la implementacion original y como contexto de migracion, pero no como provider soportado ni baseline operativo vigente.
+

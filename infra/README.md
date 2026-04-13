@@ -32,6 +32,8 @@ Persistencia temporal mientras la DB no este lista:
 - `S1 image`: manifiesto y paquete de dataset
 - `S1 lora train`: manifiesto de training y metadata del LoRA
 
-Los bundles `infra/runpod-*` quedan como referencia historica mientras se completa la migracion, pero no deben crecer como baseline nuevo.
+Los bundles `infra/runpod-*` quedan deprecados y solo como referencia historica de migracion.
+
+No deben crecer, reactivarse ni usarse como baseline operativo nuevo salvo decision explicita posterior.
 
 En el estado actual del proyecto, la estrategia operativa es `Modal-only`.

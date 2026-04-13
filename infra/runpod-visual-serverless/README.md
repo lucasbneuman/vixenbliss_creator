@@ -1,6 +1,14 @@
 # Runpod Visual Serverless Runtime
 
-## Objetivo
+## Estado
+
+`DEPRECATED`
+
+Este bundle ya no forma parte del baseline operativo del proyecto.
+
+El provider activo actual es `Modal`. Este directorio se conserva solo como referencia historica y no debe usarse como guia de despliegue nueva.
+
+## Objetivo historico
 
 Esta carpeta define el worker serverless para generacion visual con `ComfyUI` encapsulado dentro de `Runpod`.
 

@@ -54,8 +54,8 @@ def _load_runtime_module(tmp_path: Path, monkeypatch) -> object:
     return module
 
 
-def _create_required_flux_assets(module: object) -> None:
-    for path in module._required_runtime_paths().values():
+def _create_required_flux_assets(module: object, job_input: dict | None = None) -> None:
+    for path in module._required_runtime_paths(job_input).values():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"stub")
 
@@ -139,7 +139,7 @@ def test_s1_image_runtime_healthcheck_reports_identity_contract(tmp_path: Path, 
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_healthcheck", lambda timeout_seconds=2: True)
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     client = TestClient(module.app)
 
     response = client.get("/healthcheck")
@@ -505,14 +505,19 @@ def test_s1_image_runtime_resolves_plus_face_to_ip_adapter_bin(tmp_path: Path, m
     module = _load_runtime_module(tmp_path, monkeypatch)
 
     assert module._resolve_ip_adapter_model_name({"ip_adapter": {"model_name": "plus_face"}}) == "ip-adapter.bin"
-    assert module._cache_runtime_paths({"ip_adapter": {"model_name": "plus_face"}})["ip_adapter_flux"].name == "ip-adapter.bin"
+    assert (
+        module._cache_runtime_paths(
+            {"reference_face_image_url": "https://example.com/ref.png", "ip_adapter": {"model_name": "plus_face"}}
+        )["ip_adapter_flux"].name
+        == "ip-adapter.bin"
+    )
 
 
 def test_s1_image_runtime_reports_reference_image_not_found(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError("reference_face_image_url could not be resolved")))
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     client = TestClient(module.app)
 
     submit = client.post("/jobs", json={"input": _base_job_input()})
@@ -526,7 +531,7 @@ def test_s1_image_runtime_reports_reference_image_not_found(tmp_path: Path, monk
 def test_s1_image_runtime_rejects_non_identity_stage(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     client = TestClient(module.app)
 
     submit = client.post("/jobs", json={"input": _base_job_input(runtime_stage="content_image")})
@@ -539,7 +544,7 @@ def test_s1_image_runtime_rejects_non_identity_stage(tmp_path: Path, monkeypatch
 def test_s1_image_runtime_rejects_lora_usage(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     client = TestClient(module.app)
 
     submit = client.post("/jobs", json={"input": _base_job_input(lora_version="amber-v1")})
@@ -559,7 +564,7 @@ def test_s1_image_runtime_reports_missing_artifacts_as_execution_failure(tmp_pat
         "_poll_history",
         lambda _prompt_id: {"outputs": {}},
     )
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     client = TestClient(module.app)
 
     submit = client.post("/jobs", json={"input": _base_job_input()})
@@ -585,7 +590,7 @@ def test_s1_image_runtime_infers_face_confidence_when_detector_output_has_no_met
             }
         },
     )
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
     client = TestClient(module.app)
@@ -616,7 +621,7 @@ def test_s1_image_runtime_base_render_exposes_checkpoint_and_progress(tmp_path: 
             }
         },
     )
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input(mode="face_detail"))
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
     client = TestClient(module.app)
@@ -639,12 +644,72 @@ def test_s1_image_runtime_base_render_exposes_checkpoint_and_progress(tmp_path: 
     assert "base_render_complete" in progress_stages
 
 
+def test_s1_image_runtime_builds_base_render_without_reference_image(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+
+    workflow = module._build_workflow_payload(_base_job_input(reference_face_image_url=None))
+
+    assert workflow["sampler_scheduler"]["inputs"]["model"] == ["model_sampling_flux", 0]
+    assert workflow["basic_guider"]["inputs"]["model"] == ["model_sampling_flux", 0]
+    assert workflow["face_detailer"]["inputs"]["model"] == ["model_sampling_flux", 0]
+
+
+def test_s1_image_runtime_skips_reference_assets_when_job_has_no_reference(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+
+    job_input = _base_job_input(reference_face_image_url=None, ip_adapter={"enabled": False, "model_name": "plus_face", "weight": 0.9})
+    runtime_paths = module._required_runtime_paths(job_input)
+    runtime_checks = module._runtime_checks(job_input)
+
+    _create_required_flux_assets(module, job_input)
+
+    assert "ip_adapter_flux" not in runtime_paths
+    assert runtime_checks["ip_adapter_present"] is True
+    assert runtime_checks["clip_vision_present"] is True
+    module._assert_required_runtime_inputs(job_input)
+
+
+def test_s1_image_runtime_base_render_without_reference_does_not_require_ip_adapter_assets(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "_submit_prompt", lambda *_args, **_kwargs: "prompt-1")
+    monkeypatch.setattr(
+        module,
+        "_poll_history",
+        lambda _prompt_id: {
+            "outputs": {
+                "save_base_image": {
+                    "images": [{"filename": "base.png", "subfolder": "vb", "type": "output"}],
+                },
+                "face_detector": {"metrics": {"bbox_confidence": 0.72}},
+            }
+        },
+    )
+    for key, path in module._required_runtime_paths(_base_job_input(reference_face_image_url=None, ip_adapter={"enabled": False})).items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"stub")
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
+    (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
+    client = TestClient(module.app)
+
+    submit = client.post(
+        "/jobs",
+        json={"input": _base_job_input(reference_face_image_url=None, ip_adapter={"enabled": False, "model_name": "plus_face", "weight": 0.9})},
+    )
+    result = client.get(submit.json()["result_url"])
+    payload = result.json()
+
+    assert payload.get("error_code") is None
+    assert payload["face_detection_confidence"] == 0.72
+    assert payload["ip_adapter_used"] is False
+
+
 def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_present(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
     _install_sequential_dataset_renderer(module)
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
     client = TestClient(module.app)
@@ -763,7 +828,7 @@ def test_s1_image_runtime_uses_selected_workflow_template_from_job_input(tmp_pat
             }
         },
     )
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
     client = TestClient(module.app)
@@ -795,7 +860,7 @@ def test_s1_image_runtime_response_includes_directus_persistence_metadata(tmp_pa
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
     _install_sequential_dataset_renderer(module)
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
 
@@ -826,7 +891,7 @@ def test_s1_image_runtime_exposes_directus_recording_failure(tmp_path: Path, mon
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
     _install_sequential_dataset_renderer(module)
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
 
@@ -865,7 +930,7 @@ def test_s1_image_runtime_skips_dataset_handoff_without_identity_id(tmp_path: Pa
             }
         },
     )
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
     client = TestClient(module.app)
@@ -894,7 +959,7 @@ def test_s1_image_runtime_fails_dataset_builder_when_balance_cannot_be_satisfied
             }
         },
     )
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
     client = TestClient(module.app)
@@ -913,7 +978,7 @@ def test_s1_image_runtime_face_detail_fails_on_incomplete_resume_state(tmp_path:
     module = _load_runtime_module(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "_ensure_comfyui_running", lambda **_kwargs: None)
     monkeypatch.setattr(module, "_download_remote_file", lambda *_args, **_kwargs: "reference.png")
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     client = TestClient(module.app)
 
     submit = client.post(
@@ -958,7 +1023,7 @@ def test_modal_runtime_provider_can_consume_s1_image_runtime_locally(tmp_path: P
             }
         },
     )
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
     client = TestClient(module.app)
@@ -1006,7 +1071,7 @@ def test_s1_image_runtime_websocket_streams_recorded_progress_events(tmp_path: P
             }
         },
     )
-    _create_required_flux_assets(module)
+    _create_required_flux_assets(module, _base_job_input())
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb").mkdir(parents=True, exist_ok=True)
     (Path(module.COMFYUI_OUTPUT_DIR) / "vb" / "base.png").write_bytes(tiny_png_bytes())
     client = TestClient(module.app)
@@ -1091,15 +1156,30 @@ def test_s1_image_runtime_healthcheck_can_delegate_to_modal_worker(tmp_path: Pat
     assert payload["startup_mode"] == "remote_gpu_worker"
 
 
-def test_s1_image_runtime_lab_handoff_requires_reference_face_url(tmp_path: Path, monkeypatch) -> None:
+def test_s1_image_runtime_lab_handoff_allows_missing_reference_face_url(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     client = TestClient(module.app)
     _authenticate_test_client(module, client)
+    captured: dict[str, object] = {}
+
+    def fake_submit_job(payload: dict) -> dict:
+        captured["payload"] = payload
+        return {
+            "job_id": "job-no-ref",
+            "status": "completed",
+            "result_url": "/jobs/job-no-ref/result",
+            "progress_url": "/ws/jobs/job-no-ref",
+            "metadata": {"progress_events": []},
+        }
+
+    monkeypatch.setattr(module, "submit_job", fake_submit_job)
 
     ready_payload = _ready_lab_session(client, "session-4")
     assert ready_payload["can_handoff"] is True
 
     response = client.post("/lab/s1-image", json={"session_id": "session-4"})
 
-    assert response.status_code == 422
-    assert "reference_face_image_url is required" in response.json()["detail"]
+    assert response.status_code == 200
+    assert captured["payload"]["input"]["reference_face_image_url"] is None
+    assert captured["payload"]["input"]["ip_adapter"]["enabled"] is False
+    assert response.json()["panel"]["reference_face"]["source"] == "none"
