@@ -1,10 +1,18 @@
 # Runpod S1 Image Serverless Runtime
 
-## Objetivo
+## Estado
+
+`DEPRECATED`
+
+Este bundle ya no forma parte del camino operativo vigente.
+
+El provider activo actual para `S1 image` es `Modal`. Este directorio se conserva solo como referencia historica y de migracion, y no debe tomarse como contrato productivo actual.
+
+## Objetivo historico
 
 Esta carpeta define el worker serverless de `S1 image` para `DEV-8`: generacion de imagenes base de identidad para dataset sobre `Runpod Serverless`, con consistencia facial via `IP Adapter Plus`, correccion regional via `Impact Pack FaceDetailer` y cache de iteracion para resume.
 
-## Alcance operativo
+## Alcance historico
 
 - produce imagenes base consistentes para dataset
 - usa `runtime_stage=identity_image`
@@ -12,7 +20,7 @@ Esta carpeta define el worker serverless de `S1 image` para `DEV-8`: generacion 
 - ejecuta `base_render` y, si `face_detection_confidence < 0.8`, dispara `face_detail`
 - conserva estado intermedio suficiente para reanudar desde el ultimo nodo exitoso sin recomputar el render inicial completo
 
-`S1 train` no forma parte de este bundle. Queda previsto como runtime separado futuro dentro de `S1`.
+`S1 train` no forma parte de este bundle. Queda previsto como runtime separado futuro dentro de `S1`, pero cualquier continuidad debe evaluarse sobre la topologia activa en `Modal`.
 
 ## Que incluye
 
