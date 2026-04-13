@@ -26,6 +26,18 @@
   let uploadedReference = null;
   let lastPanel = null;
 
+  const fieldLabels = {
+    "identity_core.fictional_age_years": "Edad ficticia",
+    "metadata.category": "Categoria comercial",
+    "metadata.vertical": "Vertical",
+    "metadata.occupation_or_content_basis": "Profesion o base de contenido",
+    "voice_tone": "Tono de voz",
+    "communication_style.speech_style": "Estilo de habla",
+    "visual_profile.eye_color": "Color de ojos",
+    "visual_profile.hair_color": "Color de pelo",
+    "conversation.scene_context": "Contexto o escena principal"
+  };
+
   referenceUrlInput.value = config.defaultReferenceFaceImageUrl || "";
 
   function buildSessionId() {
@@ -69,6 +81,10 @@
     referenceMeta.textContent = currentReferenceLabel();
   }
 
+  function formatFieldLabel(value) {
+    return fieldLabels[value] || value;
+  }
+
   function renderHistory(history) {
     if (!history || !history.length) {
       chatLog.innerHTML = '<div class="empty-state">Todavia no hay mensajes. Empeza explicando el avatar que queres construir o refinando uno ya iniciado.</div>';
@@ -104,7 +120,7 @@
     if (!items || !items.length) {
       return '<div class="meta">Sin datos</div>';
     }
-    return `<div class="pill-list">${items.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}</div>`;
+    return `<div class="pill-list">${items.map((item) => `<span class="pill">${escapeHtml(formatFieldLabel(item))}</span>`).join("")}</div>`;
   }
 
   function renderPanel(panel) {
@@ -122,6 +138,7 @@
     const reference = panel.reference_face || {};
     const conversation = panel.conversation || {};
     const copilot = panel.copilot || {};
+    const missingLabels = traceability.missing_field_labels || readiness.missing_field_labels || traceability.missing_fields || [];
 
     detailBody.innerHTML = `
       <section class="info-card">
@@ -145,6 +162,7 @@
           <div><dt>Workflow</dt><dd>${escapeHtml(copilot.workflow_id || "-")}</dd></div>
         </dl>
         <p class="meta">${escapeHtml(reference.label || "Sin referencia")}</p>
+        ${missingLabels.length ? `<p class="meta">Falta completar: ${escapeHtml(missingLabels.map(formatFieldLabel).join(", "))}</p>` : ""}
       </section>
 
       <section class="info-card">
@@ -154,7 +172,7 @@
         <strong class="meta">Inferidos</strong>
         ${pillList(traceability.inferred_fields || [])}
         <strong class="meta">Faltantes</strong>
-        ${pillList(traceability.missing_fields || [])}
+        ${pillList(missingLabels)}
       </section>
 
       <section class="info-card">

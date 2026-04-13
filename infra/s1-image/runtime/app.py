@@ -1546,6 +1546,18 @@ _LAB_MISSING_FIELD_QUESTIONS: dict[str, str] = {
     "conversation.scene_context": "Contame en qué contexto o escena principal opera, por ejemplo en su estudio.",
 }
 
+_LAB_FIELD_LABELS: dict[str, str] = {
+    "identity_core.fictional_age_years": "Edad ficticia",
+    "metadata.category": "Categoria comercial",
+    "metadata.vertical": "Vertical",
+    "metadata.occupation_or_content_basis": "Profesion o base de contenido",
+    "voice_tone": "Tono de voz",
+    "communication_style.speech_style": "Estilo de habla",
+    "visual_profile.eye_color": "Color de ojos",
+    "visual_profile.hair_color": "Color de pelo",
+    "conversation.scene_context": "Contexto o escena principal",
+}
+
 
 def _lab_turn_source_text(message: str) -> str:
     return normalize_trace_source_text(message) or "turno_operador"
@@ -1715,6 +1727,7 @@ def _lab_missing_manual_fields(session: dict[str, object], state: GraphState | N
 
 def _lab_chat_readiness_report(session: dict[str, object], state: GraphState | None) -> dict[str, object]:
     missing_fields = _lab_missing_manual_fields(session, state)
+    missing_labels = [_LAB_FIELD_LABELS.get(field_path, field_path) for field_path in missing_fields]
     next_question = _LAB_MISSING_FIELD_QUESTIONS.get(missing_fields[0]) if missing_fields else None
     can_handoff = bool(
         state is not None
@@ -1724,6 +1737,7 @@ def _lab_chat_readiness_report(session: dict[str, object], state: GraphState | N
     return {
         "can_handoff": can_handoff,
         "missing_fields": missing_fields,
+        "missing_field_labels": missing_labels,
         "next_question": next_question,
         "autofill_available": bool(missing_fields) and not bool(session.get("autofill_requested")),
     }
@@ -2044,12 +2058,15 @@ def _lab_assistant_message(
     changes = _lab_panel_changes(previous_panel, panel)
     readiness = dict(panel.get("readiness", {}) or {})
     missing_fields = list(readiness.get("missing_fields") or [])
+    missing_labels = list(readiness.get("missing_field_labels") or [])
     next_question = readiness.get("next_question")
     autofill_available = bool(readiness.get("autofill_available"))
     display_name = (panel.get("identity") or {}).get("display_name") or "el avatar"
     prefix = "Armé un draft evolutivo." if previous_panel is None else f"Actualicé el draft de {display_name}."
     details = f" Cambios detectados: {', '.join(changes)}." if changes else ""
     if missing_fields:
+        labels = missing_labels or [_LAB_FIELD_LABELS.get(field_path, field_path) for field_path in missing_fields]
+        missing_fields = labels
         guidance = f" {next_question}" if next_question else ""
         if autofill_available:
             guidance = f"{guidance} También podés decir 'completá el resto automáticamente'.".rstrip()
@@ -2095,6 +2112,7 @@ def _lab_state_summary(
             "manual_fields": state.manually_defined_fields,
             "inferred_fields": state.inferred_fields,
             "missing_fields": list(readiness.get("missing_fields") or []),
+            "missing_field_labels": list(readiness.get("missing_field_labels") or []),
             "field_traces": {field_path: trace.model_dump(mode="json") for field_path, trace in traces.items()},
         },
         "copilot": (
@@ -2116,6 +2134,7 @@ def _lab_state_summary(
         "readiness": {
             "can_handoff": bool(readiness.get("can_handoff")),
             "missing_fields": list(readiness.get("missing_fields") or []),
+            "missing_field_labels": list(readiness.get("missing_field_labels") or []),
             "next_question": readiness.get("next_question"),
             "autofill_available": bool(readiness.get("autofill_available")),
         },

@@ -319,8 +319,9 @@ def test_s1_image_runtime_lab_executes_langgraph_and_returns_panel(tmp_path: Pat
     assert payload["panel"]["identity"]["display_name"] != "Velvet Ember"
     assert payload["panel"]["copilot"]["workflow_id"] == "lora-dataset-ipadapter-batch"
     assert payload["panel"]["traceability"]["missing_fields"] == ["visual_profile.eye_color", "visual_profile.hair_color"]
+    assert payload["panel"]["traceability"]["missing_field_labels"] == ["Color de ojos", "Color de pelo"]
     assert "S1 Image" in payload["chat_entry"]["assistant_message"]
-    assert "visual_profile.eye_color" in payload["chat_entry"]["assistant_message"]
+    assert "Color de ojos" in payload["chat_entry"]["assistant_message"]
     assert payload["panel"]["s1_payload_preview"]["reference_face_image_url"] is None
 
 
@@ -437,6 +438,7 @@ def test_s1_image_runtime_lab_autofill_can_complete_remaining_fields(tmp_path: P
     assert payload["can_handoff"] is True
     assert payload["panel"]["readiness"]["can_handoff"] is True
     assert payload["panel"]["readiness"]["missing_fields"] == []
+    assert payload["panel"]["readiness"]["missing_field_labels"] == []
 
 
 def test_s1_image_runtime_lab_returns_controlled_error_when_langgraph_fails(tmp_path: Path, monkeypatch) -> None:
