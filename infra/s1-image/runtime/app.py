@@ -1534,29 +1534,111 @@ _LAB_REQUIRED_MANUAL_FIELDS: tuple[str, ...] = (
     "visual_profile.hair_color",
 )
 
-_LAB_MISSING_FIELD_QUESTIONS: dict[str, str] = {
-    "identity_core.fictional_age_years": "Decime la edad adulta ficticia que querés usar.",
-    "metadata.occupation_or_content_basis": "Decime la profesión o base de contenido para cerrar la ficha.",
-    "metadata.vertical": "Confirmame la vertical principal del avatar.",
-    "metadata.category": "Confirmame la categoría comercial del avatar.",
-    "voice_tone": "Indicame el tono de voz principal, por ejemplo formal o seductor.",
-    "communication_style.speech_style": "Indicame el estilo de habla, por ejemplo formal, casual o glam.",
-    "visual_profile.eye_color": "Decime el color de ojos que querés usar.",
-    "visual_profile.hair_color": "Decime el color de pelo que querés usar.",
-    "conversation.scene_context": "Contame en qué contexto o escena principal opera, por ejemplo en su estudio.",
+_LAB_MISSING_FIELD_QUESTIONS_BY_LOCALE: dict[str, dict[str, str]] = {
+    "en": {
+        "identity_core.fictional_age_years": "Tell me the fictional adult age you want to use.",
+        "metadata.occupation_or_content_basis": "Tell me the profession or content basis to close the draft.",
+        "metadata.vertical": "Confirm the avatar's main content type.",
+        "metadata.category": "Confirm the avatar's commercial category.",
+        "voice_tone": "Tell me the main voice tone, for example formal or seductive.",
+        "communication_style.speech_style": "Tell me the speech style, for example formal, casual, or glam.",
+        "visual_profile.eye_color": "Tell me the eye color you want to use.",
+        "visual_profile.hair_color": "Tell me the hair color you want to use.",
+        "conversation.scene_context": "Tell me the main setting or scene, for example in her studio.",
+    },
+    "es": {
+        "identity_core.fictional_age_years": "Decime la edad adulta ficticia que queres usar.",
+        "metadata.occupation_or_content_basis": "Decime la profesion o base de contenido para cerrar la ficha.",
+        "metadata.vertical": "Confirmame el tipo de contenido principal del avatar.",
+        "metadata.category": "Confirmame la categoria comercial del avatar.",
+        "voice_tone": "Indicame el tono de voz principal, por ejemplo formal o seductor.",
+        "communication_style.speech_style": "Indicame el estilo de habla, por ejemplo formal, casual o glam.",
+        "visual_profile.eye_color": "Decime el color de ojos que queres usar.",
+        "visual_profile.hair_color": "Decime el color de pelo que queres usar.",
+        "conversation.scene_context": "Contame en que contexto o escena principal opera, por ejemplo en su estudio.",
+    },
 }
 
-_LAB_FIELD_LABELS: dict[str, str] = {
-    "identity_core.fictional_age_years": "Edad ficticia",
-    "metadata.category": "Categoria comercial",
-    "metadata.vertical": "Vertical",
-    "metadata.occupation_or_content_basis": "Profesion o base de contenido",
-    "voice_tone": "Tono de voz",
-    "communication_style.speech_style": "Estilo de habla",
-    "visual_profile.eye_color": "Color de ojos",
-    "visual_profile.hair_color": "Color de pelo",
-    "conversation.scene_context": "Contexto o escena principal",
+_LAB_FIELD_LABELS_BY_LOCALE: dict[str, dict[str, str]] = {
+    "en": {
+        "identity_core.fictional_age_years": "Fictional age",
+        "metadata.category": "Commercial category",
+        "metadata.vertical": "Content type",
+        "metadata.occupation_or_content_basis": "Profession or content basis",
+        "voice_tone": "Voice tone",
+        "communication_style.speech_style": "Speech style",
+        "visual_profile.eye_color": "Eye color",
+        "visual_profile.hair_color": "Hair color",
+        "conversation.scene_context": "Main setting or scene",
+    },
+    "es": {
+        "identity_core.fictional_age_years": "Edad ficticia",
+        "metadata.category": "Categoria comercial",
+        "metadata.vertical": "Tipo de contenido",
+        "metadata.occupation_or_content_basis": "Profesion o base de contenido",
+        "voice_tone": "Tono de voz",
+        "communication_style.speech_style": "Estilo de habla",
+        "visual_profile.eye_color": "Color de ojos",
+        "visual_profile.hair_color": "Color de pelo",
+        "conversation.scene_context": "Contexto o escena principal",
+    },
 }
+
+_LAB_UI_TEXT_BY_LOCALE: dict[str, dict[str, str]] = {
+    "en": {
+        "no_reference": "No reference",
+        "operator_context_title": "Accumulated operator context for VixenBliss Creator:",
+        "turn_label": "Turn",
+        "failed_turn": "I could not update the draft with this turn. Check the error and we can try another adjustment.",
+        "draft_created": "I built an evolving draft.",
+        "draft_updated": "I updated the draft for {display_name}.",
+        "detected_changes": " Detected changes: {changes}.",
+        "not_ready": " It is not ready for S1 Image yet. Still missing: {missing}.",
+        "ready": " The draft is now ready to send to S1 Image whenever you want.",
+        "autofill_hint": " You can also say 'complete the rest automatically'.",
+        "failed_conversational_turn": "I could not update the conversational draft on this turn.",
+        "no_previous_run": "There is no previous LangGraph run for this session.",
+        "graph_not_ready": "The latest GraphState is not ready for handoff.",
+        "handoff_not_ready": "The conversational draft is not ready for handoff yet. Still missing: {missing}.",
+        "avatar_fallback": "the avatar",
+    },
+    "es": {
+        "no_reference": "Sin referencia",
+        "operator_context_title": "Contexto acumulado del operador para VixenBliss Creator:",
+        "turn_label": "Turno",
+        "failed_turn": "No pude actualizar el draft con este turno. Revisa el error y probamos otro ajuste.",
+        "draft_created": "Arme un draft evolutivo.",
+        "draft_updated": "Actualice el draft de {display_name}.",
+        "detected_changes": " Cambios detectados: {changes}.",
+        "not_ready": " Todavia no esta lista para S1 Image. Faltan: {missing}.",
+        "ready": " La ficha ya quedo lista para enviar a S1 Image cuando quieras.",
+        "autofill_hint": " Tambien podes decir 'completa el resto automaticamente'.",
+        "failed_conversational_turn": "No pude actualizar el draft conversacional en este turno.",
+        "no_previous_run": "No hay una ejecucion previa de LangGraph para esta sesion.",
+        "graph_not_ready": "El ultimo GraphState no quedo listo para handoff.",
+        "handoff_not_ready": "La ficha conversacional todavia no esta lista para handoff. Faltan: {missing}.",
+        "avatar_fallback": "el avatar",
+    },
+}
+
+
+def _lab_normalize_locale(value: object) -> str:
+    normalized = str(value or "en").strip().lower()
+    if normalized.startswith("es"):
+        return "es"
+    return "en"
+
+
+def _lab_text(locale: str, key: str, **kwargs: object) -> str:
+    language = _lab_normalize_locale(locale)
+    template = _LAB_UI_TEXT_BY_LOCALE.get(language, _LAB_UI_TEXT_BY_LOCALE["en"]).get(key, key)
+    return template.format(**kwargs) if kwargs else template
+
+
+def _lab_field_label(field_path: str, *, locale: str) -> str:
+    language = _lab_normalize_locale(locale)
+    labels = _LAB_FIELD_LABELS_BY_LOCALE.get(language, _LAB_FIELD_LABELS_BY_LOCALE["en"])
+    return labels.get(field_path, field_path)
 
 
 def _lab_turn_source_text(message: str) -> str:
@@ -1725,10 +1807,15 @@ def _lab_missing_manual_fields(session: dict[str, object], state: GraphState | N
     return [field_path for field_path in _LAB_REQUIRED_MANUAL_FIELDS if field_path not in manual_overrides]
 
 
-def _lab_chat_readiness_report(session: dict[str, object], state: GraphState | None) -> dict[str, object]:
+def _lab_chat_readiness_report(session: dict[str, object], state: GraphState | None, *, locale: str | None = None) -> dict[str, object]:
+    language = _lab_normalize_locale(locale or session.get("locale"))
     missing_fields = _lab_missing_manual_fields(session, state)
-    missing_labels = [_LAB_FIELD_LABELS.get(field_path, field_path) for field_path in missing_fields]
-    next_question = _LAB_MISSING_FIELD_QUESTIONS.get(missing_fields[0]) if missing_fields else None
+    missing_labels = [_lab_field_label(field_path, locale=language) for field_path in missing_fields]
+    next_question = (
+        _LAB_MISSING_FIELD_QUESTIONS_BY_LOCALE.get(language, _LAB_MISSING_FIELD_QUESTIONS_BY_LOCALE["en"]).get(missing_fields[0])
+        if missing_fields
+        else None
+    )
     can_handoff = bool(
         state is not None
         and state.completion_status == CompletionStatus.SUCCEEDED
@@ -1868,7 +1955,13 @@ def _lab_store_draft_snapshot(session: dict[str, object], state: GraphState) -> 
     }
 
 
-def _lab_reference_summary(session: dict[str, object], *, fallback_reference_url: str | None = None) -> dict[str, object]:
+def _lab_reference_summary(
+    session: dict[str, object],
+    *,
+    fallback_reference_url: str | None = None,
+    locale: str | None = None,
+) -> dict[str, object]:
+    language = _lab_normalize_locale(locale or session.get("locale"))
     uploaded = session.get("uploaded_reference")
     if isinstance(uploaded, dict) and uploaded.get("url"):
         return {
@@ -1891,21 +1984,23 @@ def _lab_reference_summary(session: dict[str, object], *, fallback_reference_url
         }
     return {
         "source": "none",
-        "label": "Sin referencia",
+        "label": _lab_text(language, "no_reference"),
         "effective_url": None,
         "filename": None,
         "content_type": None,
     }
 
 
-def _lab_operator_brief(session: dict[str, object]) -> str:
+def _lab_operator_brief(session: dict[str, object], *, locale: str | None = None) -> str:
+    language = _lab_normalize_locale(locale or session.get("locale"))
     messages = [str(item).strip() for item in list(session.get("operator_messages", [])) if str(item).strip()]
     if not messages:
         return ""
     if len(messages) == 1:
         return messages[0]
-    lines = ["Contexto acumulado del operador para VixenBliss Creator:"]
-    lines.extend(f"- Turno {index}: {message}" for index, message in enumerate(messages, start=1))
+    lines = [_lab_text(language, "operator_context_title")]
+    turn_label = _lab_text(language, "turn_label")
+    lines.extend(f"- {turn_label} {index}: {message}" for index, message in enumerate(messages, start=1))
     return "\n".join(lines)
 
 
@@ -2025,24 +2120,43 @@ def _lab_s1_job_input(state: GraphState, *, reference_face_image_url: str | None
     }
 
 
-def _lab_panel_changes(previous_panel: dict[str, object] | None, current_panel: dict[str, object]) -> list[str]:
+def _lab_panel_changes(
+    previous_panel: dict[str, object] | None,
+    current_panel: dict[str, object],
+    *,
+    locale: str | None = None,
+) -> list[str]:
     if not previous_panel:
         return []
+    language = _lab_normalize_locale(locale)
+    change_labels = {
+        "en": {
+            "display_name": "name",
+            "vertical": "content type",
+            "category": "category",
+            "style": "style",
+            "archetype": "archetype",
+            "voice_tone": "voice tone",
+            "speech_style": "speech",
+        },
+        "es": {
+            "display_name": "nombre",
+            "vertical": "tipo de contenido",
+            "category": "categoria",
+            "style": "estilo",
+            "archetype": "arquetipo",
+            "voice_tone": "tono",
+            "speech_style": "habla",
+        },
+    }
     changes: list[str] = []
     current_identity = current_panel.get("identity", {})
     previous_identity = previous_panel.get("identity", {})
-    for key, label in (
-        ("display_name", "nombre"),
-        ("vertical", "vertical"),
-        ("category", "categoria"),
-        ("style", "style"),
-        ("archetype", "arquetipo"),
-        ("voice_tone", "tono"),
-        ("speech_style", "speech"),
-    ):
+    for key in ("display_name", "vertical", "category", "style", "archetype", "voice_tone", "speech_style"):
         current_value = current_identity.get(key) if isinstance(current_identity, dict) else None
         previous_value = previous_identity.get(key) if isinstance(previous_identity, dict) else None
         if current_value and current_value != previous_value:
+            label = change_labels.get(language, change_labels["en"]).get(key, key)
             changes.append(f"{label}: {current_value}")
     return changes[:4]
 
@@ -2052,26 +2166,31 @@ def _lab_assistant_message(
     panel: dict[str, object],
     *,
     previous_panel: dict[str, object] | None = None,
+    locale: str | None = None,
 ) -> str:
+    language = _lab_normalize_locale(locale)
     if state.completion_status == CompletionStatus.FAILED:
-        return "No pude actualizar el draft con este turno. Revisa el error y probamos otro ajuste."
-    changes = _lab_panel_changes(previous_panel, panel)
+        return _lab_text(language, "failed_turn")
+    changes = _lab_panel_changes(previous_panel, panel, locale=language)
     readiness = dict(panel.get("readiness", {}) or {})
     missing_fields = list(readiness.get("missing_fields") or [])
     missing_labels = list(readiness.get("missing_field_labels") or [])
     next_question = readiness.get("next_question")
     autofill_available = bool(readiness.get("autofill_available"))
-    display_name = (panel.get("identity") or {}).get("display_name") or "el avatar"
-    prefix = "Armé un draft evolutivo." if previous_panel is None else f"Actualicé el draft de {display_name}."
-    details = f" Cambios detectados: {', '.join(changes)}." if changes else ""
+    display_name = (panel.get("identity") or {}).get("display_name") or _lab_text(language, "avatar_fallback")
+    prefix = _lab_text(language, "draft_created") if previous_panel is None else _lab_text(
+        language,
+        "draft_updated",
+        display_name=display_name,
+    )
+    details = _lab_text(language, "detected_changes", changes=", ".join(changes)) if changes else ""
     if missing_fields:
-        labels = missing_labels or [_LAB_FIELD_LABELS.get(field_path, field_path) for field_path in missing_fields]
-        missing_fields = labels
+        labels = missing_labels or [_lab_field_label(field_path, locale=language) for field_path in missing_fields]
         guidance = f" {next_question}" if next_question else ""
         if autofill_available:
-            guidance = f"{guidance} También podés decir 'completá el resto automáticamente'.".rstrip()
-        return f"{prefix}{details} Todavía no está lista para S1 Image. Faltan: {', '.join(missing_fields[:4])}.{guidance}"
-    return f"{prefix}{details} La ficha ya quedó lista para enviar a S1 Image cuando quieras."
+            guidance = f"{guidance}{_lab_text(language, 'autofill_hint')}".rstrip()
+        return f"{prefix}{details}{_lab_text(language, 'not_ready', missing=', '.join(labels[:4]))}{guidance}"
+    return f"{prefix}{details}{_lab_text(language, 'ready')}"
 
 
 def _lab_state_summary(
@@ -2152,12 +2271,14 @@ def _lab_response_from_state(
     *,
     session: dict[str, object],
     previous_panel: dict[str, object] | None = None,
+    locale: str | None = None,
 ) -> dict[str, object]:
-    readiness = _lab_chat_readiness_report(session, state)
-    reference_summary = _lab_reference_summary(session)
+    language = _lab_normalize_locale(locale or session.get("locale"))
+    readiness = _lab_chat_readiness_report(session, state, locale=language)
+    reference_summary = _lab_reference_summary(session, locale=language)
     conversation_summary = {
         "turn_count": len(list(session.get("operator_messages", []))),
-        "operator_brief": _lab_operator_brief(session),
+        "operator_brief": _lab_operator_brief(session, locale=language),
         "autofill_requested": bool(session.get("autofill_requested")),
     }
     panel = _lab_state_summary(
@@ -2170,7 +2291,7 @@ def _lab_response_from_state(
         "session_id": session_id,
         "chat_entry": {
             "user_message": message,
-            "assistant_message": _lab_assistant_message(state, panel, previous_panel=previous_panel),
+            "assistant_message": _lab_assistant_message(state, panel, previous_panel=previous_panel, locale=language),
             "status": _enum_or_value(state.completion_status),
             "error": state.terminal_error_message,
         },
@@ -2180,12 +2301,20 @@ def _lab_response_from_state(
     }
 
 
-def _lab_error_response(session_id: str, message_text: str, message: str, *, session: dict[str, object]) -> dict[str, object]:
+def _lab_error_response(
+    session_id: str,
+    message_text: str,
+    message: str,
+    *,
+    session: dict[str, object],
+    locale: str | None = None,
+) -> dict[str, object]:
+    language = _lab_normalize_locale(locale or session.get("locale"))
     return {
         "session_id": session_id,
         "chat_entry": {
             "user_message": message_text,
-            "assistant_message": "No pude actualizar el draft conversacional en este turno.",
+            "assistant_message": _lab_text(language, "failed_conversational_turn"),
             "status": CompletionStatus.FAILED.value,
             "error": message,
         },
@@ -2198,10 +2327,10 @@ def _lab_error_response(session_id: str, message_text: str, message: str, *, ses
             "copilot": {},
             "identity_context": {},
             "readiness": {"can_handoff": False, "missing_fields": []},
-            "reference_face": _lab_reference_summary(session),
+            "reference_face": _lab_reference_summary(session, locale=language),
             "conversation": {
                 "turn_count": len(list(session.get("operator_messages", []))),
-                "operator_brief": _lab_operator_brief(session),
+                "operator_brief": _lab_operator_brief(session, locale=language),
             },
             "s1_payload_preview": {},
             "graph_state_json": {},
@@ -2211,8 +2340,16 @@ def _lab_error_response(session_id: str, message_text: str, message: str, *, ses
     }
 
 
-def _lab_run_chat_turn(session_id: str, message: str, *, reference_face_image_url: str | None = None) -> dict[str, object]:
+def _lab_run_chat_turn(
+    session_id: str,
+    message: str,
+    *,
+    reference_face_image_url: str | None = None,
+    locale: str | None = None,
+) -> dict[str, object]:
     session = _lab_session_store(session_id)
+    language = _lab_normalize_locale(locale or session.get("locale"))
+    session["locale"] = language
     session.setdefault("history", [])
     session.setdefault("operator_messages", [])
     session.setdefault("manual_overrides", {})
@@ -2230,14 +2367,21 @@ def _lab_run_chat_turn(session_id: str, message: str, *, reference_face_image_ur
     try:
         state = _lab_overlay_state_with_session(run_agentic_brain(composed_idea), session)
     except Exception as exc:
-        response = _lab_error_response(session_id, message, str(exc), session=session)
+        response = _lab_error_response(session_id, message, str(exc), session=session, locale=language)
         history = list(session.get("history", []))
         history.append(response["chat_entry"])
         session["history"] = history[-20:]
         response["history"] = list(session["history"])
         session["last_response"] = response
         return response
-    response = _lab_response_from_state(session_id, message, state, session=session, previous_panel=previous_panel)
+    response = _lab_response_from_state(
+        session_id,
+        message,
+        state,
+        session=session,
+        previous_panel=previous_panel,
+        locale=language,
+    )
     _lab_store_draft_snapshot(session, state)
     session["last_graph_state"] = state.model_dump(mode="json")
     session["last_readiness"] = dict(response["panel"].get("readiness", {}))
@@ -2397,6 +2541,7 @@ def lab_reference_file(reference_id: str, request: Request) -> FileResponse:
 def upload_lab_reference(payload: dict, request: Request) -> dict[str, object]:
     _require_auth(request)
     session_id = str(payload.get("session_id", "")).strip()
+    locale = _lab_normalize_locale(payload.get("locale"))
     file_name = str(payload.get("filename", "")).strip()
     content_type = str(payload.get("content_type", "")).strip() or "application/octet-stream"
     inline_data = str(payload.get("data_base64", "")).strip()
@@ -2420,8 +2565,9 @@ def upload_lab_reference(payload: dict, request: Request) -> dict[str, object]:
     }
     _LAB_REFERENCE_UPLOADS[reference_id] = reference_payload
     session = _lab_session_store(session_id)
+    session["locale"] = locale
     session["uploaded_reference"] = reference_payload
-    return {"reference": _lab_reference_summary(session)}
+    return {"reference": _lab_reference_summary(session, locale=locale)}
 
 
 @app.post("/lab/chat")
@@ -2429,6 +2575,7 @@ def run_langgraph_chat(payload: dict, request: Request) -> dict:
     _require_auth(request)
     message = str(payload.get("message", "")).strip()
     session_id = str(payload.get("session_id", "")).strip() or f"lab-{uuid.uuid4().hex}"
+    locale = _lab_normalize_locale(payload.get("locale"))
     if not message:
         raise HTTPException(status_code=422, detail="message is required")
     reference_face_image_url = str(payload.get("reference_face_image_url", "")).strip()
@@ -2436,6 +2583,7 @@ def run_langgraph_chat(payload: dict, request: Request) -> dict:
         session_id,
         message,
         reference_face_image_url=reference_face_image_url if reference_face_image_url else None,
+        locale=locale,
     )
 
 
@@ -2444,6 +2592,7 @@ def run_langgraph_lab(payload: dict, request: Request) -> dict:
     _require_auth(request)
     idea = str(payload.get("idea", "")).strip()
     session_id = str(payload.get("session_id", "")).strip() or f"lab-{uuid.uuid4().hex}"
+    locale = _lab_normalize_locale(payload.get("locale"))
     if not idea:
         raise HTTPException(status_code=422, detail="idea is required")
     reference_face_image_url = str(payload.get("reference_face_image_url", "")).strip()
@@ -2451,6 +2600,7 @@ def run_langgraph_lab(payload: dict, request: Request) -> dict:
         session_id,
         idea,
         reference_face_image_url=reference_face_image_url if reference_face_image_url else None,
+        locale=locale,
     )
 
 
@@ -2458,23 +2608,25 @@ def run_langgraph_lab(payload: dict, request: Request) -> dict:
 def handoff_langgraph_lab_to_s1(payload: dict, request: Request) -> dict:
     _require_auth(request)
     session_id = str(payload.get("session_id", "")).strip()
+    locale = _lab_normalize_locale(payload.get("locale"))
     if not session_id:
         raise HTTPException(status_code=422, detail="session_id is required")
     session = _LAB_SESSIONS.get(session_id)
     if not session or "last_graph_state" not in session:
-        raise HTTPException(status_code=409, detail="No hay una ejecución previa de LangGraph para esta sesión.")
+        raise HTTPException(status_code=409, detail=_lab_text(locale, "no_previous_run"))
     state = GraphState.model_validate(session["last_graph_state"])
-    readiness = _lab_chat_readiness_report(session, state)
+    session["locale"] = locale
+    readiness = _lab_chat_readiness_report(session, state, locale=locale)
     if state.completion_status != CompletionStatus.SUCCEEDED:
-        raise HTTPException(status_code=409, detail="El último GraphState no quedó listo para handoff.")
+        raise HTTPException(status_code=409, detail=_lab_text(locale, "graph_not_ready"))
     if not readiness["can_handoff"]:
-        missing = ", ".join(readiness["missing_fields"])
+        missing = ", ".join(readiness["missing_field_labels"] or readiness["missing_fields"])
         raise HTTPException(
             status_code=409,
-            detail=f"La ficha conversacional todavÃ­a no estÃ¡ lista para handoff. Faltan: {missing}",
+            detail=_lab_text(locale, "handoff_not_ready", missing=missing),
         )
     reference_face_image_url = str(payload.get("reference_face_image_url", "")).strip() or None
-    reference_summary = _lab_reference_summary(session, fallback_reference_url=reference_face_image_url)
+    reference_summary = _lab_reference_summary(session, fallback_reference_url=reference_face_image_url, locale=locale)
     job_input = _lab_s1_job_input(state, reference_face_image_url=reference_summary.get("effective_url"))
     job_response = submit_job({"input": job_input})
     panel = _lab_state_summary(
@@ -2482,7 +2634,7 @@ def handoff_langgraph_lab_to_s1(payload: dict, request: Request) -> dict:
         reference_summary=reference_summary,
         conversation_summary={
             "turn_count": len(list(session.get("operator_messages", []))),
-            "operator_brief": _lab_operator_brief(session),
+            "operator_brief": _lab_operator_brief(session, locale=locale),
             "autofill_requested": bool(session.get("autofill_requested")),
         },
         readiness_report=readiness,

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,9 +10,9 @@
   <div class="page-shell">
     <header class="page-header">
       <div>
-        <p class="eyebrow">VixenBliss Creator</p>
-        <h1>VixenBliss Creator</h1>
-        <p class="subtitle">Chat conversacional para definir identidad, revisar el draft y enviarlo a S1 Image cuando este listo.</p>
+        <p class="eyebrow" id="brandEyebrow">VixenBliss Creator</p>
+        <h1 id="pageTitle">VixenBliss Creator</h1>
+        <p class="subtitle" id="pageSubtitle">Conversational chat to define an identity, review the draft, and send it to S1 Image when it is ready.</p>
       </div>
       <div class="session-box">
         <div class="meta" id="sessionMeta"></div>
@@ -23,19 +23,19 @@
     <main>
       <section class="auth-shell" id="loginView" hidden>
         <div class="auth-card">
-          <p class="eyebrow">Login</p>
-          <h2>Ingreso interno</h2>
-          <p class="meta">Acceso para usuarios internos administrados desde Directus.</p>
+          <p class="eyebrow" id="loginEyebrow">Login</p>
+          <h2 id="loginTitle">Internal access</h2>
+          <p class="meta" id="loginSubtitle">Access for internal users managed from Directus.</p>
           <form class="auth-form" id="loginForm">
             <label class="field">
-              <span>Email</span>
+              <span id="loginEmailLabel">Email</span>
               <input id="loginEmail" type="email" autocomplete="username" required>
             </label>
             <label class="field">
-              <span>Password</span>
+              <span id="loginPasswordLabel">Password</span>
               <input id="loginPassword" type="password" autocomplete="current-password" required>
             </label>
-            <button id="loginButton" type="submit">Ingresar</button>
+            <button id="loginButton" type="submit">Sign in</button>
           </form>
           <p class="meta" id="loginFeedback"></p>
         </div>
@@ -45,38 +45,38 @@
         <section class="workspace-panel chat-panel">
           <div class="panel-head">
             <div>
-              <p class="eyebrow">Chat</p>
+              <p class="eyebrow" id="chatEyebrow">Chat</p>
               <h2>LangGraph Chat</h2>
             </div>
-            <button id="logoutButton" class="ghost" type="button">Salir</button>
+            <button id="logoutButton" class="ghost" type="button">Sign out</button>
           </div>
 
           <div class="chat-log" id="chatLog">
-            <div class="empty-state">Todavia no hay mensajes. Empeza explicando el avatar que queres construir o refinando uno ya iniciado.</div>
+            <div class="empty-state" id="chatEmptyState">There are no messages yet. Start by describing the avatar you want to build or refining one already in progress.</div>
           </div>
 
           <div class="composer">
             <label class="field">
-              <span>Mensaje</span>
-              <textarea id="messageInput" placeholder="Ejemplo: Quiero una identidad premium, segura, lifestyle, con menos sarcasmo y un perfil visual elegante."></textarea>
+              <span id="messageLabel">Message</span>
+              <textarea id="messageInput" placeholder="Example: I want a premium, confident lifestyle identity with less sarcasm and an elegant visual profile."></textarea>
             </label>
 
             <div class="reference-grid">
               <label class="field">
-                <span>URL de referencia facial opcional</span>
+                <span id="referenceUrlLabel">Optional face reference URL</span>
                 <input id="referenceUrlInput" type="url" placeholder="https://...">
               </label>
               <label class="field">
-                <span>Archivo de referencia opcional</span>
+                <span id="referenceFileLabel">Optional reference file</span>
                 <input id="referenceFileInput" type="file" accept="image/*">
               </label>
             </div>
 
-            <p class="meta" id="referenceMeta">Referencia activa: sin referencia.</p>
+            <p class="meta" id="referenceMeta">Active reference: none.</p>
 
             <div class="action-row">
-              <button id="sendButton" type="button">Enviar mensaje</button>
-              <button id="handoffButton" class="secondary" type="button" disabled>Enviar a S1 Image</button>
+              <button id="sendButton" type="button">Send message</button>
+              <button id="handoffButton" class="secondary" type="button" disabled>Send to S1 Image</button>
             </div>
 
             <p class="meta" id="feedback"></p>
@@ -86,13 +86,13 @@
         <section class="workspace-panel detail-panel">
           <div class="panel-head">
             <div>
-              <p class="eyebrow">Inspeccion</p>
-              <h2>Draft actual</h2>
+              <p class="eyebrow" id="inspectionEyebrow">Inspection</p>
+              <h2 id="draftTitle">Current draft</h2>
             </div>
-            <p class="meta">Estado, trazabilidad y payload tecnico.</p>
+            <p class="meta" id="draftSubtitle">Status, traceability, and technical payload.</p>
           </div>
           <div class="detail-body" id="detailBody">
-            <div class="empty-state">El panel se llena a medida que avanza la conversacion.</div>
+            <div class="empty-state" id="detailEmptyState">This panel fills in as the conversation progresses.</div>
           </div>
         </section>
       </section>

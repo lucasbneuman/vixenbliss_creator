@@ -26,17 +26,188 @@
   let uploadedReference = null;
   let lastPanel = null;
 
-  const fieldLabels = {
-    "identity_core.fictional_age_years": "Edad ficticia",
-    "metadata.category": "Categoria comercial",
-    "metadata.vertical": "Vertical",
-    "metadata.occupation_or_content_basis": "Profesion o base de contenido",
-    "voice_tone": "Tono de voz",
-    "communication_style.speech_style": "Estilo de habla",
-    "visual_profile.eye_color": "Color de ojos",
-    "visual_profile.hair_color": "Color de pelo",
-    "conversation.scene_context": "Contexto o escena principal"
+  const locale = (navigator.language || navigator.userLanguage || "en").toLowerCase().startsWith("es") ? "es" : "en";
+  const translations = {
+    en: {
+      pageSubtitle: "Conversational chat to define an identity, review the draft, and send it to S1 Image when it is ready.",
+      loginTitle: "Internal access",
+      loginSubtitle: "Access for internal users managed from Directus.",
+      loginButton: "Sign in",
+      logoutButton: "Sign out",
+      messageLabel: "Message",
+      messagePlaceholder: "Example: I want a premium, confident lifestyle identity with less sarcasm and an elegant visual profile.",
+      referenceUrlLabel: "Optional face reference URL",
+      referenceFileLabel: "Optional reference file",
+      sendButton: "Send message",
+      handoffButton: "Send to S1 Image",
+      inspectionEyebrow: "Inspection",
+      draftTitle: "Current draft",
+      draftSubtitle: "Status, traceability, and technical payload.",
+      detailEmptyState: "This panel fills in as the conversation progresses.",
+      operator: "Operator",
+      assistant: "Assistant",
+      errorLabel: "Error",
+      noReference: "No reference",
+      name: "Name",
+      statusLabels: {
+        pending: "pending",
+        succeeded: "succeeded",
+        failed: "failed",
+        ok: "ok",
+        error: "error"
+      },
+      session: "Session",
+      user: "User",
+      activeReferenceFile: "Active reference: file",
+      activeReferenceUrl: "Active reference: URL",
+      activeReferenceNone: "Active reference: none.",
+      emptyChat: "There are no messages yet. Start by describing the avatar you want to build or refining one already in progress.",
+      noData: "No data",
+      identity: "Identity",
+      contentType: "Content type",
+      category: "Commercial category",
+      style: "Style",
+      archetype: "Archetype",
+      tone: "Voice tone",
+      readiness: "Draft readiness",
+      readyForS1: "Ready for S1",
+      yes: "Yes",
+      no: "No",
+      reference: "Reference",
+      turns: "Turns",
+      workflow: "Workflow",
+      missingComplete: "Still missing",
+      traceability: "Traceability",
+      manual: "Manual",
+      inferred: "Inferred",
+      missing: "Missing",
+      visualProfile: "Visual profile",
+      hair: "Hair",
+      eyes: "Eyes",
+      bodyType: "Body type",
+      conversationContext: "Conversation context",
+      noBrief: "No brief accumulated yet.",
+      technicalPayload: "Technical payload",
+      s1Preview: "S1 handoff preview",
+      graphState: "Technical state",
+      validatingCredentials: "Validating credentials...",
+      loginFailed: "Could not sign in",
+      messageRequired: "Write a message before continuing.",
+      updatingDraft: "Updating conversational draft...",
+      draftReady: "Draft ready for S1 Image.",
+      draftUpdated: "Draft updated. Keep refining it if needed.",
+      draftUpdateFailed: "Could not update the draft",
+      uploadingReference: "Uploading reference...",
+      referenceAvailable: "Reference uploaded and available for handoff.",
+      referenceUploadFailed: "Could not upload the reference",
+      draftNotReady: "The draft is not ready to send to S1 Image yet.",
+      sendingToS1: "Sending to S1 Image...",
+      handoffFailed: "Could not send to S1 Image",
+      jobCreated: "Job created",
+      readFileFailed: "Could not read the file",
+      fieldLabels: {
+        "identity_core.fictional_age_years": "Fictional age",
+        "metadata.category": "Commercial category",
+        "metadata.vertical": "Content type",
+        "metadata.occupation_or_content_basis": "Profession or content basis",
+        "voice_tone": "Voice tone",
+        "communication_style.speech_style": "Speech style",
+        "visual_profile.eye_color": "Eye color",
+        "visual_profile.hair_color": "Hair color",
+        "conversation.scene_context": "Main setting or scene"
+      }
+    },
+    es: {
+      pageSubtitle: "Chat conversacional para definir identidad, revisar el draft y enviarlo a S1 Image cuando este listo.",
+      loginTitle: "Ingreso interno",
+      loginSubtitle: "Acceso para usuarios internos administrados desde Directus.",
+      loginButton: "Ingresar",
+      logoutButton: "Salir",
+      messageLabel: "Mensaje",
+      messagePlaceholder: "Ejemplo: Quiero una identidad premium, segura, lifestyle, con menos sarcasmo y un perfil visual elegante.",
+      referenceUrlLabel: "URL de referencia facial opcional",
+      referenceFileLabel: "Archivo de referencia opcional",
+      sendButton: "Enviar mensaje",
+      handoffButton: "Enviar a S1 Image",
+      inspectionEyebrow: "Inspeccion",
+      draftTitle: "Draft actual",
+      draftSubtitle: "Estado, trazabilidad y payload tecnico.",
+      detailEmptyState: "El panel se llena a medida que avanza la conversacion.",
+      operator: "Operador",
+      assistant: "Asistente",
+      errorLabel: "Error",
+      noReference: "Sin referencia",
+      name: "Nombre",
+      statusLabels: {
+        pending: "pendiente",
+        succeeded: "listo",
+        failed: "fallido",
+        ok: "ok",
+        error: "error"
+      },
+      session: "Sesion",
+      user: "Usuario",
+      activeReferenceFile: "Referencia activa: archivo",
+      activeReferenceUrl: "Referencia activa: URL",
+      activeReferenceNone: "Referencia activa: sin referencia.",
+      emptyChat: "Todavia no hay mensajes. Empeza explicando el avatar que queres construir o refinando uno ya iniciado.",
+      noData: "Sin datos",
+      identity: "Identidad",
+      contentType: "Tipo de contenido",
+      category: "Categoria comercial",
+      style: "Estilo",
+      archetype: "Arquetipo",
+      tone: "Tono de voz",
+      readiness: "Estado de la ficha",
+      readyForS1: "Listo para S1",
+      yes: "Si",
+      no: "No",
+      reference: "Referencia",
+      turns: "Turnos",
+      workflow: "Flujo",
+      missingComplete: "Falta completar",
+      traceability: "Trazabilidad",
+      manual: "Manuales",
+      inferred: "Inferidos",
+      missing: "Faltantes",
+      visualProfile: "Perfil visual",
+      hair: "Pelo",
+      eyes: "Ojos",
+      bodyType: "Tipo de cuerpo",
+      conversationContext: "Contexto conversacional",
+      noBrief: "Sin brief acumulado todavia.",
+      technicalPayload: "Payload tecnico",
+      s1Preview: "Vista previa del envio a S1",
+      graphState: "Estado tecnico",
+      validatingCredentials: "Validando credenciales...",
+      loginFailed: "No se pudo iniciar sesion",
+      messageRequired: "Escribi un mensaje antes de continuar.",
+      updatingDraft: "Actualizando draft conversacional...",
+      draftReady: "Draft listo para S1 Image.",
+      draftUpdated: "Draft actualizado. Segui ajustando si hace falta.",
+      draftUpdateFailed: "No se pudo actualizar el draft",
+      uploadingReference: "Subiendo referencia...",
+      referenceAvailable: "Referencia subida y disponible para el handoff.",
+      referenceUploadFailed: "No se pudo subir la referencia",
+      draftNotReady: "El draft todavia no esta listo para enviar a S1 Image.",
+      sendingToS1: "Enviando a S1 Image...",
+      handoffFailed: "No se pudo enviar a S1 Image",
+      jobCreated: "Job creado",
+      readFileFailed: "No se pudo leer el archivo",
+      fieldLabels: {
+        "identity_core.fictional_age_years": "Edad ficticia",
+        "metadata.category": "Categoria comercial",
+        "metadata.vertical": "Tipo de contenido",
+        "metadata.occupation_or_content_basis": "Profesion o base de contenido",
+        "voice_tone": "Tono de voz",
+        "communication_style.speech_style": "Estilo de habla",
+        "visual_profile.eye_color": "Color de ojos",
+        "visual_profile.hair_color": "Color de pelo",
+        "conversation.scene_context": "Contexto o escena principal"
+      }
+    }
   };
+  const t = translations[locale];
 
   referenceUrlInput.value = config.defaultReferenceFaceImageUrl || "";
 
@@ -62,19 +233,19 @@
   function setViewMode() {
     loginView.hidden = isAuthenticated();
     appView.hidden = !isAuthenticated();
-    sessionMeta.textContent = isAuthenticated() ? `Sesion: ${sessionId}` : "";
-    userMeta.textContent = config.user && config.user.display_name ? `Usuario: ${config.user.display_name}` : "";
+    sessionMeta.textContent = isAuthenticated() ? `${t.session}: ${sessionId}` : "";
+    userMeta.textContent = config.user && config.user.display_name ? `${t.user}: ${config.user.display_name}` : "";
   }
 
   function currentReferenceLabel() {
     if (uploadedReference && uploadedReference.source === "file") {
-      return `Referencia activa: archivo ${uploadedReference.filename || uploadedReference.label}.`;
+      return `${t.activeReferenceFile} ${uploadedReference.filename || uploadedReference.label}.`;
     }
     const url = referenceUrlInput.value.trim();
     if (url) {
-      return `Referencia activa: URL ${url}.`;
+      return `${t.activeReferenceUrl} ${url}.`;
     }
-    return "Referencia activa: sin referencia.";
+    return t.activeReferenceNone;
   }
 
   function updateReferenceMeta() {
@@ -82,33 +253,57 @@
   }
 
   function formatFieldLabel(value) {
-    return fieldLabels[value] || value;
+    return t.fieldLabels[value] || value;
+  }
+
+  function applyStaticTranslations() {
+    document.documentElement.lang = locale;
+    chatLog.innerHTML = `<div class="empty-state">${escapeHtml(t.emptyChat)}</div>`;
+    document.getElementById("pageSubtitle").textContent = t.pageSubtitle;
+    document.getElementById("loginTitle").textContent = t.loginTitle;
+    document.getElementById("loginSubtitle").textContent = t.loginSubtitle;
+    document.getElementById("loginButton").textContent = t.loginButton;
+    document.getElementById("logoutButton").textContent = t.logoutButton;
+    document.getElementById("messageLabel").textContent = t.messageLabel;
+    messageInput.placeholder = t.messagePlaceholder;
+    document.getElementById("referenceUrlLabel").textContent = t.referenceUrlLabel;
+    document.getElementById("referenceFileLabel").textContent = t.referenceFileLabel;
+    document.getElementById("sendButton").textContent = t.sendButton;
+    document.getElementById("handoffButton").textContent = t.handoffButton;
+    document.getElementById("inspectionEyebrow").textContent = t.inspectionEyebrow;
+    document.getElementById("draftTitle").textContent = t.draftTitle;
+    document.getElementById("draftSubtitle").textContent = t.draftSubtitle;
+    document.getElementById("detailEmptyState").textContent = t.detailEmptyState;
   }
 
   function renderHistory(history) {
     if (!history || !history.length) {
-      chatLog.innerHTML = '<div class="empty-state">Todavia no hay mensajes. Empeza explicando el avatar que queres construir o refinando uno ya iniciado.</div>';
+      chatLog.innerHTML = `<div class="empty-state">${escapeHtml(t.emptyChat)}</div>`;
       return;
     }
     chatLog.innerHTML = history
       .map((entry) => {
-        const status = escapeHtml(entry.status || "pending");
+        const statusKey = String(entry.status || "pending");
+        const status = escapeHtml(statusKey);
+        const statusLabel = escapeHtml(t.statusLabels[statusKey] || statusKey);
+        const assistantStatusKey = entry.error ? "error" : "ok";
+        const assistantStatusLabel = escapeHtml(t.statusLabels[assistantStatusKey] || assistantStatusKey);
         return `
           <article class="turn">
             <div class="bubble user">
               <div class="bubble-header">
-                <span>Operador</span>
-                <span class="status ${status}">${status}</span>
+                <span>${escapeHtml(t.operator)}</span>
+                <span class="status ${status}">${statusLabel}</span>
               </div>
               <div>${escapeHtml(entry.user_message || "")}</div>
             </div>
             <div class="bubble assistant">
               <div class="bubble-header">
-                <span>Asistente</span>
-                <span>${entry.error ? "error" : "ok"}</span>
+                <span>${escapeHtml(t.assistant)}</span>
+                <span>${assistantStatusLabel}</span>
               </div>
               <div>${escapeHtml(entry.assistant_message || "")}</div>
-              ${entry.error ? `<p class="meta">Error: ${escapeHtml(entry.error)}</p>` : ""}
+              ${entry.error ? `<p class="meta">${escapeHtml(t.errorLabel)}: ${escapeHtml(entry.error)}</p>` : ""}
             </div>
           </article>
         `;
@@ -118,7 +313,7 @@
 
   function pillList(items) {
     if (!items || !items.length) {
-      return '<div class="meta">Sin datos</div>';
+      return `<div class="meta">${escapeHtml(t.noData)}</div>`;
     }
     return `<div class="pill-list">${items.map((item) => `<span class="pill">${escapeHtml(formatFieldLabel(item))}</span>`).join("")}</div>`;
   }
@@ -126,7 +321,7 @@
   function renderPanel(panel) {
     lastPanel = panel;
     if (!panel) {
-      detailBody.innerHTML = '<div class="empty-state">El panel se llena a medida que avanza la conversacion.</div>';
+      detailBody.innerHTML = `<div class="empty-state">${escapeHtml(t.detailEmptyState)}</div>`;
       handoffButton.disabled = true;
       return;
     }
@@ -142,62 +337,62 @@
 
     detailBody.innerHTML = `
       <section class="info-card">
-        <h3>Identidad</h3>
+        <h3>${escapeHtml(t.identity)}</h3>
         <dl class="kv">
-          <div><dt>Nombre</dt><dd>${escapeHtml(identity.display_name || "-")}</dd></div>
-          <div><dt>Vertical</dt><dd>${escapeHtml(identity.vertical || "-")}</dd></div>
-          <div><dt>Categoria</dt><dd>${escapeHtml(identity.category || "-")}</dd></div>
-          <div><dt>Style</dt><dd>${escapeHtml(identity.style || "-")}</dd></div>
-          <div><dt>Arquetipo</dt><dd>${escapeHtml(identity.archetype || "-")}</dd></div>
-          <div><dt>Tono</dt><dd>${escapeHtml(identity.voice_tone || "-")}</dd></div>
+          <div><dt>${escapeHtml(t.name)}</dt><dd>${escapeHtml(identity.display_name || "-")}</dd></div>
+          <div><dt>${escapeHtml(t.contentType)}</dt><dd>${escapeHtml(identity.vertical || "-")}</dd></div>
+          <div><dt>${escapeHtml(t.category)}</dt><dd>${escapeHtml(identity.category || "-")}</dd></div>
+          <div><dt>${escapeHtml(t.style)}</dt><dd>${escapeHtml(identity.style || "-")}</dd></div>
+          <div><dt>${escapeHtml(t.archetype)}</dt><dd>${escapeHtml(identity.archetype || "-")}</dd></div>
+          <div><dt>${escapeHtml(t.tone)}</dt><dd>${escapeHtml(identity.voice_tone || "-")}</dd></div>
         </dl>
       </section>
 
       <section class="info-card">
-        <h3>Readiness</h3>
+        <h3>${escapeHtml(t.readiness)}</h3>
         <dl class="kv">
-          <div><dt>Listo para S1</dt><dd>${readiness.can_handoff ? "Si" : "No"}</dd></div>
-          <div><dt>Referencia</dt><dd>${escapeHtml(reference.source || "none")}</dd></div>
-          <div><dt>Turnos</dt><dd>${escapeHtml(conversation.turn_count || 0)}</dd></div>
-          <div><dt>Workflow</dt><dd>${escapeHtml(copilot.workflow_id || "-")}</dd></div>
+          <div><dt>${escapeHtml(t.readyForS1)}</dt><dd>${readiness.can_handoff ? t.yes : t.no}</dd></div>
+          <div><dt>${escapeHtml(t.reference)}</dt><dd>${escapeHtml(reference.source || "none")}</dd></div>
+          <div><dt>${escapeHtml(t.turns)}</dt><dd>${escapeHtml(conversation.turn_count || 0)}</dd></div>
+          <div><dt>${escapeHtml(t.workflow)}</dt><dd>${escapeHtml(copilot.workflow_id || "-")}</dd></div>
         </dl>
-        <p class="meta">${escapeHtml(reference.label || "Sin referencia")}</p>
-        ${missingLabels.length ? `<p class="meta">Falta completar: ${escapeHtml(missingLabels.map(formatFieldLabel).join(", "))}</p>` : ""}
+        <p class="meta">${escapeHtml(reference.label || t.noReference)}</p>
+        ${missingLabels.length ? `<p class="meta">${escapeHtml(t.missingComplete)}: ${escapeHtml(missingLabels.map(formatFieldLabel).join(", "))}</p>` : ""}
       </section>
 
       <section class="info-card">
-        <h3>Trazabilidad</h3>
-        <strong class="meta">Manuales</strong>
+        <h3>${escapeHtml(t.traceability)}</h3>
+        <strong class="meta">${escapeHtml(t.manual)}</strong>
         ${pillList(traceability.manual_fields || [])}
-        <strong class="meta">Inferidos</strong>
+        <strong class="meta">${escapeHtml(t.inferred)}</strong>
         ${pillList(traceability.inferred_fields || [])}
-        <strong class="meta">Faltantes</strong>
+        <strong class="meta">${escapeHtml(t.missing)}</strong>
         ${pillList(missingLabels)}
       </section>
 
       <section class="info-card">
-        <h3>Perfil visual</h3>
+        <h3>${escapeHtml(t.visualProfile)}</h3>
         <dl class="kv">
-          <div><dt>Hair</dt><dd>${escapeHtml(visual.hair || "-")}</dd></div>
-          <div><dt>Eyes</dt><dd>${escapeHtml(visual.eyes || "-")}</dd></div>
-          <div><dt>Body type</dt><dd>${escapeHtml(visual.body_type || "-")}</dd></div>
+          <div><dt>${escapeHtml(t.hair)}</dt><dd>${escapeHtml(visual.hair || "-")}</dd></div>
+          <div><dt>${escapeHtml(t.eyes)}</dt><dd>${escapeHtml(visual.eyes || "-")}</dd></div>
+          <div><dt>${escapeHtml(t.bodyType)}</dt><dd>${escapeHtml(visual.body_type || "-")}</dd></div>
         </dl>
         ${pillList([...(visual.must_haves || []), ...(visual.wardrobe_styles || [])])}
       </section>
 
       <section class="info-card">
-        <h3>Contexto conversacional</h3>
-        <p class="meta">${escapeHtml(conversation.operator_brief || "Sin brief acumulado todavia.")}</p>
+        <h3>${escapeHtml(t.conversationContext)}</h3>
+        <p class="meta">${escapeHtml(conversation.operator_brief || t.noBrief)}</p>
       </section>
 
       <section class="info-card">
-        <h3>Payload tecnico</h3>
+        <h3>${escapeHtml(t.technicalPayload)}</h3>
         <details open>
-          <summary>S1 payload preview</summary>
+          <summary>${escapeHtml(t.s1Preview)}</summary>
           <pre>${escapeHtml(JSON.stringify(panel.s1_payload_preview || {}, null, 2))}</pre>
         </details>
         <details>
-          <summary>GraphState</summary>
+          <summary>${escapeHtml(t.graphState)}</summary>
           <pre>${escapeHtml(JSON.stringify(panel.graph_state_json || {}, null, 2))}</pre>
         </details>
       </section>
@@ -222,7 +417,7 @@
 
   async function handleLogin(event) {
     event.preventDefault();
-    loginFeedback.textContent = "Validando credenciales...";
+    loginFeedback.textContent = t.validatingCredentials;
     try {
       await postJson(config.loginEndpoint, {
         email: loginEmail.value.trim(),
@@ -230,7 +425,7 @@
       });
       window.location.href = "/app";
     } catch (error) {
-      loginFeedback.textContent = `No se pudo iniciar sesion: ${error.message}`;
+      loginFeedback.textContent = `${t.loginFailed}: ${error.message}`;
     }
   }
 
@@ -246,25 +441,26 @@
   async function handleSend() {
     const message = messageInput.value.trim();
     if (!message) {
-      feedback.textContent = "Escribi un mensaje antes de continuar.";
+      feedback.textContent = t.messageRequired;
       return;
     }
-    feedback.textContent = "Actualizando draft conversacional...";
+    feedback.textContent = t.updatingDraft;
     sendButton.disabled = true;
     try {
       const payload = await postJson(config.chatEndpoint, {
         session_id: sessionId,
         message,
-        reference_face_image_url: referenceUrlInput.value.trim()
+        reference_face_image_url: referenceUrlInput.value.trim(),
+        locale
       });
       renderHistory(payload.history || [payload.chat_entry]);
       renderPanel(payload.panel || null);
       messageInput.value = "";
       feedback.textContent = payload.can_handoff
-        ? "Draft listo para S1 Image."
-        : "Draft actualizado. Segui ajustando si hace falta.";
+        ? t.draftReady
+        : t.draftUpdated;
     } catch (error) {
-      feedback.textContent = `No se pudo actualizar el draft: ${error.message}`;
+      feedback.textContent = `${t.draftUpdateFailed}: ${error.message}`;
     } finally {
       sendButton.disabled = false;
     }
@@ -277,14 +473,15 @@
       updateReferenceMeta();
       return;
     }
-    feedback.textContent = "Subiendo referencia...";
+    feedback.textContent = t.uploadingReference;
     try {
       const dataBase64 = await readFileAsBase64(file);
       const payload = await postJson(config.referenceUploadEndpoint, {
         session_id: sessionId,
         filename: file.name,
         content_type: file.type || "application/octet-stream",
-        data_base64: dataBase64
+        data_base64: dataBase64,
+        locale
       });
       uploadedReference = payload.reference || null;
       updateReferenceMeta();
@@ -292,28 +489,29 @@
         lastPanel.reference_face = payload.reference || lastPanel.reference_face;
         renderPanel(lastPanel);
       }
-      feedback.textContent = "Referencia subida y disponible para el handoff.";
+      feedback.textContent = t.referenceAvailable;
     } catch (error) {
-      feedback.textContent = `No se pudo subir la referencia: ${error.message}`;
+      feedback.textContent = `${t.referenceUploadFailed}: ${error.message}`;
     }
   }
 
   async function handleHandoff() {
     if (!lastPanel || !lastPanel.readiness || !lastPanel.readiness.can_handoff) {
-      feedback.textContent = "El draft todavia no esta listo para enviar a S1 Image.";
+      feedback.textContent = t.draftNotReady;
       return;
     }
-    feedback.textContent = "Enviando a S1 Image...";
+    feedback.textContent = t.sendingToS1;
     handoffButton.disabled = true;
     try {
       const payload = await postJson(config.handoffEndpoint, {
         session_id: sessionId,
-        reference_face_image_url: referenceUrlInput.value.trim()
+        reference_face_image_url: referenceUrlInput.value.trim(),
+        locale
       });
       renderPanel(payload.panel || null);
-      feedback.textContent = `Job creado: ${payload.handoff.job.job_id}`;
+      feedback.textContent = `${t.jobCreated}: ${payload.handoff.job.job_id}`;
     } catch (error) {
-      feedback.textContent = `No se pudo enviar a S1 Image: ${error.message}`;
+      feedback.textContent = `${t.handoffFailed}: ${error.message}`;
       handoffButton.disabled = !lastPanel || !lastPanel.readiness || !lastPanel.readiness.can_handoff;
     }
   }
@@ -327,7 +525,7 @@
         const index = result.indexOf(marker);
         resolve(index >= 0 ? result.slice(index + marker.length) : result);
       };
-      reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+      reader.onerror = () => reject(new Error(t.readFileFailed));
       reader.readAsDataURL(file);
     });
   }
@@ -339,6 +537,7 @@
   referenceFileInput.addEventListener("change", handleReferenceUpload);
   referenceUrlInput.addEventListener("input", updateReferenceMeta);
 
+  applyStaticTranslations();
   setViewMode();
   updateReferenceMeta();
 })();

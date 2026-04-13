@@ -160,7 +160,7 @@ def test_s1_image_runtime_root_page_renders_chat_layout(tmp_path: Path, monkeypa
 
     assert response.status_code == 200
     assert "VixenBliss Creator" in response.text
-    assert "Ingreso interno" in response.text
+    assert "Internal access" in response.text
     assert '"routeMode": "login"' in response.text
 
 
@@ -319,10 +319,31 @@ def test_s1_image_runtime_lab_executes_langgraph_and_returns_panel(tmp_path: Pat
     assert payload["panel"]["identity"]["display_name"] != "Velvet Ember"
     assert payload["panel"]["copilot"]["workflow_id"] == "lora-dataset-ipadapter-batch"
     assert payload["panel"]["traceability"]["missing_fields"] == ["visual_profile.eye_color", "visual_profile.hair_color"]
-    assert payload["panel"]["traceability"]["missing_field_labels"] == ["Color de ojos", "Color de pelo"]
+    assert payload["panel"]["traceability"]["missing_field_labels"] == ["Eye color", "Hair color"]
     assert "S1 Image" in payload["chat_entry"]["assistant_message"]
-    assert "Color de ojos" in payload["chat_entry"]["assistant_message"]
+    assert "Eye color" in payload["chat_entry"]["assistant_message"]
     assert payload["panel"]["s1_payload_preview"]["reference_face_image_url"] is None
+
+
+def test_s1_image_runtime_lab_localizes_chat_panel_to_spanish_when_requested(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    _authenticate_test_client(module, client)
+
+    response = client.post(
+        "/lab/chat",
+        json={
+            "session_id": "session-es",
+            "locale": "es-AR",
+            "message": "Quiero una modelo de 40 años, licenciada en psicologia, crea contenido NSFW en su estudio, es formal.",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["panel"]["traceability"]["missing_field_labels"] == ["Color de ojos", "Color de pelo"]
+    assert "Color de ojos" in payload["chat_entry"]["assistant_message"]
+    assert "Todavia no esta lista para S1 Image" in payload["chat_entry"]["assistant_message"]
 
 
 def test_s1_image_runtime_lab_chat_overwrites_visual_fields_and_trims_trace_sources(tmp_path: Path, monkeypatch) -> None:
@@ -378,7 +399,7 @@ def test_s1_image_runtime_lab_handoff_uses_graph_state_readiness(tmp_path: Path,
     )
 
     assert response.status_code == 409
-    assert "visual_profile.eye_color" in response.json()["detail"]
+    assert "Eye color" in response.json()["detail"]
 
 
 def test_s1_image_runtime_lab_follow_up_turns_keep_prior_operator_constraints(tmp_path: Path, monkeypatch) -> None:
@@ -501,7 +522,7 @@ def test_s1_image_runtime_lab_handoff_requires_succeeded_graph_state(tmp_path: P
     response = client.post("/lab/s1-image", json={"session_id": "missing-session"})
 
     assert response.status_code == 409
-    assert "No hay una ejecución previa" in response.json()["detail"]
+    assert "There is no previous LangGraph run" in response.json()["detail"]
 
 
 def test_s1_image_runtime_resolves_plus_face_to_ip_adapter_bin(tmp_path: Path, monkeypatch) -> None:
