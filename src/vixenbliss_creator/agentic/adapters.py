@@ -7,6 +7,7 @@ from urllib import error, parse, request
 
 from .config import AgenticSettings
 from .models import CopilotRecommendation, CritiqueIssue, ExpansionResult
+from .naming import resolve_display_name
 from .workflow_registry import WorkflowRegistry
 from vixenbliss_creator.traceability import normalize_trace_source_text
 from vixenbliss_creator.contracts.identity import (
@@ -263,7 +264,7 @@ def _build_technical_sheet_from_identity(payload: dict, settings: AgenticSetting
     )
     archetype = identity_draft.get("archetype") or normalized_constraints.get("archetype") or ArchetypeCode.PLAYFUL_TEASE.value
     voice_tone = normalized_constraints.get("voice_tone") or (VoiceTone.AUTHORITATIVE.value if vertical == Vertical.LIFESTYLE.value else VoiceTone.SEDUCTIVE.value)
-    display_name = identity_draft.get("name") or "Velvet Ember"
+    display_name = resolve_display_name(idea, identity_draft.get("name"))
     interests = narrative_minimal.get("interests") or _infer_interests_from_idea(idea) or ["fashion", "nightlife"]
     hair_color = _infer_hair_color_from_idea(idea, fallback="dark_brown")
 
@@ -404,7 +405,7 @@ def _coerce_expansion_payload(raw_payload: dict, settings: AgenticSettings, idea
     identity_metadata = dict(identity_draft.get("metadata", {}) or {})
     vertical = str(identity_metadata.get("vertical") or normalized_constraints.get("vertical") or Vertical.ADULT_ENTERTAINMENT.value)
     style = str(identity_metadata.get("style") or normalized_constraints.get("style") or IdentityStyle.EDITORIAL.value)
-    display_name = str(identity_draft.get("name") or "Velvet Ember")
+    display_name = resolve_display_name(idea, identity_draft.get("name"))
     narrative_minimal = dict(identity_draft.get("narrative_minimal", {}) or {})
     narrative_minimal["origin"] = narrative_minimal.get("origin") or _english_origin_story(
         display_name=display_name,
@@ -439,10 +440,14 @@ def _coerce_expansion_payload(raw_payload: dict, settings: AgenticSettings, idea
     identity_core = technical_sheet_payload.get("identity_core", {}) or {}
     payload["technical_sheet_payload"] = _normalize_technical_sheet_payload(
         technical_sheet_payload,
-        display_name=str(identity_core.get("display_name") or "Velvet Ember"),
+        display_name=resolve_display_name(idea, identity_core.get("display_name") or identity_draft.get("name")),
         style=str(metadata.get("style") or "editorial"),
         vertical=str(metadata.get("vertical") or Vertical.ADULT_ENTERTAINMENT.value),
         archetype=str(personality_profile.get("archetype") or ArchetypeCode.PLAYFUL_TEASE.value),
+    )
+    identity_draft["name"] = resolve_display_name(
+        idea,
+        identity_draft.get("name") or payload["technical_sheet_payload"].get("identity_core", {}).get("display_name"),
     )
     payload["identity_draft"] = identity_draft
     payload["completion_report"] = completion_report

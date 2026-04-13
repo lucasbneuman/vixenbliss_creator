@@ -220,6 +220,7 @@
     try {
       await postJson(config.logoutEndpoint, {});
     } finally {
+      localStorage.removeItem(sessionStorageKey);
       window.location.href = "/login";
     }
   }

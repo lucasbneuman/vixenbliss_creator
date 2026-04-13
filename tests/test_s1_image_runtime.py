@@ -315,11 +315,12 @@ def test_s1_image_runtime_lab_executes_langgraph_and_returns_panel(tmp_path: Pat
     payload = response.json()
     assert payload["session_id"] == "session-1"
     assert payload["chat_entry"]["status"] == "succeeded"
-    assert payload["can_handoff"] is True
-    assert payload["panel"]["identity"]["display_name"] == "Velvet Ember"
+    assert payload["can_handoff"] is False
+    assert payload["panel"]["identity"]["display_name"] != "Velvet Ember"
     assert payload["panel"]["copilot"]["workflow_id"] == "lora-dataset-ipadapter-batch"
-    assert payload["panel"]["traceability"]["missing_fields"] == []
-    assert "La ficha ya quedó lista para enviar a S1 Image" in payload["chat_entry"]["assistant_message"]
+    assert payload["panel"]["traceability"]["missing_fields"] == ["visual_profile.eye_color", "visual_profile.hair_color"]
+    assert "S1 Image" in payload["chat_entry"]["assistant_message"]
+    assert "visual_profile.eye_color" in payload["chat_entry"]["assistant_message"]
     assert payload["panel"]["s1_payload_preview"]["reference_face_image_url"] is None
 
 
@@ -368,15 +369,15 @@ def test_s1_image_runtime_lab_handoff_uses_graph_state_readiness(tmp_path: Path,
         },
     )
     assert first.status_code == 200
-    assert first.json()["can_handoff"] is True
+    assert first.json()["can_handoff"] is False
 
     response = client.post(
         "/lab/s1-image",
         json={"session_id": "session-incomplete", "reference_face_image_url": "https://cdn.vixenbliss.local/custom.png"},
     )
 
-    assert response.status_code == 200
-    assert response.json()["handoff"]["reference_face_image_url"] == "https://cdn.vixenbliss.local/custom.png"
+    assert response.status_code == 409
+    assert "visual_profile.eye_color" in response.json()["detail"]
 
 
 def test_s1_image_runtime_lab_follow_up_turns_keep_prior_operator_constraints(tmp_path: Path, monkeypatch) -> None:
@@ -424,7 +425,7 @@ def test_s1_image_runtime_lab_autofill_can_complete_remaining_fields(tmp_path: P
         json={"session_id": "session-autofill", "message": "Quiero una modelo de 40 años y que sea formal."},
     )
     assert first.status_code == 200
-    assert first.json()["can_handoff"] is True
+    assert first.json()["can_handoff"] is False
 
     second = client.post(
         "/lab/chat",
