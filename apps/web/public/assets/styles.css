@@ -170,6 +170,12 @@ textarea {
   overflow: hidden;
 }
 
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .panel-head {
   padding: 20px 22px 16px;
   display: flex;
@@ -191,11 +197,15 @@ textarea {
 }
 
 .chat-log {
+  flex: 1 1 auto;
   min-height: 340px;
+  max-height: min(52vh, 720px);
   align-content: start;
+  overflow-y: auto;
 }
 
 .composer {
+  flex: 0 0 auto;
   border-top: 1px solid var(--line);
   background: var(--panel-soft);
 }
@@ -344,6 +354,10 @@ pre {
 
   .session-box {
     text-align: left;
+  }
+
+  .chat-log {
+    max-height: none;
   }
 }
 

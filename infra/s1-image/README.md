@@ -210,6 +210,39 @@ modal run infra/s1-image/providers/modal/app.py::runtime_healthcheck --deep
 
 El worker de Modal queda alineado al flujo curado `80 -> 40` y al workflow aprobado `lora-dataset-ipadapter-batch`.
 
+### Diagnostico rapido de desfasaje repo vs deploy
+
+Si el `Lab` arma el handoff con:
+
+- `reference_face_image_url = null`
+- `ip_adapter.enabled = false`
+
+y aun asi el job remoto devuelve `REFERENCE_IMAGE_NOT_FOUND`, tratar el incidente como un desfasaje probable entre el orquestador actual y el bundle desplegado en `Modal`.
+
+Checklist operativo recomendado:
+
+1. consultar `GET /healthcheck?deep=true` en el runtime/orquestador
+2. comparar `deployment_fingerprint` vs `remote_deployment_fingerprint`
+3. si `deployment_alignment = mismatch`, redeployar el worker de `Modal`
+4. repetir el mismo caso real de `POST /lab/s1-image`
+
+Regla canonica esperada del runtime vigente:
+
+- si `ip_adapter.enabled` es `false`, el runtime no debe descargar ni resolver `reference_face_image_url`
+- si no existe `reference_face_image_url` ni `reference_face_image_name`, el workflow debe seguir por el camino sin referencia
+
+Comando de redeploy esperado cuando el fingerprint remoto no coincide:
+
+```powershell
+modal deploy infra/s1-image/providers/modal/app.py
+```
+
+Validacion posterior recomendada:
+
+```powershell
+modal run infra/s1-image/providers/modal/app.py::runtime_healthcheck --deep
+```
+
 ## Nota sobre Runpod
 
 Runpod queda deprecado para S1 image.

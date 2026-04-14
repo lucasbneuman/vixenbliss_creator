@@ -113,6 +113,9 @@ S1_IMAGE_EXECUTION_BACKEND = os.getenv("S1_IMAGE_EXECUTION_BACKEND", "local").st
 S1_IMAGE_MODAL_APP_NAME = os.getenv("S1_IMAGE_MODAL_APP_NAME", "vixenbliss-s1-image")
 S1_IMAGE_MODAL_FUNCTION_NAME = os.getenv("S1_IMAGE_MODAL_FUNCTION_NAME", "run_s1_image_job")
 S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME = os.getenv("S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME", "runtime_healthcheck")
+BUILD_COMMIT_SHA = os.getenv("VB_BUILD_COMMIT_SHA", "").strip() or None
+BUILD_VERSION = os.getenv("VB_BUILD_VERSION", "").strip() or None
+BUILD_TIMESTAMP = os.getenv("VB_BUILD_TIMESTAMP", "").strip() or None
 LAB_DEFAULT_REFERENCE_FACE_IMAGE_URL = os.getenv("LAB_REFERENCE_FACE_IMAGE_URL", "")
 WEB_SESSION_COOKIE_NAME = os.getenv("VB_WEB_SESSION_COOKIE_NAME", "vb_web_auth")
 WEB_SESSION_TTL_SECONDS = int(os.getenv("VB_WEB_SESSION_TTL_SECONDS", "43200"))
@@ -144,6 +147,56 @@ def _resolved_workflow_version(job_input: dict | None = None) -> str:
 
 def _workflow_template_path(job_input: dict | None = None) -> Path:
     return WORKFLOW_TEMPLATE_DIR / f"{_resolved_workflow_id(job_input)}.json"
+
+
+def _deployment_fingerprint(*, bundle_source: str) -> dict[str, object]:
+    return {
+        "service": "s1_image",
+        "runtime_stage": RuntimeStage.IDENTITY_IMAGE.value,
+        "workflow_id": COMFYUI_WORKFLOW_IMAGE_ID,
+        "workflow_version": COMFYUI_WORKFLOW_IMAGE_VERSION,
+        "execution_backend": S1_IMAGE_EXECUTION_BACKEND,
+        "build_commit_sha": BUILD_COMMIT_SHA,
+        "build_version": BUILD_VERSION,
+        "build_timestamp": BUILD_TIMESTAMP,
+        "bundle_source": bundle_source,
+        "modal_app_name": S1_IMAGE_MODAL_APP_NAME if S1_IMAGE_EXECUTION_BACKEND == "modal" else None,
+        "modal_function_name": S1_IMAGE_MODAL_FUNCTION_NAME if S1_IMAGE_EXECUTION_BACKEND == "modal" else None,
+    }
+
+
+def _compare_deployment_fingerprints(local_fingerprint: dict[str, object], remote_fingerprint: dict[str, object] | None) -> tuple[str, list[str], str]:
+    if not isinstance(remote_fingerprint, dict):
+        return "unknown", [], "Remote deployment fingerprint is unavailable."
+
+    local_commit = str(local_fingerprint.get("build_commit_sha") or "").strip()
+    remote_commit = str(remote_fingerprint.get("build_commit_sha") or "").strip()
+    mismatch_fields: list[str] = []
+
+    if local_commit and remote_commit:
+        if local_commit != remote_commit:
+            mismatch_fields.append("build_commit_sha")
+        if mismatch_fields:
+            return "mismatch", mismatch_fields, "Remote Modal worker commit differs from the orchestrator build."
+        return "aligned", [], "Remote Modal worker matches the orchestrator commit."
+
+    comparable_fields = ("workflow_id", "workflow_version", "build_version")
+    available_fields = [
+        field_name
+        for field_name in comparable_fields
+        if local_fingerprint.get(field_name) not in {None, ""} and remote_fingerprint.get(field_name) not in {None, ""}
+    ]
+    if not available_fields:
+        return "unknown", [], "Not enough shared build metadata to compare orchestrator and Modal worker."
+
+    mismatch_fields = [
+        field_name
+        for field_name in available_fields
+        if str(local_fingerprint.get(field_name)) != str(remote_fingerprint.get(field_name))
+    ]
+    if mismatch_fields:
+        return "mismatch", mismatch_fields, "Remote Modal worker fingerprint differs from the orchestrator."
+    return "aligned", [], "Remote Modal worker matches the orchestrator fingerprint."
 
 
 def _resolve_ip_adapter_model_name(job_input: dict | None = None) -> str:
@@ -2424,6 +2477,7 @@ def _lab_html(*, authenticated: bool, route_mode: str, user: dict[str, object] |
         "logoutEndpoint": "/auth/logout",
         "sessionEndpoint": "/auth/session",
         "referenceUploadEndpoint": "/lab/reference-uploads",
+        "healthcheckEndpoint": "/healthcheck?deep=true",
         "sessionStorageKey": "vb-web-session",
     }
     template = index_file.read_text(encoding="utf-8")
@@ -2670,6 +2724,7 @@ def handoff_langgraph_lab_to_s1(payload: dict, request: Request) -> dict:
 
 @app.get("/healthcheck")
 def healthcheck(deep: bool = False) -> dict:
+    local_fingerprint = _deployment_fingerprint(bundle_source="orchestrator")
     if S1_IMAGE_EXECUTION_BACKEND == "modal":
         try:
             import modal
@@ -2686,6 +2741,11 @@ def healthcheck(deep: bool = False) -> dict:
                 "workflow_id": COMFYUI_WORKFLOW_IMAGE_ID,
                 "workflow_version": COMFYUI_WORKFLOW_IMAGE_VERSION,
                 "ip_adapter_model": COMFYUI_IP_ADAPTER_MODEL,
+                "deployment_fingerprint": local_fingerprint,
+                "remote_deployment_fingerprint": None,
+                "deployment_alignment": "unknown",
+                "mismatch_fields": [],
+                "deployment_alignment_message": "Remote Modal worker is unavailable because the modal backend could not be imported.",
                 "runtime_checks": {},
                 "runtime_contract": {
                     "model_family": "flux",
@@ -2701,9 +2761,19 @@ def healthcheck(deep: bool = False) -> dict:
 
         modal_function = modal.Function.from_name(S1_IMAGE_MODAL_APP_NAME, S1_IMAGE_MODAL_HEALTHCHECK_FUNCTION_NAME)
         payload = modal_function.remote(deep=deep)
+        remote_fingerprint = payload.get("deployment_fingerprint") if isinstance(payload, dict) else None
+        deployment_alignment, mismatch_fields, alignment_message = _compare_deployment_fingerprints(
+            local_fingerprint,
+            remote_fingerprint,
+        )
         payload["startup_mode"] = "remote_gpu_worker"
         payload["orchestrator_host"] = "coolify"
         payload["gpu_worker_provider"] = Provider.MODAL.value
+        payload["deployment_fingerprint"] = local_fingerprint
+        payload["remote_deployment_fingerprint"] = remote_fingerprint
+        payload["deployment_alignment"] = deployment_alignment
+        payload["mismatch_fields"] = mismatch_fields
+        payload["deployment_alignment_message"] = alignment_message
         return payload
 
     runtime_checks = _runtime_checks({})
@@ -2734,6 +2804,11 @@ def healthcheck(deep: bool = False) -> dict:
         "workflow_id": COMFYUI_WORKFLOW_IMAGE_ID,
         "workflow_version": COMFYUI_WORKFLOW_IMAGE_VERSION,
         "ip_adapter_model": COMFYUI_IP_ADAPTER_MODEL,
+        "deployment_fingerprint": local_fingerprint,
+        "remote_deployment_fingerprint": None,
+        "deployment_alignment": "unknown",
+        "mismatch_fields": [],
+        "deployment_alignment_message": "No remote Modal worker is configured for this runtime.",
         "runtime_checks": runtime_checks,
         "runtime_contract": {
             "model_family": "flux",

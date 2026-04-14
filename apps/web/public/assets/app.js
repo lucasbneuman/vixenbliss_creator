@@ -25,6 +25,7 @@
 
   let uploadedReference = null;
   let lastPanel = null;
+  let deploymentStatus = null;
 
   const locale = (navigator.language || navigator.userLanguage || "en").toLowerCase().startsWith("es") ? "es" : "en";
   const translations = {
@@ -90,6 +91,12 @@
       technicalPayload: "Technical payload",
       s1Preview: "S1 handoff preview",
       graphState: "Technical state",
+      runtimeStatus: "Runtime deploy status",
+      runtimeBackend: "Execution backend",
+      runtimeAlignment: "Deploy alignment",
+      runtimeLocalFingerprint: "Local fingerprint",
+      runtimeRemoteFingerprint: "Remote fingerprint",
+      runtimeMessage: "Deploy note",
       validatingCredentials: "Validating credentials...",
       loginFailed: "Could not sign in",
       messageRequired: "Write a message before continuing.",
@@ -179,6 +186,12 @@
       technicalPayload: "Payload tecnico",
       s1Preview: "Vista previa del envio a S1",
       graphState: "Estado tecnico",
+      runtimeStatus: "Estado de deploy del runtime",
+      runtimeBackend: "Backend de ejecucion",
+      runtimeAlignment: "Alineacion de deploy",
+      runtimeLocalFingerprint: "Fingerprint local",
+      runtimeRemoteFingerprint: "Fingerprint remoto",
+      runtimeMessage: "Nota de deploy",
       validatingCredentials: "Validando credenciales...",
       loginFailed: "No se pudo iniciar sesion",
       messageRequired: "Escribi un mensaje antes de continuar.",
@@ -279,6 +292,7 @@
   function renderHistory(history) {
     if (!history || !history.length) {
       chatLog.innerHTML = `<div class="empty-state">${escapeHtml(t.emptyChat)}</div>`;
+      chatLog.scrollTop = chatLog.scrollHeight;
       return;
     }
     chatLog.innerHTML = history
@@ -309,6 +323,7 @@
         `;
       })
       .join("");
+    chatLog.scrollTop = chatLog.scrollHeight;
   }
 
   function pillList(items) {
@@ -334,6 +349,21 @@
     const conversation = panel.conversation || {};
     const copilot = panel.copilot || {};
     const missingLabels = traceability.missing_field_labels || readiness.missing_field_labels || traceability.missing_fields || [];
+    const localFingerprint = deploymentStatus && deploymentStatus.deployment_fingerprint
+      ? deploymentStatus.deployment_fingerprint
+      : null;
+    const remoteFingerprint = deploymentStatus && deploymentStatus.remote_deployment_fingerprint
+      ? deploymentStatus.remote_deployment_fingerprint
+      : null;
+    const backend = deploymentStatus && deploymentStatus.deployment_fingerprint
+      ? deploymentStatus.deployment_fingerprint.execution_backend
+      : config.executionBackend || "unknown";
+    const alignment = deploymentStatus && deploymentStatus.deployment_alignment
+      ? deploymentStatus.deployment_alignment
+      : "unknown";
+    const alignmentMessage = deploymentStatus && deploymentStatus.deployment_alignment_message
+      ? deploymentStatus.deployment_alignment_message
+      : "Deployment fingerprint is not available yet.";
 
     detailBody.innerHTML = `
       <section class="info-card">
@@ -386,6 +416,23 @@
       </section>
 
       <section class="info-card">
+        <h3>${escapeHtml(t.runtimeStatus)}</h3>
+        <dl class="kv">
+          <div><dt>${escapeHtml(t.runtimeBackend)}</dt><dd>${escapeHtml(backend || "-")}</dd></div>
+          <div><dt>${escapeHtml(t.runtimeAlignment)}</dt><dd>${escapeHtml(alignment || "unknown")}</dd></div>
+        </dl>
+        <p class="meta">${escapeHtml(alignmentMessage)}</p>
+        <details>
+          <summary>${escapeHtml(t.runtimeLocalFingerprint)}</summary>
+          <pre>${escapeHtml(JSON.stringify(localFingerprint || {}, null, 2))}</pre>
+        </details>
+        <details>
+          <summary>${escapeHtml(t.runtimeRemoteFingerprint)}</summary>
+          <pre>${escapeHtml(JSON.stringify(remoteFingerprint || {}, null, 2))}</pre>
+        </details>
+      </section>
+
+      <section class="info-card">
         <h3>${escapeHtml(t.technicalPayload)}</h3>
         <details open>
           <summary>${escapeHtml(t.s1Preview)}</summary>
@@ -413,6 +460,32 @@
       throw new Error(body.detail || "Request failed");
     }
     return body;
+  }
+
+  async function loadDeploymentStatus() {
+    if (!config.healthcheckEndpoint || !isAuthenticated()) {
+      return;
+    }
+    try {
+      const response = await fetch(config.healthcheckEndpoint, {
+        method: "GET",
+        credentials: "same-origin"
+      });
+      deploymentStatus = await response.json().catch(() => null);
+      if (lastPanel) {
+        renderPanel(lastPanel);
+      }
+    } catch (_error) {
+      deploymentStatus = {
+        deployment_alignment: "unknown",
+        deployment_alignment_message: "Could not load runtime healthcheck.",
+        deployment_fingerprint: null,
+        remote_deployment_fingerprint: null
+      };
+      if (lastPanel) {
+        renderPanel(lastPanel);
+      }
+    }
   }
 
   async function handleLogin(event) {
@@ -508,6 +581,7 @@
         reference_face_image_url: referenceUrlInput.value.trim(),
         locale
       });
+      await loadDeploymentStatus();
       renderPanel(payload.panel || null);
       feedback.textContent = `${t.jobCreated}: ${payload.handoff.job.job_id}`;
     } catch (error) {
@@ -540,4 +614,5 @@
   applyStaticTranslations();
   setViewMode();
   updateReferenceMeta();
+  loadDeploymentStatus();
 })();

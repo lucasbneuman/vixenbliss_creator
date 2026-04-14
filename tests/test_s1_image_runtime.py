@@ -149,6 +149,10 @@ def test_s1_image_runtime_healthcheck_reports_identity_contract(tmp_path: Path, 
     assert payload["ok"] is True
     assert payload["runtime_contract"]["runtime_stage"] == "identity_image"
     assert payload["runtime_contract"]["workflow_scope"] == "s1_image"
+    assert payload["deployment_fingerprint"]["service"] == "s1_image"
+    assert payload["deployment_fingerprint"]["bundle_source"] == "orchestrator"
+    assert payload["deployment_alignment"] == "unknown"
+    assert payload["remote_deployment_fingerprint"] is None
     assert payload["runtime_contract"]["lora_supported"] is False
 
 
@@ -1215,6 +1219,7 @@ def test_s1_image_runtime_marks_modal_error_results_as_failed(tmp_path: Path, mo
 
 def test_s1_image_runtime_healthcheck_can_delegate_to_modal_worker(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("S1_IMAGE_EXECUTION_BACKEND", "modal")
+    monkeypatch.setenv("VB_BUILD_COMMIT_SHA", "local-sha")
     module = _load_runtime_module(tmp_path, monkeypatch)
 
     class FakeHealthcheckFunction:
@@ -1229,6 +1234,17 @@ def test_s1_image_runtime_healthcheck_can_delegate_to_modal_worker(tmp_path: Pat
                 "runtime_checks": {"workflow_baked": True},
                 "runtime_contract": {"runtime_stage": "identity_image"},
                 "comfyui_reachable": True,
+                "deployment_fingerprint": {
+                    "service": "s1_image",
+                    "runtime_stage": "identity_image",
+                    "workflow_id": module.COMFYUI_WORKFLOW_IMAGE_ID,
+                    "workflow_version": module.COMFYUI_WORKFLOW_IMAGE_VERSION,
+                    "execution_backend": "local",
+                    "build_commit_sha": "local-sha",
+                    "build_version": None,
+                    "build_timestamp": None,
+                    "bundle_source": "modal_worker",
+                },
             }
 
     monkeypatch.setattr(modal.Function, "from_name", lambda *_args, **_kwargs: FakeHealthcheckFunction())
@@ -1241,6 +1257,50 @@ def test_s1_image_runtime_healthcheck_can_delegate_to_modal_worker(tmp_path: Pat
     assert payload["ok"] is True
     assert payload["orchestrator_host"] == "coolify"
     assert payload["startup_mode"] == "remote_gpu_worker"
+    assert payload["deployment_alignment"] == "aligned"
+    assert payload["remote_deployment_fingerprint"]["bundle_source"] == "modal_worker"
+    assert payload["deployment_fingerprint"]["bundle_source"] == "orchestrator"
+
+
+def test_s1_image_runtime_healthcheck_reports_modal_deployment_mismatch(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("S1_IMAGE_EXECUTION_BACKEND", "modal")
+    monkeypatch.setenv("VB_BUILD_COMMIT_SHA", "local-sha")
+    module = _load_runtime_module(tmp_path, monkeypatch)
+
+    class FakeHealthcheckFunction:
+        def remote(self, *, deep: bool) -> dict:
+            assert deep is True
+            return {
+                "ok": True,
+                "provider_ready": True,
+                "service": "s1_image",
+                "provider": "modal",
+                "progress_transport": "websocket_optional",
+                "runtime_checks": {"workflow_baked": True},
+                "runtime_contract": {"runtime_stage": "identity_image"},
+                "comfyui_reachable": True,
+                "deployment_fingerprint": {
+                    "service": "s1_image",
+                    "runtime_stage": "identity_image",
+                    "workflow_id": module.COMFYUI_WORKFLOW_IMAGE_ID,
+                    "workflow_version": module.COMFYUI_WORKFLOW_IMAGE_VERSION,
+                    "execution_backend": "local",
+                    "build_commit_sha": "remote-sha",
+                    "build_version": None,
+                    "build_timestamp": None,
+                    "bundle_source": "modal_worker",
+                },
+            }
+
+    monkeypatch.setattr(modal.Function, "from_name", lambda *_args, **_kwargs: FakeHealthcheckFunction())
+    client = TestClient(module.app)
+
+    response = client.get("/healthcheck?deep=true")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["deployment_alignment"] == "mismatch"
+    assert payload["mismatch_fields"] == ["build_commit_sha"]
 
 
 def test_s1_image_runtime_lab_handoff_allows_missing_reference_face_url(tmp_path: Path, monkeypatch) -> None:
