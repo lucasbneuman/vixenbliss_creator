@@ -53,6 +53,12 @@ class InMemoryServiceRuntime:
             return self.processor(payload, emit_progress=emit_progress)
         return self.processor(payload)
 
+    @staticmethod
+    def _is_error_result(result: dict | None) -> bool:
+        if not isinstance(result, dict):
+            return False
+        return bool(result.get("error_code") or result.get("error_message"))
+
     def submit(self, payload: dict) -> JobRecord:
         job_id = f"job-{uuid4().hex[:12]}"
         record = JobRecord(job_id=job_id, status=JobStatus.IN_PROGRESS)
@@ -65,8 +71,13 @@ class InMemoryServiceRuntime:
         try:
             self._append_event(record, stage="running", message="job running", progress=0.12)
             record.result = self._invoke_processor(payload, emit_progress)
-            self._append_event(record, stage="completed", message="job completed", progress=1.0)
-            record.status = JobStatus.COMPLETED
+            if self._is_error_result(record.result):
+                record.error_message = str(record.result.get("error_message") or record.result.get("error_code") or "job failed")
+                self._append_event(record, stage="failed", message=record.error_message, progress=1.0)
+                record.status = JobStatus.FAILED
+            else:
+                self._append_event(record, stage="completed", message="job completed", progress=1.0)
+                record.status = JobStatus.COMPLETED
         except Exception as exc:
             record.error_message = str(exc)
             self._append_event(record, stage="failed", message=str(exc), progress=1.0)

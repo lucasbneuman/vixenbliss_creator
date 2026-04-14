@@ -1574,6 +1574,17 @@ def _lab_extract_turn_updates(message: str) -> dict[str, dict[str, object]]:
     normalized = " ".join(message.lower().split())
     source_text = _lab_turn_source_text(message)
     updates: dict[str, dict[str, object]] = {}
+    display_name_match = re.search(
+        r"(?:cambiemos?\s+el\s+nom(?:bre|rbe)\s+a|cambia(?:me|mos)?\s+el\s+nom(?:bre|rbe)\s+a|"
+        r"(?:quiero\s+un\s+avatar\s+llamad[ao]|quiero\s+una\s+modelo\s+llamad[ao]|se\s+llame|llamad[ao]))"
+        r"\s+[\"'“”]?\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]{1,60})",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if display_name_match:
+        display_name = " ".join(display_name_match.group(1).strip(" .,:;!?\"'“”").split())
+        if display_name:
+            updates["identity_core.display_name"] = {"value": display_name, "source_text": source_text}
 
     age_match = re.search(r"\b([1-9]\d)\s*a(?:n|ñ)os\b", normalized)
     if age_match:
@@ -1774,7 +1785,11 @@ def _lab_overlay_state_with_session(state: GraphState, session: dict[str, object
         value = update.get("value")
         source_text = update.get("source_text")
         should_trace = True
-        if field_path == "identity_core.fictional_age_years":
+        if field_path == "identity_core.display_name":
+            identity_draft["name"] = value
+            identity_core["display_name"] = value
+            normalized_constraints["name"] = value
+        elif field_path == "identity_core.fictional_age_years":
             identity_core["fictional_age_years"] = value
         elif field_path == "metadata.category":
             metadata["category"] = value
