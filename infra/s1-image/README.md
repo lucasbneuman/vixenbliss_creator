@@ -249,10 +249,12 @@ El draft del avatar queda congelado una vez que existe un `last_graph_state` val
 
 Regla operativa vigente:
 
-- los turnos normales ya no recomponen identidad completa desde texto libre
-- solo se aplican cambios explicitos detectados por el parser conversacional
+- los cambios explicitos detectados por el parser se aplican directo sobre el avatar actual
+- un prompt nuevo que no sea comando tambien puede refinar el avatar actual usando el estado vigente como base
+- si un mismo mensaje mezcla cambios explicitos y una descripcion nueva, los overrides manuales tienen prioridad y el resto del texto se usa como refinamiento controlado
 - `Completar automaticamente` mantiene el flujo de autofill
-- `Regenerar Avatar` vuelve a ejecutar la composicion completa del avatar
+- `Regenerar Avatar` limpia el avatar actual y reinicia la construccion desde cero
+- despues de `Regenerar Avatar`, el operador tiene que cargar de nuevo los campos o usar `Completar automaticamente`
 
 Formato esperado del mensaje de faltantes:
 

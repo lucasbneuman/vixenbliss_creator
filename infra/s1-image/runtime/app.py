@@ -1695,6 +1695,7 @@ _LAB_UI_TEXT_BY_LOCALE: dict[str, dict[str, str]] = {
         "field_example_prefix": "Example",
         "autofill_command_hint": "To complete automatically, type: Complete the rest automatically",
         "regenerate_command_hint": "To regenerate, type: Regenerate Avatar",
+        "avatar_reset": "I cleared the current avatar. Start again with the fields you want or complete the rest automatically.",
     },
     "es": {
         "no_reference": "Sin referencia",
@@ -1716,6 +1717,7 @@ _LAB_UI_TEXT_BY_LOCALE: dict[str, dict[str, str]] = {
         "field_example_prefix": "Ejemplo",
         "autofill_command_hint": "Para completar automaticamente escribi: Completar automaticamente",
         "regenerate_command_hint": "Para regenerar escribi: Regenerar Avatar",
+        "avatar_reset": "Limpié el avatar actual. Volvé a cargar los campos que quieras o completá el resto automáticamente.",
     },
 }
 
@@ -1743,7 +1745,18 @@ def _lab_turn_source_text(message: str) -> str:
     return normalize_trace_source_text(message) or "turno_operador"
 
 
-def _lab_autofill_requested(message: str) -> bool:
+def _lab_clean_extracted_name(raw_value: str) -> str:
+    collapsed = " ".join(raw_value.strip(" .,:;!?\"'").split())
+    collapsed = re.split(
+        r"\s+(?:y\s+quiero|y\s+que|y\s+con|pero|preservando|manteniendo)\b|,",
+        collapsed,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    return " ".join(collapsed.strip(" .,:;!?\"'").split())
+
+
+def _lab_autofill_requested_legacy_unused(message: str) -> bool:
     normalized = " ".join(message.lower().split())
     return any(
         term in normalized
@@ -1762,11 +1775,11 @@ def _lab_autofill_requested(message: str) -> bool:
     )
 
 
-def _lab_extract_turn_updates(message: str) -> dict[str, dict[str, object]]:
+def _lab_extract_turn_updates_legacy_unused(message: str) -> dict[str, dict[str, object]]:
     return _lab_extract_turn_updates_impl(message)
 
 
-def _lab_normalize_command_text(message: str) -> str:
+def _lab_normalize_command_text_legacy_unused(message: str) -> str:
     normalized = message.lower().strip()
     normalized = normalized.translate(str.maketrans("áéíóúüñ", "aeiouun"))
     return " ".join(normalized.split())
@@ -1863,6 +1876,136 @@ def _lab_extract_turn_updates_impl(message: str) -> dict[str, dict[str, object]]
     return updates
 
 
+def _lab_extract_turn_updates_v2(message: str) -> dict[str, dict[str, object]]:
+    normalized = _lab_normalize_command_text(message)
+    source_text = _lab_turn_source_text(message)
+    updates = dict(_lab_extract_turn_updates_impl(message))
+    if "identity_core.display_name" in updates:
+        raw_name = str(updates["identity_core.display_name"].get("value") or "")
+        cleaned_name = _lab_clean_extracted_name(raw_name)
+        if cleaned_name:
+            updates["identity_core.display_name"]["value"] = cleaned_name
+
+    name_patterns = (
+        r"cambiale\s+el\s+nom(?:bre|rbe)\s+a\s+[\"']?\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]{1,60})",
+        r"quiero\s+que\s+se\s+llame\s+[\"']?\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]{1,60})",
+        r"ahora\s+el\s+nombre\s+es\s+[\"']?\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]{1,60})",
+    )
+    for pattern in name_patterns:
+        match = re.search(pattern, message, flags=re.IGNORECASE)
+        if match:
+            display_name = _lab_clean_extracted_name(match.group(1))
+            if display_name:
+                updates["identity_core.display_name"] = {"value": display_name, "source_text": source_text}
+                break
+
+    for terms, color in (
+        (("cambiale los ojos a verdes", "ojos verde"), "green"),
+        (("cambiale los ojos a azules", "ojos azul"), "blue"),
+        (("cambiale los ojos a marrones",), "brown"),
+        (("cambiale los ojos a avellana",), "hazel"),
+    ):
+        if any(term in normalized for term in terms):
+            updates["visual_profile.eye_color"] = {"value": color, "source_text": source_text}
+            break
+
+    for terms, color in (
+        (("ponela rubia", "hacela rubia", "hacela blonde"), "blonde"),
+        (("ponela pelirroja", "hacela pelirroja"), "red"),
+        (("ponela morena", "hacela morena"), "dark_brown"),
+    ):
+        if any(term in normalized for term in terms):
+            updates["visual_profile.hair_color"] = {"value": color, "source_text": source_text}
+            break
+
+    if "hacela formal" in normalized:
+        updates["voice_tone"] = {"value": "formal", "source_text": source_text}
+        updates["communication_style.speech_style"] = {"value": "refined", "source_text": source_text}
+    if "hacela glam" in normalized or "ponela glam" in normalized:
+        updates["communication_style.speech_style"] = {"value": "glam", "source_text": source_text}
+
+    return updates
+
+
+def _lab_is_low_signal_message(message: str) -> bool:
+    normalized = _lab_normalize_command_text(message)
+    return normalized in {
+        "",
+        "ok",
+        "dale",
+        "perfecto",
+        "seguimos",
+        "seguimos con este avatar",
+        "listo",
+        "bien",
+    }
+
+
+def _lab_should_refine_existing_avatar(message: str, turn_updates: dict[str, dict[str, object]]) -> bool:
+    normalized = _lab_normalize_command_text(message)
+    if not normalized:
+        return False
+    if _lab_is_low_signal_message(message) or _lab_autofill_requested(message) or _lab_regenerate_requested(message):
+        return False
+    if not turn_updates:
+        return True
+    if normalized.startswith("quiero que se llame") and set(turn_updates) == {"identity_core.display_name"}:
+        return False
+    if normalized.startswith("ahora el nombre es") and set(turn_updates) == {"identity_core.display_name"}:
+        return False
+    refinement_markers = (
+        "look",
+        "estilo",
+        "editorial",
+        "premium",
+        "vibe",
+        "preserv",
+        "manten",
+        "quiero un",
+        "quiero una",
+        "ademas",
+        "pero",
+    )
+    return any(marker in normalized for marker in refinement_markers)
+
+
+def _lab_reset_avatar_session(session: dict[str, object]) -> None:
+    session.pop("last_graph_state", None)
+    session.pop("draft_snapshot", None)
+    session.pop("last_readiness", None)
+    session.pop("last_response", None)
+    session["manual_overrides"] = {}
+    session["operator_messages"] = []
+    session["autofill_requested"] = False
+
+
+def _lab_refinement_prompt(state: GraphState, message: str, *, locale: str | None = None) -> str:
+    technical_sheet = state.final_technical_sheet_payload
+    if technical_sheet is None:
+        return message
+    language = _lab_normalize_locale(locale)
+    identity_bits = [
+        f"name {technical_sheet.identity_core.display_name}",
+        f"style {_enum_or_value(technical_sheet.identity_metadata.style)}",
+        f"vertical {_enum_or_value(technical_sheet.identity_metadata.vertical)}",
+        f"archetype {_enum_or_value(technical_sheet.personality_profile.archetype)}",
+        f"voice {_enum_or_value(technical_sheet.personality_profile.voice_tone)}",
+        f"hair {technical_sheet.visual_profile.hair_color}",
+        f"eyes {technical_sheet.visual_profile.eye_color}",
+        f"occupation {technical_sheet.identity_metadata.occupation_or_content_basis}",
+    ]
+    current_summary = ", ".join(str(bit) for bit in identity_bits if bit and "None" not in str(bit))
+    preserve_instruction = (
+        "Preservá todo lo no mencionado y refiná solo lo que pide el operador."
+        if language == "es"
+        else "Preserve everything not mentioned and refine only what the operator requested."
+    )
+    return normalize_trace_source_text(
+        f"Avatar actual: {current_summary}. Pedido nuevo: {message}. {preserve_instruction}",
+        max_length=220,
+        min_length=3,
+    ) or message
+
 def _lab_apply_turn_to_session(session: dict[str, object], message: str) -> None:
     normalized_command = _lab_normalize_command_text(message)
     is_regenerate = normalized_command in _LAB_REGENERATE_COMMANDS
@@ -1872,7 +2015,7 @@ def _lab_apply_turn_to_session(session: dict[str, object], message: str) -> None
         operator_messages.append(message)
     session["operator_messages"] = operator_messages[-20:]
     manual_overrides = dict(session.get("manual_overrides", {}))
-    manual_overrides.update(_lab_extract_turn_updates(message))
+    manual_overrides.update(_lab_extract_turn_updates_v2(message))
     session["manual_overrides"] = manual_overrides
     session["autofill_requested"] = bool(session.get("autofill_requested")) or _lab_autofill_requested(message)
 
@@ -1902,7 +2045,7 @@ def _lab_composed_idea(session: dict[str, object]) -> str:
     messages = [str(item).strip() for item in list(session.get("operator_messages", [])) if str(item).strip()]
     operator_brief = normalize_trace_source_text(" ".join(messages[-6:]), max_length=150, min_length=0) or ""
     manual_overrides = dict(session.get("manual_overrides", {}))
-    if not manual_overrides:
+    if not manual_overrides and not bool(session.get("autofill_requested")):
         return operator_brief
 
     parts: list[str] = []
@@ -2525,6 +2668,62 @@ def _lab_error_response(
     }
 
 
+def _lab_reset_response(
+    session_id: str,
+    message: str,
+    *,
+    session: dict[str, object],
+    locale: str | None = None,
+) -> dict[str, object]:
+    language = _lab_normalize_locale(locale or session.get("locale"))
+    readiness = _lab_chat_readiness_report(session, None, locale=language)
+    reference_summary = _lab_reference_summary(session, locale=language)
+    conversation_summary = {
+        "turn_count": len(list(session.get("operator_messages", []))),
+        "operator_brief": _lab_operator_brief(session, locale=language),
+        "autofill_requested": bool(session.get("autofill_requested")),
+    }
+    assistant_lines = [_lab_text(language, "avatar_reset"), *_lab_missing_field_message_lines(list(readiness.get("missing_fields") or []), locale=language)]
+    response = {
+        "session_id": session_id,
+        "chat_entry": {
+            "user_message": message,
+            "assistant_message": "\n".join(line for line in assistant_lines if line),
+            "status": CompletionStatus.SUCCEEDED.value,
+            "error": None,
+        },
+        "panel": {
+            "completion_status": CompletionStatus.PENDING.value,
+            "identity": {},
+            "personality_axes": {},
+            "visual_profile": {},
+            "traceability": {
+                "manual_fields": [],
+                "inferred_fields": [],
+                "missing_fields": list(readiness.get("missing_fields") or []),
+                "missing_field_labels": list(readiness.get("missing_field_labels") or []),
+                "field_traces": {},
+            },
+            "copilot": {},
+            "identity_context": {},
+            "readiness": {
+                "can_handoff": False,
+                "missing_fields": list(readiness.get("missing_fields") or []),
+                "missing_field_labels": list(readiness.get("missing_field_labels") or []),
+                "next_question": readiness.get("next_question"),
+                "autofill_available": bool(readiness.get("autofill_available")),
+            },
+            "reference_face": reference_summary,
+            "conversation": conversation_summary,
+            "s1_payload_preview": {},
+            "graph_state_json": {},
+        },
+        "can_handoff": False,
+        "history": list(session.get("history", [])),
+    }
+    return response
+
+
 def _lab_run_chat_turn(
     session_id: str,
     message: str,
@@ -2547,13 +2746,31 @@ def _lab_run_chat_turn(
             session.pop("reference_face_image_url", None)
     previous_response = session.get("last_response")
     previous_panel = previous_response.get("panel") if isinstance(previous_response, dict) else None
-    _lab_apply_turn_to_session(session, message)
     should_regenerate = _lab_regenerate_requested(message)
     should_autofill = _lab_autofill_requested(message)
+    turn_updates = _lab_extract_turn_updates_v2(message)
+    if should_regenerate:
+        _lab_reset_avatar_session(session)
+        response = _lab_reset_response(session_id, message, session=session, locale=language)
+        history = list(session.get("history", []))
+        history.append(response["chat_entry"])
+        session["history"] = history[-20:]
+        response["history"] = list(session["history"])
+        session["last_response"] = response
+        return response
+
+    _lab_apply_turn_to_session(session, message)
     previous_state = _lab_state_from_session(session)
+    low_signal_turn = _lab_is_low_signal_message(message)
+    should_refine_existing = _lab_should_refine_existing_avatar(message, turn_updates)
     try:
-        if previous_state is not None and not should_regenerate and not should_autofill:
+        if previous_state is not None and turn_updates and not should_autofill and not should_refine_existing:
             state = _lab_overlay_state_with_session(previous_state, session)
+        elif previous_state is not None and not should_autofill and low_signal_turn:
+            state = previous_state
+        elif previous_state is not None and not should_autofill:
+            refinement_prompt = _lab_refinement_prompt(previous_state, message, locale=language)
+            state = _lab_overlay_state_with_session(run_agentic_brain(refinement_prompt), session)
         else:
             composed_idea = _lab_composed_idea(session)
             state = _lab_overlay_state_with_session(run_agentic_brain(composed_idea), session)

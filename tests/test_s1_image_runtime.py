@@ -445,6 +445,36 @@ def test_s1_image_runtime_lab_follow_up_turns_keep_avatar_composition_stable(tmp
     )
 
 
+def test_s1_image_runtime_lab_refine_prompt_reexecutes_runner_with_current_avatar_context(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    _authenticate_test_client(module, client)
+    real_runner = module.run_agentic_brain
+    captured_ideas: list[str] = []
+
+    def fake_run_agentic_brain(idea: str):
+        captured_ideas.append(idea)
+        return real_runner(idea)
+
+    monkeypatch.setattr(module, "run_agentic_brain", fake_run_agentic_brain)
+
+    first = client.post(
+        "/lab/chat",
+        json={"session_id": "session-refine", "message": "Quiero un avatar llamado Luna, estilo glam y pelo rubio."},
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        "/lab/chat",
+        json={"session_id": "session-refine", "message": "Ahora quiero un look mas editorial y premium, preservando lo demas."},
+    )
+
+    assert second.status_code == 200
+    assert len(captured_ideas) == 2
+    assert "Avatar actual:" in captured_ideas[1]
+    assert "Pedido nuevo:" in captured_ideas[1]
+
+
 def test_s1_image_runtime_lab_chat_applies_display_name_override(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     client = TestClient(module.app)
@@ -468,6 +498,50 @@ def test_s1_image_runtime_lab_chat_applies_display_name_override(tmp_path: Path,
     assert "Julia Risitos" in payload["chat_entry"]["assistant_message"]
     assistant_message = payload["chat_entry"]["assistant_message"]
     assert ("name: Julia Risitos" in assistant_message) or ("nombre: Julia Risitos" in assistant_message)
+
+    second_response = client.post(
+        "/lab/chat",
+        json={"session_id": "session-rename", "message": "Ahora el nombre es Carla Velvet"},
+    )
+
+    assert second_response.status_code == 200
+    second_payload = second_response.json()
+    assert second_payload["panel"]["identity"]["display_name"] == "Carla Velvet"
+
+
+def test_s1_image_runtime_lab_mixed_edit_and_refinement_reexecutes_runner(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    _authenticate_test_client(module, client)
+    real_runner = module.run_agentic_brain
+    captured_ideas: list[str] = []
+
+    def fake_run_agentic_brain(idea: str):
+        captured_ideas.append(idea)
+        return real_runner(idea)
+
+    monkeypatch.setattr(module, "run_agentic_brain", fake_run_agentic_brain)
+
+    first = client.post(
+        "/lab/chat",
+        json={"session_id": "session-mixed-refine", "message": "Quiero un avatar llamado Luna, estilo glam y pelo rubio."},
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        "/lab/chat",
+        json={
+            "session_id": "session-mixed-refine",
+            "message": "Cambiale el nombre a Carla Velvet y quiero un look mas editorial premium preservando lo demas.",
+        },
+    )
+
+    assert second.status_code == 200
+    payload = second.json()
+    assert len(captured_ideas) == 2
+    assert "Pedido nuevo:" in captured_ideas[1]
+    assert payload["panel"]["identity"]["display_name"] == "Carla Velvet"
+    assert payload["panel"]["identity_context"]["display_name"] == "Carla Velvet"
 
 
 def test_s1_image_runtime_lab_chat_formats_missing_fields_with_examples(tmp_path: Path, monkeypatch) -> None:
@@ -538,6 +612,19 @@ def test_s1_image_runtime_lab_regenerate_avatar_reexecutes_agentic_runner(tmp_pa
     )
 
     assert second.status_code == 200
+    reset_payload = second.json()
+    assert reset_payload["panel"]["identity"] == {}
+    assert reset_payload["panel"]["graph_state_json"] == {}
+    assert reset_payload["panel"]["readiness"]["can_handoff"] is False
+
+    third = client.post(
+        "/lab/chat",
+        json={"session_id": "session-regenerate", "message": "Completar automaticamente"},
+    )
+
+    assert third.status_code == 200
+    third_payload = third.json()
+    assert third_payload["panel"]["graph_state_json"] != {}
     assert len(captured_ideas) == 2
 
 
