@@ -316,7 +316,7 @@
                 <span>${escapeHtml(t.assistant)}</span>
                 <span>${assistantStatusLabel}</span>
               </div>
-              <div>${escapeHtml(entry.assistant_message || "")}</div>
+              <div class="bubble-copy assistant-copy">${escapeHtml(entry.assistant_message || "")}</div>
               ${entry.error ? `<p class="meta">${escapeHtml(t.errorLabel)}: ${escapeHtml(entry.error)}</p>` : ""}
             </div>
           </article>

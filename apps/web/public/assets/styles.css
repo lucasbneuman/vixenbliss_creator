@@ -248,6 +248,10 @@ textarea {
   background: #fffdf9;
 }
 
+.bubble-copy.assistant-copy {
+  white-space: pre-line;
+}
+
 .bubble-header {
   display: flex;
   justify-content: space-between;

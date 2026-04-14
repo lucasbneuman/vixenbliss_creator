@@ -243,6 +243,30 @@ Validacion posterior recomendada:
 modal run infra/s1-image/providers/modal/app.py::runtime_healthcheck --deep
 ```
 
+## Comportamiento conversacional del Lab
+
+El draft del avatar queda congelado una vez que existe un `last_graph_state` valido en la sesion.
+
+Regla operativa vigente:
+
+- los turnos normales ya no recomponen identidad completa desde texto libre
+- solo se aplican cambios explicitos detectados por el parser conversacional
+- `Completar automaticamente` mantiene el flujo de autofill
+- `Regenerar Avatar` vuelve a ejecutar la composicion completa del avatar
+
+Formato esperado del mensaje de faltantes:
+
+- el `assistant_message` puede incluir saltos de linea
+- cada campo pendiente se muestra con su etiqueta y un ejemplo del formato esperado
+- ejemplo:
+
+```text
+Edad ficticia
+Ejemplo: Edad ficticia = 22 años
+```
+
+El front del chat preserva esos saltos de linea para que la guia se vea como bloque legible dentro de la burbuja del asistente.
+
 ## Nota sobre Runpod
 
 Runpod queda deprecado para S1 image.

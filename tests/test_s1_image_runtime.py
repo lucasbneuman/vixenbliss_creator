@@ -326,6 +326,7 @@ def test_s1_image_runtime_lab_executes_langgraph_and_returns_panel(tmp_path: Pat
     assert payload["panel"]["traceability"]["missing_field_labels"] == ["Eye color", "Hair color"]
     assert "S1 Image" in payload["chat_entry"]["assistant_message"]
     assert "Eye color" in payload["chat_entry"]["assistant_message"]
+    assert "Example: Eye color = hazel" in payload["chat_entry"]["assistant_message"]
     assert payload["panel"]["s1_payload_preview"]["reference_face_image_url"] is None
 
 
@@ -348,6 +349,7 @@ def test_s1_image_runtime_lab_localizes_chat_panel_to_spanish_when_requested(tmp
     assert payload["panel"]["traceability"]["missing_field_labels"] == ["Color de ojos", "Color de pelo"]
     assert "Color de ojos" in payload["chat_entry"]["assistant_message"]
     assert "Todavia no esta lista para S1 Image" in payload["chat_entry"]["assistant_message"]
+    assert "Ejemplo: Color de ojos = avellana" in payload["chat_entry"]["assistant_message"]
 
 
 def test_s1_image_runtime_lab_chat_overwrites_visual_fields_and_trims_trace_sources(tmp_path: Path, monkeypatch) -> None:
@@ -406,7 +408,7 @@ def test_s1_image_runtime_lab_handoff_uses_graph_state_readiness(tmp_path: Path,
     assert "Eye color" in response.json()["detail"]
 
 
-def test_s1_image_runtime_lab_follow_up_turns_keep_prior_operator_constraints(tmp_path: Path, monkeypatch) -> None:
+def test_s1_image_runtime_lab_follow_up_turns_keep_avatar_composition_stable(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     client = TestClient(module.app)
     _authenticate_test_client(module, client)
@@ -430,15 +432,17 @@ def test_s1_image_runtime_lab_follow_up_turns_keep_prior_operator_constraints(tm
 
     second = client.post(
         "/lab/chat",
-        json={"session_id": "session-context", "message": "ahora quiero que tenga ojos verdes"},
+        json={"session_id": "session-context", "message": "seguimos con este avatar"},
     )
 
     assert second.status_code == 200
-    assert len(captured_ideas) == 2
-    assert "Luna" in captured_ideas[1]
-    assert "glam" in captured_ideas[1].lower()
-    assert "piel oliva" in captured_ideas[1].lower()
-    assert "ojos verdes" in captured_ideas[1].lower()
+    payload = second.json()
+    assert len(captured_ideas) == 1
+    assert payload["panel"]["identity"]["display_name"] == first.json()["panel"]["identity"]["display_name"]
+    assert payload["panel"]["identity_context"]["display_name"] == first.json()["panel"]["identity_context"]["display_name"]
+    assert payload["panel"]["graph_state_json"]["final_technical_sheet_payload"]["identity_core"]["display_name"] == (
+        first.json()["panel"]["graph_state_json"]["final_technical_sheet_payload"]["identity_core"]["display_name"]
+    )
 
 
 def test_s1_image_runtime_lab_chat_applies_display_name_override(tmp_path: Path, monkeypatch) -> None:
@@ -466,6 +470,24 @@ def test_s1_image_runtime_lab_chat_applies_display_name_override(tmp_path: Path,
     assert ("name: Julia Risitos" in assistant_message) or ("nombre: Julia Risitos" in assistant_message)
 
 
+def test_s1_image_runtime_lab_chat_formats_missing_fields_with_examples(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    _authenticate_test_client(module, client)
+
+    response = client.post(
+        "/lab/chat",
+        json={"session_id": "session-format", "locale": "es-AR", "message": "Quiero una modelo formal."},
+    )
+
+    assert response.status_code == 200
+    assistant_message = response.json()["chat_entry"]["assistant_message"]
+    assert "Edad ficticia" in assistant_message
+    assert "Ejemplo: Edad ficticia = 22 años" in assistant_message
+    assert "Para completar automaticamente escribi: Completar automaticamente" in assistant_message
+    assert "Para regenerar escribi: Regenerar Avatar" in assistant_message
+
+
 def test_s1_image_runtime_lab_autofill_can_complete_remaining_fields(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     client = TestClient(module.app)
@@ -489,6 +511,34 @@ def test_s1_image_runtime_lab_autofill_can_complete_remaining_fields(tmp_path: P
     assert payload["panel"]["readiness"]["can_handoff"] is True
     assert payload["panel"]["readiness"]["missing_fields"] == []
     assert payload["panel"]["readiness"]["missing_field_labels"] == []
+
+
+def test_s1_image_runtime_lab_regenerate_avatar_reexecutes_agentic_runner(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    _authenticate_test_client(module, client)
+    real_runner = module.run_agentic_brain
+    captured_ideas: list[str] = []
+
+    def fake_run_agentic_brain(idea: str):
+        captured_ideas.append(idea)
+        return real_runner(idea)
+
+    monkeypatch.setattr(module, "run_agentic_brain", fake_run_agentic_brain)
+
+    first = client.post(
+        "/lab/chat",
+        json={"session_id": "session-regenerate", "message": "Quiero un avatar llamado Luna, estilo glam."},
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        "/lab/chat",
+        json={"session_id": "session-regenerate", "message": "Regenerar Avatar"},
+    )
+
+    assert second.status_code == 200
+    assert len(captured_ideas) == 2
 
 
 def test_s1_image_runtime_lab_returns_controlled_error_when_langgraph_fails(tmp_path: Path, monkeypatch) -> None:

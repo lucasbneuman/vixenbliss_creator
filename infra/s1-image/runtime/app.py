@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import time
+import unicodedata
 import uuid
 import zipfile
 from collections.abc import Callable
@@ -1587,6 +1588,17 @@ _LAB_REQUIRED_MANUAL_FIELDS: tuple[str, ...] = (
     "visual_profile.hair_color",
 )
 
+_LAB_AUTOFILL_COMMANDS: tuple[str, ...] = (
+    "completar automaticamente",
+    "completa el resto automaticamente",
+    "complete the rest automatically",
+)
+
+_LAB_REGENERATE_COMMANDS: tuple[str, ...] = (
+    "regenerar avatar",
+    "regenerate avatar",
+)
+
 _LAB_MISSING_FIELD_QUESTIONS_BY_LOCALE: dict[str, dict[str, str]] = {
     "en": {
         "identity_core.fictional_age_years": "Tell me the fictional adult age you want to use.",
@@ -1637,6 +1649,31 @@ _LAB_FIELD_LABELS_BY_LOCALE: dict[str, dict[str, str]] = {
     },
 }
 
+_LAB_FIELD_EXAMPLE_FORMATS_BY_LOCALE: dict[str, dict[str, str]] = {
+    "en": {
+        "identity_core.fictional_age_years": "Fictional age = 22 years",
+        "metadata.category": "Commercial category = adult creator",
+        "metadata.vertical": "Content type = adult entertainment",
+        "metadata.occupation_or_content_basis": "Profession or content basis = secretary",
+        "voice_tone": "Voice tone = seductive",
+        "communication_style.speech_style": "Speech style = glam",
+        "visual_profile.eye_color": "Eye color = hazel",
+        "visual_profile.hair_color": "Hair color = blonde",
+        "conversation.scene_context": "Main setting or scene = in her studio",
+    },
+    "es": {
+        "identity_core.fictional_age_years": "Edad ficticia = 22 años",
+        "metadata.category": "Categoria comercial = creadora adulta",
+        "metadata.vertical": "Tipo de contenido = entretenimiento adulto",
+        "metadata.occupation_or_content_basis": "Profesion o base de contenido = secretaria",
+        "voice_tone": "Tono de voz = seductor",
+        "communication_style.speech_style": "Estilo de habla = glam",
+        "visual_profile.eye_color": "Color de ojos = avellana",
+        "visual_profile.hair_color": "Color de pelo = rubio",
+        "conversation.scene_context": "Contexto o escena principal = en su estudio",
+    },
+}
+
 _LAB_UI_TEXT_BY_LOCALE: dict[str, dict[str, str]] = {
     "en": {
         "no_reference": "No reference",
@@ -1647,6 +1684,7 @@ _LAB_UI_TEXT_BY_LOCALE: dict[str, dict[str, str]] = {
         "draft_updated": "I updated the draft for {display_name}.",
         "detected_changes": " Detected changes: {changes}.",
         "not_ready": " It is not ready for S1 Image yet. Still missing: {missing}.",
+        "not_ready_block_intro": "It is not ready for S1 Image yet. Complete these fields using this format:",
         "ready": " The draft is now ready to send to S1 Image whenever you want.",
         "autofill_hint": " You can also say 'complete the rest automatically'.",
         "failed_conversational_turn": "I could not update the conversational draft on this turn.",
@@ -1654,6 +1692,9 @@ _LAB_UI_TEXT_BY_LOCALE: dict[str, dict[str, str]] = {
         "graph_not_ready": "The latest GraphState is not ready for handoff.",
         "handoff_not_ready": "The conversational draft is not ready for handoff yet. Still missing: {missing}.",
         "avatar_fallback": "the avatar",
+        "field_example_prefix": "Example",
+        "autofill_command_hint": "To complete automatically, type: Complete the rest automatically",
+        "regenerate_command_hint": "To regenerate, type: Regenerate Avatar",
     },
     "es": {
         "no_reference": "Sin referencia",
@@ -1664,6 +1705,7 @@ _LAB_UI_TEXT_BY_LOCALE: dict[str, dict[str, str]] = {
         "draft_updated": "Actualice el draft de {display_name}.",
         "detected_changes": " Cambios detectados: {changes}.",
         "not_ready": " Todavia no esta lista para S1 Image. Faltan: {missing}.",
+        "not_ready_block_intro": "Todavia no esta lista para S1 Image. Completa estos campos usando este formato:",
         "ready": " La ficha ya quedo lista para enviar a S1 Image cuando quieras.",
         "autofill_hint": " Tambien podes decir 'completa el resto automaticamente'.",
         "failed_conversational_turn": "No pude actualizar el draft conversacional en este turno.",
@@ -1671,6 +1713,9 @@ _LAB_UI_TEXT_BY_LOCALE: dict[str, dict[str, str]] = {
         "graph_not_ready": "El ultimo GraphState no quedo listo para handoff.",
         "handoff_not_ready": "La ficha conversacional todavia no esta lista para handoff. Faltan: {missing}.",
         "avatar_fallback": "el avatar",
+        "field_example_prefix": "Ejemplo",
+        "autofill_command_hint": "Para completar automaticamente escribi: Completar automaticamente",
+        "regenerate_command_hint": "Para regenerar escribi: Regenerar Avatar",
     },
 }
 
@@ -1718,6 +1763,42 @@ def _lab_autofill_requested(message: str) -> bool:
 
 
 def _lab_extract_turn_updates(message: str) -> dict[str, dict[str, object]]:
+    return _lab_extract_turn_updates_impl(message)
+
+
+def _lab_normalize_command_text(message: str) -> str:
+    normalized = message.lower().strip()
+    normalized = normalized.translate(str.maketrans("áéíóúüñ", "aeiouun"))
+    return " ".join(normalized.split())
+
+
+def _lab_autofill_requested(message: str) -> bool:
+    normalized = _lab_normalize_command_text(message)
+    return any(
+        term in normalized
+        for term in (
+            "completa el resto",
+            "rellena el resto",
+            "resto automatic",
+            "autocompleta",
+            "hacelo automatic",
+            *_LAB_AUTOFILL_COMMANDS,
+        )
+    )
+
+
+def _lab_regenerate_requested(message: str) -> bool:
+    normalized = _lab_normalize_command_text(message)
+    return normalized in _LAB_REGENERATE_COMMANDS
+
+
+def _lab_normalize_command_text(message: str) -> str:
+    normalized = unicodedata.normalize("NFKD", message.lower().strip())
+    normalized = normalized.encode("ascii", "ignore").decode("ascii")
+    return " ".join(normalized.split())
+
+
+def _lab_extract_turn_updates_impl(message: str) -> dict[str, dict[str, object]]:
     normalized = " ".join(message.lower().split())
     source_text = _lab_turn_source_text(message)
     updates: dict[str, dict[str, object]] = {}
@@ -1783,8 +1864,12 @@ def _lab_extract_turn_updates(message: str) -> dict[str, dict[str, object]]:
 
 
 def _lab_apply_turn_to_session(session: dict[str, object], message: str) -> None:
+    normalized_command = _lab_normalize_command_text(message)
+    is_regenerate = normalized_command in _LAB_REGENERATE_COMMANDS
+    is_control_turn = is_regenerate or normalized_command in _LAB_AUTOFILL_COMMANDS
     operator_messages = list(session.get("operator_messages", []))
-    operator_messages.append(message)
+    if not is_control_turn:
+        operator_messages.append(message)
     session["operator_messages"] = operator_messages[-20:]
     manual_overrides = dict(session.get("manual_overrides", {}))
     manual_overrides.update(_lab_extract_turn_updates(message))
@@ -1892,6 +1977,30 @@ def _lab_chat_readiness_report(session: dict[str, object], state: GraphState | N
         "next_question": next_question,
         "autofill_available": bool(missing_fields) and not bool(session.get("autofill_requested")),
     }
+
+
+def _lab_field_example(field_path: str, *, locale: str) -> str:
+    language = _lab_normalize_locale(locale)
+    examples = _LAB_FIELD_EXAMPLE_FORMATS_BY_LOCALE.get(language, _LAB_FIELD_EXAMPLE_FORMATS_BY_LOCALE["en"])
+    return examples.get(field_path, f"{_lab_field_label(field_path, locale=language)} = ...")
+
+
+def _lab_missing_field_message_lines(
+    missing_fields: list[str],
+    *,
+    locale: str,
+) -> list[str]:
+    language = _lab_normalize_locale(locale)
+    lines = [_lab_text(language, "not_ready_block_intro")]
+    example_prefix = _lab_text(language, "field_example_prefix")
+    for field_path in missing_fields:
+        label = _lab_field_label(field_path, locale=language)
+        example = _lab_field_example(field_path, locale=language)
+        lines.append(label)
+        lines.append(f"{example_prefix}: {example}")
+    lines.append(_lab_text(language, "autofill_command_hint"))
+    lines.append(_lab_text(language, "regenerate_command_hint"))
+    return lines
 
 
 def _lab_upsert_manual_trace(
@@ -2021,6 +2130,16 @@ def _lab_store_draft_snapshot(session: dict[str, object], state: GraphState) -> 
             "autofill_requested": bool(session.get("autofill_requested")),
         },
     }
+
+
+def _lab_state_from_session(session: dict[str, object]) -> GraphState | None:
+    raw_state = session.get("last_graph_state")
+    if not raw_state:
+        return None
+    try:
+        return GraphState.model_validate(raw_state)
+    except Exception:
+        return None
 
 
 def _lab_reference_summary(
@@ -2242,9 +2361,7 @@ def _lab_assistant_message(
     changes = _lab_panel_changes(previous_panel, panel, locale=language)
     readiness = dict(panel.get("readiness", {}) or {})
     missing_fields = list(readiness.get("missing_fields") or [])
-    missing_labels = list(readiness.get("missing_field_labels") or [])
     next_question = readiness.get("next_question")
-    autofill_available = bool(readiness.get("autofill_available"))
     display_name = (panel.get("identity") or {}).get("display_name") or _lab_text(language, "avatar_fallback")
     prefix = _lab_text(language, "draft_created") if previous_panel is None else _lab_text(
         language,
@@ -2253,11 +2370,11 @@ def _lab_assistant_message(
     )
     details = _lab_text(language, "detected_changes", changes=", ".join(changes)) if changes else ""
     if missing_fields:
-        labels = missing_labels or [_lab_field_label(field_path, locale=language) for field_path in missing_fields]
-        guidance = f" {next_question}" if next_question else ""
-        if autofill_available:
-            guidance = f"{guidance}{_lab_text(language, 'autofill_hint')}".rstrip()
-        return f"{prefix}{details}{_lab_text(language, 'not_ready', missing=', '.join(labels[:4]))}{guidance}"
+        lines = [f"{prefix}{details}".strip()]
+        if next_question:
+            lines.append(str(next_question))
+        lines.extend(_lab_missing_field_message_lines(missing_fields, locale=language))
+        return "\n".join(line for line in lines if line)
     return f"{prefix}{details}{_lab_text(language, 'ready')}"
 
 
@@ -2431,9 +2548,15 @@ def _lab_run_chat_turn(
     previous_response = session.get("last_response")
     previous_panel = previous_response.get("panel") if isinstance(previous_response, dict) else None
     _lab_apply_turn_to_session(session, message)
-    composed_idea = _lab_composed_idea(session)
+    should_regenerate = _lab_regenerate_requested(message)
+    should_autofill = _lab_autofill_requested(message)
+    previous_state = _lab_state_from_session(session)
     try:
-        state = _lab_overlay_state_with_session(run_agentic_brain(composed_idea), session)
+        if previous_state is not None and not should_regenerate and not should_autofill:
+            state = _lab_overlay_state_with_session(previous_state, session)
+        else:
+            composed_idea = _lab_composed_idea(session)
+            state = _lab_overlay_state_with_session(run_agentic_brain(composed_idea), session)
     except Exception as exc:
         response = _lab_error_response(session_id, message, str(exc), session=session, locale=language)
         history = list(session.get("history", []))
