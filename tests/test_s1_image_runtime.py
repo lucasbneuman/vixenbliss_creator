@@ -437,6 +437,31 @@ def test_s1_image_runtime_lab_follow_up_turns_keep_prior_operator_constraints(tm
     assert "ojos verdes" in captured_ideas[1].lower()
 
 
+def test_s1_image_runtime_lab_chat_applies_display_name_override(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    _authenticate_test_client(module, client)
+
+    ready_payload = _ready_lab_session(client, "session-rename")
+    previous_name = ready_payload["panel"]["identity"]["display_name"]
+    assert previous_name
+
+    response = client.post(
+        "/lab/chat",
+        json={"session_id": "session-rename", "message": "Cambiemos el nomrbe a Julia Risitos"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["panel"]["identity"]["display_name"] != previous_name
+    assert payload["panel"]["identity"]["display_name"] == "Julia Risitos"
+    assert payload["panel"]["identity_context"]["display_name"] == "Julia Risitos"
+    assert payload["panel"]["s1_payload_preview"]["metadata"]["identity_context"]["display_name"] == "Julia Risitos"
+    assert "Julia Risitos" in payload["chat_entry"]["assistant_message"]
+    assistant_message = payload["chat_entry"]["assistant_message"]
+    assert ("name: Julia Risitos" in assistant_message) or ("nombre: Julia Risitos" in assistant_message)
+
+
 def test_s1_image_runtime_lab_autofill_can_complete_remaining_fields(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     client = TestClient(module.app)
@@ -546,6 +571,9 @@ def test_s1_image_runtime_reports_reference_image_not_found(tmp_path: Path, monk
 
     submit = client.post("/jobs", json={"input": _base_job_input()})
     assert submit.status_code == 200
+    assert submit.json()["status"] == "failed"
+    progress_stages = [event["stage"] for event in submit.json()["metadata"]["progress_events"]]
+    assert progress_stages[-1] == "failed"
     result = client.get(submit.json()["result_url"])
 
     assert result.status_code == 200
@@ -1148,6 +1176,41 @@ def test_s1_image_runtime_can_delegate_execution_to_modal_worker(tmp_path: Path,
     assert "dispatching_modal_job" in stages
     assert "building_workflow" in stages
     assert "modal_job_completed" in stages
+
+
+def test_s1_image_runtime_marks_modal_error_results_as_failed(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("S1_IMAGE_EXECUTION_BACKEND", "modal")
+    module = _load_runtime_module(tmp_path, monkeypatch)
+
+    class FakeRemoteFunction:
+        def remote(self, payload: dict) -> dict:
+            assert payload["runtime_stage"] == "identity_image"
+            return {
+                "provider": "modal",
+                "runtime_stage": "identity_image",
+                "artifacts": [],
+                "error_code": "REFERENCE_IMAGE_NOT_FOUND",
+                "error_message": "reference_face_image_url could not be resolved",
+                "metadata": {
+                    "modal_progress_events": [
+                        {"stage": "building_workflow", "message": "Preparing workflow", "progress": 0.42},
+                    ]
+                },
+            }
+
+    monkeypatch.setattr(modal.Function, "from_name", lambda *_args, **_kwargs: FakeRemoteFunction())
+    client = TestClient(module.app)
+
+    submit = client.post("/jobs", json={"input": _base_job_input()})
+
+    assert submit.status_code == 200
+    assert submit.json()["status"] == "failed"
+    stages = [event["stage"] for event in submit.json()["metadata"]["progress_events"]]
+    assert "dispatching_modal_job" in stages
+    assert "building_workflow" in stages
+    assert "modal_job_completed" in stages
+    assert stages[-1] == "failed"
+    assert submit.json()["output"]["error_code"] == "REFERENCE_IMAGE_NOT_FOUND"
 
 
 def test_s1_image_runtime_healthcheck_can_delegate_to_modal_worker(tmp_path: Path, monkeypatch) -> None:
