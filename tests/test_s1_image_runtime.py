@@ -587,6 +587,59 @@ def test_s1_image_runtime_lab_autofill_can_complete_remaining_fields(tmp_path: P
     assert payload["panel"]["readiness"]["missing_field_labels"] == []
 
 
+def test_s1_image_runtime_lab_autofill_after_refinement_keeps_handoff_ready(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    client = TestClient(module.app)
+    _authenticate_test_client(module, client)
+    captured: dict[str, object] = {}
+
+    def fake_submit_job(payload: dict) -> dict:
+        captured["payload"] = payload
+        return {
+            "job_id": "job-autofill-refine",
+            "status": "completed",
+            "result_url": "/jobs/job-autofill-refine/result",
+            "progress_url": "/ws/jobs/job-autofill-refine",
+            "metadata": {"progress_events": []},
+        }
+
+    monkeypatch.setattr(module, "submit_job", fake_submit_job)
+
+    first = client.post(
+        "/lab/chat",
+        json={"session_id": "session-autofill-refine", "message": "Quiero un avatar llamado Luna, estilo glam y pelo rubio."},
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        "/lab/chat",
+        json={
+            "session_id": "session-autofill-refine",
+            "message": "Cambiale el nombre a Carla Velvet y quiero un look mas editorial premium preservando lo demas.",
+        },
+    )
+    assert second.status_code == 200
+    assert second.json()["can_handoff"] is False
+
+    third = client.post(
+        "/lab/chat",
+        json={"session_id": "session-autofill-refine", "message": "Completar automaticamente"},
+    )
+
+    assert third.status_code == 200
+    ready_payload = third.json()
+    assert ready_payload["can_handoff"] is True
+    assert ready_payload["panel"]["readiness"]["can_handoff"] is True
+    assert ready_payload["panel"]["readiness"]["missing_fields"] == []
+    assert ready_payload["panel"]["readiness"]["missing_field_labels"] == []
+
+    handoff = client.post("/lab/s1-image", json={"session_id": "session-autofill-refine"})
+
+    assert handoff.status_code == 200
+    assert captured["payload"]["input"]["reference_face_image_url"] is None
+    assert handoff.json()["handoff"]["job"]["job_id"] == "job-autofill-refine"
+
+
 def test_s1_image_runtime_lab_regenerate_avatar_reexecutes_agentic_runner(tmp_path: Path, monkeypatch) -> None:
     module = _load_runtime_module(tmp_path, monkeypatch)
     client = TestClient(module.app)
@@ -719,6 +772,29 @@ def test_s1_image_runtime_reports_reference_image_not_found(tmp_path: Path, monk
 
     assert result.status_code == 200
     assert result.json()["error_code"] == "REFERENCE_IMAGE_NOT_FOUND"
+
+
+def test_s1_image_runtime_reports_non_reference_filenotfound_as_execution_failure(tmp_path: Path, monkeypatch) -> None:
+    module = _load_runtime_module(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "_ensure_comfyui_running",
+        lambda **_kwargs: (_ for _ in ()).throw(FileNotFoundError("[WinError 2] El sistema no puede encontrar el archivo especificado")),
+    )
+    no_reference_job = _base_job_input(
+        reference_face_image_url=None,
+        ip_adapter={"enabled": False, "model_name": "plus_face", "weight": 0.9},
+    )
+    _create_required_flux_assets(module, no_reference_job)
+    client = TestClient(module.app)
+
+    submit = client.post("/jobs", json={"input": no_reference_job})
+    result = client.get(submit.json()["result_url"])
+
+    assert result.status_code == 200
+    payload = result.json()
+    assert payload["error_code"] == "COMFYUI_EXECUTION_FAILED"
+    assert "WinError 2" in payload["error_message"]
 
 
 def test_s1_image_runtime_rejects_non_identity_stage(tmp_path: Path, monkeypatch) -> None:

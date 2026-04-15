@@ -252,7 +252,7 @@ Regla operativa vigente:
 - los cambios explicitos detectados por el parser se aplican directo sobre el avatar actual
 - un prompt nuevo que no sea comando tambien puede refinar el avatar actual usando el estado vigente como base
 - si un mismo mensaje mezcla cambios explicitos y una descripcion nueva, los overrides manuales tienen prioridad y el resto del texto se usa como refinamiento controlado
-- `Completar automaticamente` mantiene el flujo de autofill
+- `Completar automaticamente` mantiene el flujo de autofill y debe dejar `panel.readiness.can_handoff = true` cuando ya no faltan campos
 - `Regenerar Avatar` limpia el avatar actual y reinicia la construccion desde cero
 - despues de `Regenerar Avatar`, el operador tiene que cargar de nuevo los campos o usar `Completar automaticamente`
 
@@ -268,6 +268,13 @@ Ejemplo: Edad ficticia = 22 años
 ```
 
 El front del chat preserva esos saltos de linea para que la guia se vea como bloque legible dentro de la burbuja del asistente.
+
+## Semantica de readiness y errores de handoff
+
+- el texto "listo para enviar a S1 Image" solo es valido cuando `panel.readiness.can_handoff = true`
+- `POST /lab/s1-image` vuelve a validar ese readiness antes de crear el job
+- `REFERENCE_IMAGE_NOT_FOUND` queda reservado para fallas reales al resolver `reference_face_image_url`
+- si el runtime falla al arrancar ComfyUI o no puede lanzar el worker local, el job debe cerrar con `COMFYUI_EXECUTION_FAILED`
 
 ## Nota sobre Runpod
 

@@ -7,6 +7,7 @@ import hmac
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 import unicodedata
@@ -134,6 +135,10 @@ _LAB_REFERENCE_UPLOADS: dict[str, dict[str, str]] = {}
 _WEB_AUTH_SESSIONS: dict[str, dict[str, object]] = {}
 
 ProgressEmitter = Callable[[str, str, float], None]
+
+
+class ReferenceImageResolutionError(FileNotFoundError):
+    """Raised when the explicit reference image input cannot be resolved."""
 
 
 def _resolved_workflow_id(job_input: dict | None = None) -> str:
@@ -299,12 +304,15 @@ def _ensure_comfyui_running(
         _COMFYUI_LOG_HANDLE = COMFYUI_LOG_PATH.open("a", encoding="utf-8")
         _COMFYUI_LOG_HANDLE.write("\n=== starting comfyui runtime ===\n")
         _COMFYUI_LOG_HANDLE.flush()
-        _COMFYUI_PROCESS = subprocess.Popen(
-            ["/bin/bash", str(ENTRYPOINT_SCRIPT)],
-            stdout=_COMFYUI_LOG_HANDLE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
+        try:
+            _COMFYUI_PROCESS = subprocess.Popen(
+                _comfyui_entrypoint_command(),
+                stdout=_COMFYUI_LOG_HANDLE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(f"COMFYUI_EXECUTION_FAILED: unable to launch embedded ComfyUI runtime ({exc})") from exc
 
     deadline = time.time() + 120
     while time.time() < deadline:
@@ -316,6 +324,15 @@ def _ensure_comfyui_running(
             raise RuntimeError(f"ComfyUI process exited before becoming healthy. Output: {output}")
         time.sleep(2)
     raise TimeoutError("ComfyUI did not become healthy within the expected startup window")
+
+
+def _comfyui_entrypoint_command() -> list[str]:
+    if os.name != "nt":
+        return ["/bin/bash", str(ENTRYPOINT_SCRIPT)]
+    bash_path = shutil.which("bash")
+    if bash_path:
+        return [bash_path, str(ENTRYPOINT_SCRIPT)]
+    raise RuntimeError("COMFYUI_EXECUTION_FAILED: bash is required to launch embedded ComfyUI on Windows")
 
 
 def _read_recent_comfyui_log(*, max_lines: int = 120) -> str:
@@ -461,6 +478,13 @@ def _download_remote_file(file_url: str, prefix: str) -> str:
     return filename
 
 
+def _resolve_reference_face_input(reference_face_image_url: str) -> str:
+    try:
+        return _download_remote_file(reference_face_image_url, "reference")
+    except FileNotFoundError as exc:
+        raise ReferenceImageResolutionError("reference_face_image_url could not be resolved") from exc
+
+
 def _materialize_resume_base_image(job_input: dict) -> str:
     checkpoint = job_input.get("resume_checkpoint") or {}
     artifacts = checkpoint.get("intermediate_artifacts") or []
@@ -547,7 +571,7 @@ def _build_workflow_payload(job_input: dict) -> dict:
 
     reference_face_image_url = job_input.get("reference_face_image_url")
     if reference_face_image_url:
-        workflow["load_reference_image"]["inputs"]["image"] = _download_remote_file(reference_face_image_url, "reference")
+        workflow["load_reference_image"]["inputs"]["image"] = _resolve_reference_face_input(reference_face_image_url)
     elif mode != ResumeStage.FACE_DETAIL.value:
         fallback_reference = job_input.get("reference_face_image_name")
         if fallback_reference:
@@ -1411,8 +1435,10 @@ def _processor(payload: dict, *, emit_progress: ProgressEmitter | None = None) -
         if S1_IMAGE_EXECUTION_BACKEND == "modal":
             return _run_generation_via_modal(payload, emit_progress=emit_progress)
         return _run_generation(payload, emit_progress=emit_progress)
-    except FileNotFoundError as exc:
+    except ReferenceImageResolutionError as exc:
         return _response_error("REFERENCE_IMAGE_NOT_FOUND", str(exc), job_input=payload)
+    except FileNotFoundError as exc:
+        return _response_error("COMFYUI_EXECUTION_FAILED", str(exc), job_input=payload)
     except RuntimeError as exc:
         message = str(exc)
         if message.startswith("RESUME_STATE_INCOMPLETE:"):
