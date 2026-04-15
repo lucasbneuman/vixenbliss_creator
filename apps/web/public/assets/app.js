@@ -462,14 +462,20 @@
     return body;
   }
 
-  async function loadDeploymentStatus() {
+  async function loadDeploymentStatus(options = {}) {
     if (!config.healthcheckEndpoint || !isAuthenticated()) {
       return;
     }
+    const timeoutMs = Number(options.timeoutMs || 4000);
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timeoutId = controller
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : null;
     try {
       const response = await fetch(config.healthcheckEndpoint, {
         method: "GET",
-        credentials: "same-origin"
+        credentials: "same-origin",
+        signal: controller ? controller.signal : undefined
       });
       deploymentStatus = await response.json().catch(() => null);
       if (lastPanel) {
@@ -484,6 +490,10 @@
       };
       if (lastPanel) {
         renderPanel(lastPanel);
+      }
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
       }
     }
   }
@@ -581,9 +591,9 @@
         reference_face_image_url: referenceUrlInput.value.trim(),
         locale
       });
-      await loadDeploymentStatus();
       renderPanel(payload.panel || null);
       feedback.textContent = `${t.jobCreated}: ${payload.handoff.job.job_id}`;
+      Promise.resolve(loadDeploymentStatus()).catch(() => {});
     } catch (error) {
       feedback.textContent = `${t.handoffFailed}: ${error.message}`;
       handoffButton.disabled = !lastPanel || !lastPanel.readiness || !lastPanel.readiness.can_handoff;
