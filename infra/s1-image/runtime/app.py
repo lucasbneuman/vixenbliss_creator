@@ -42,6 +42,13 @@ from vixenbliss_creator.visual_pipeline import ResumeCheckpoint, ResumeStage, Ru
 RUNTIME_ROOT = Path(__file__).resolve().parent
 
 
+def _env_override(name: str, default: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value or value == "CHANGEME":
+        return default
+    return value
+
+
 def _discover_web_public_root() -> Path:
     override_root = os.getenv("VB_WEB_PUBLIC_ROOT", "").strip()
     if override_root:
@@ -79,13 +86,13 @@ COMFYUI_INPUT_DIR = Path(os.getenv("COMFYUI_INPUT_DIR", str(COMFYUI_HOME / "inpu
 COMFYUI_OUTPUT_DIR = COMFYUI_HOME / "output"
 COMFYUI_MODELS_DIR = Path(os.getenv("COMFYUI_MODELS_DIR", str(COMFYUI_HOME / "models")))
 COMFYUI_CUSTOM_NODES_DIR = Path(os.getenv("COMFYUI_CUSTOM_NODES_DIR", str(COMFYUI_HOME / "custom_nodes")))
-COMFYUI_WORKFLOW_IMAGE_ID = os.getenv(
+COMFYUI_WORKFLOW_IMAGE_ID = _env_override(
     "COMFYUI_WORKFLOW_IDENTITY_ID",
-    os.getenv("COMFYUI_WORKFLOW_IMAGE_ID", "base-image-ipadapter-impact"),
+    _env_override("COMFYUI_WORKFLOW_IMAGE_ID", "lora-dataset-ipadapter-batch"),
 )
-COMFYUI_WORKFLOW_IMAGE_VERSION = os.getenv(
+COMFYUI_WORKFLOW_IMAGE_VERSION = _env_override(
     "COMFYUI_WORKFLOW_IDENTITY_VERSION",
-    os.getenv("COMFYUI_WORKFLOW_IMAGE_VERSION", "2026-03-31"),
+    _env_override("COMFYUI_WORKFLOW_IMAGE_VERSION", "2026-04-08"),
 )
 COMFYUI_FLUX_DIFFUSION_MODEL_NAME = os.getenv("COMFYUI_FLUX_DIFFUSION_MODEL_NAME", "flux1-schnell.safetensors")
 COMFYUI_FLUX_AE_NAME = os.getenv("COMFYUI_FLUX_AE_NAME", "ae.safetensors")

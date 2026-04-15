@@ -151,9 +151,22 @@ def test_s1_image_runtime_healthcheck_reports_identity_contract(tmp_path: Path, 
     assert payload["runtime_contract"]["workflow_scope"] == "s1_image"
     assert payload["deployment_fingerprint"]["service"] == "s1_image"
     assert payload["deployment_fingerprint"]["bundle_source"] == "orchestrator"
+    assert payload["deployment_fingerprint"]["workflow_id"] == "lora-dataset-ipadapter-batch"
+    assert payload["deployment_fingerprint"]["workflow_version"] == "2026-04-08"
     assert payload["deployment_alignment"] == "unknown"
     assert payload["remote_deployment_fingerprint"] is None
     assert payload["runtime_contract"]["lora_supported"] is False
+
+
+def test_s1_image_runtime_ignores_changeme_workflow_env_values(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("COMFYUI_WORKFLOW_IDENTITY_ID", "CHANGEME")
+    monkeypatch.setenv("COMFYUI_WORKFLOW_IDENTITY_VERSION", "CHANGEME")
+    monkeypatch.setenv("COMFYUI_WORKFLOW_IMAGE_ID", "CHANGEME")
+    monkeypatch.setenv("COMFYUI_WORKFLOW_IMAGE_VERSION", "CHANGEME")
+    module = _load_runtime_module(tmp_path, monkeypatch)
+
+    assert module.COMFYUI_WORKFLOW_IMAGE_ID == "lora-dataset-ipadapter-batch"
+    assert module.COMFYUI_WORKFLOW_IMAGE_VERSION == "2026-04-08"
 
 
 def test_s1_image_runtime_root_page_renders_chat_layout(tmp_path: Path, monkeypatch) -> None:
