@@ -16,6 +16,7 @@ import zipfile
 from collections.abc import Callable
 from collections import Counter
 from pathlib import Path
+from threading import Thread
 from typing import TextIO
 from urllib import error, parse, request
 from uuid import UUID
@@ -2897,6 +2898,13 @@ def _record_directus_run(record: object, job_input: dict) -> None:
             record.result["metadata"]["directus_recording_error"] = str(exc)
 
 
+def _record_directus_run_when_ready(record: object, job_input: dict) -> None:
+    done_event = getattr(record, "done_event", None)
+    if done_event is not None:
+        done_event.wait()
+    _record_directus_run(record, job_input)
+
+
 @app.get("/lab", response_class=HTMLResponse)
 def langgraph_lab(request: Request) -> Response:
     session = _active_auth_session(request)
@@ -3200,7 +3208,11 @@ def healthcheck(deep: bool = False) -> dict:
 def submit_job(payload: dict) -> dict:
     job_input = payload.get("input", payload)
     record = runtime.submit(job_input)
-    _record_directus_run(record, job_input)
+    done_event = getattr(record, "done_event", None)
+    if done_event is not None and not done_event.is_set():
+        Thread(target=_record_directus_run_when_ready, args=(record, job_input), daemon=True).start()
+    else:
+        _record_directus_run(record, job_input)
     response = record.status_payload(
         progress_url=f"/ws/jobs/{record.job_id}",
         result_url=f"/jobs/{record.job_id}/result",

@@ -60,6 +60,13 @@ Rutas del lab:
 - `POST /lab/langgraph`: ejecuta `LangGraph` con runner determinista
 - `POST /lab/s1-image`: toma el ultimo resultado valido y crea el job de `S1 Image`
 
+Semantica operativa del contrato de jobs:
+
+- `POST /jobs` debe devolver el `job_id` y las URLs de seguimiento rapidamente, sin esperar a que termine toda la generacion
+- si el processor termina casi de inmediato, la respuesta puede incluir `output` inline
+- si el job sigue en curso, el resultado completo se consulta por `GET /jobs/{id}/result`
+- `POST /lab/s1-image` debe comportarse igual: crear el job rapido, devolver `handoff.job.job_id` y dejar el progreso para `/ws/jobs/{id}` o `/jobs/{id}`
+
 Uso local minimo:
 
 1. levantar el runtime `FastAPI` de `S1 image`
@@ -273,6 +280,7 @@ El front del chat preserva esos saltos de linea para que la guia se vea como blo
 
 - el texto "listo para enviar a S1 Image" solo es valido cuando `panel.readiness.can_handoff = true`
 - `POST /lab/s1-image` vuelve a validar ese readiness antes de crear el job
+- el handoff no debe esperar la generacion completa de `S1 Image`; debe responder apenas el job fue aceptado
 - `REFERENCE_IMAGE_NOT_FOUND` queda reservado para fallas reales al resolver `reference_face_image_url`
 - si el runtime falla al arrancar ComfyUI o no puede lanzar el worker local, el job debe cerrar con `COMFYUI_EXECUTION_FAILED`
 

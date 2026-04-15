@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from inspect import signature
+from threading import Event, Lock, Thread
 from typing import Callable
 from uuid import uuid4
 
@@ -21,6 +22,7 @@ class JobRecord:
     result: dict | None = None
     error_message: str | None = None
     progress_events: list[ProgressEvent] = field(default_factory=list)
+    done_event: Event = field(default_factory=Event, repr=False)
 
     def status_payload(self, *, progress_url: str | None = None, result_url: str | None = None) -> dict:
         metadata = {
@@ -41,11 +43,13 @@ class JobRecord:
 class InMemoryServiceRuntime:
     processor: Processor
     jobs: dict[str, JobRecord] = field(default_factory=dict)
+    _lock: Lock = field(default_factory=Lock)
 
     def _append_event(self, record: JobRecord, *, stage: str, message: str, progress: float) -> None:
-        record.progress_events.append(
-            ProgressEvent(job_id=record.job_id, stage=stage, message=message, progress=progress)
-        )
+        with self._lock:
+            record.progress_events.append(
+                ProgressEvent(job_id=record.job_id, stage=stage, message=message, progress=progress)
+            )
 
     def _invoke_processor(self, payload: dict, emit_progress: ProgressReporter) -> dict:
         params = signature(self.processor).parameters
@@ -59,36 +63,52 @@ class InMemoryServiceRuntime:
             return False
         return bool(result.get("error_code") or result.get("error_message"))
 
-    def submit(self, payload: dict) -> JobRecord:
-        job_id = f"job-{uuid4().hex[:12]}"
-        record = JobRecord(job_id=job_id, status=JobStatus.IN_PROGRESS)
-        self._append_event(record, stage="accepted", message="job accepted", progress=0.05)
-        self.jobs[job_id] = record
-
+    def _run_job(self, record: JobRecord, payload: dict) -> None:
         def emit_progress(stage: str, message: str, progress: float) -> None:
             self._append_event(record, stage=stage, message=message, progress=progress)
 
         try:
             self._append_event(record, stage="running", message="job running", progress=0.12)
-            record.result = self._invoke_processor(payload, emit_progress)
-            if self._is_error_result(record.result):
-                record.error_message = str(record.result.get("error_message") or record.result.get("error_code") or "job failed")
-                self._append_event(record, stage="failed", message=record.error_message, progress=1.0)
-                record.status = JobStatus.FAILED
+            result = self._invoke_processor(payload, emit_progress)
+            with self._lock:
+                record.result = result
+                if self._is_error_result(result):
+                    record.error_message = str(result.get("error_message") or result.get("error_code") or "job failed")
+                    record.status = JobStatus.FAILED
+                else:
+                    record.status = JobStatus.COMPLETED
+
+            if self._is_error_result(result):
+                self._append_event(record, stage="failed", message=record.error_message or "job failed", progress=1.0)
             else:
                 self._append_event(record, stage="completed", message="job completed", progress=1.0)
-                record.status = JobStatus.COMPLETED
         except Exception as exc:
-            record.error_message = str(exc)
+            with self._lock:
+                record.error_message = str(exc)
+                record.status = JobStatus.FAILED
             self._append_event(record, stage="failed", message=str(exc), progress=1.0)
-            record.status = JobStatus.FAILED
+        finally:
+            record.done_event.set()
+
+    def submit(self, payload: dict) -> JobRecord:
+        job_id = f"job-{uuid4().hex[:12]}"
+        record = JobRecord(job_id=job_id, status=JobStatus.IN_PROGRESS)
+        self._append_event(record, stage="accepted", message="job accepted", progress=0.05)
+        with self._lock:
+            self.jobs[job_id] = record
+        Thread(target=self._run_job, args=(record, payload), daemon=True).start()
+        record.done_event.wait(timeout=0.05)
         return record
 
     def status(self, job_id: str) -> JobRecord:
-        return self.jobs[job_id]
+        with self._lock:
+            return self.jobs[job_id]
 
     def result(self, job_id: str) -> dict:
-        record = self.jobs[job_id]
-        if record.result is None:
-            raise RuntimeError(record.error_message or "job result is not available")
-        return record.result
+        with self._lock:
+            record = self.jobs[job_id]
+            result = record.result
+            error_message = record.error_message
+        if result is None:
+            raise RuntimeError(error_message or "job result is not available")
+        return result

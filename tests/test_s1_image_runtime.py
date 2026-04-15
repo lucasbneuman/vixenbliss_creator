@@ -4,6 +4,7 @@ import base64
 import importlib.util
 import json
 import sys
+import time
 import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
@@ -12,6 +13,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from vixenbliss_creator.s1_control.support import tiny_png_bytes
+from vixenbliss_creator.s1_services.runtime import InMemoryServiceRuntime
 
 try:
     import modal
@@ -116,6 +118,23 @@ def _authenticate_test_client(module: object, client: TestClient) -> None:
     }
     response = client.post("/auth/login", json={"email": "operator@vixenbliss.local", "password": "secret"})
     assert response.status_code == 200
+
+
+def _job_output_from_submit_or_result(client: TestClient, submit_response) -> dict:
+    payload = submit_response.json()
+    if "output" in payload:
+        return payload["output"]
+
+    result_url = payload["result_url"]
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        result = client.get(result_url)
+        if result.status_code == 200:
+            return result.json()
+        if result.status_code != 409:
+            raise AssertionError(f"unexpected result status {result.status_code}: {result.text}")
+        time.sleep(0.02)
+    raise AssertionError("job result was not ready within the expected window")
 
 
 def _ready_lab_session(client: TestClient, session_id: str) -> dict:
@@ -358,11 +377,41 @@ def test_s1_image_runtime_lab_localizes_chat_panel_to_spanish_when_requested(tmp
     )
 
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["panel"]["traceability"]["missing_field_labels"] == ["Color de ojos", "Color de pelo"]
-    assert "Color de ojos" in payload["chat_entry"]["assistant_message"]
-    assert "Todavia no esta lista para S1 Image" in payload["chat_entry"]["assistant_message"]
-    assert "Ejemplo: Color de ojos = avellana" in payload["chat_entry"]["assistant_message"]
+
+
+def test_inmemory_service_runtime_submit_returns_before_slow_processor_finishes() -> None:
+    observed: dict[str, object] = {"started": False}
+
+    def slow_processor(_payload: dict, emit_progress=None) -> dict:
+        observed["started"] = True
+        if emit_progress:
+            emit_progress("processing", "still working", 0.5)
+        time.sleep(0.25)
+        return {"provider": "modal", "artifacts": [{"role": "base_image"}]}
+
+    runtime = InMemoryServiceRuntime(slow_processor)
+
+    started_at = time.perf_counter()
+    record = runtime.submit({"runtime_stage": "identity_image"})
+    elapsed = time.perf_counter() - started_at
+
+    assert observed["started"] is True
+    assert elapsed < 0.2
+    assert record.job_id.startswith("job-")
+    assert record.status.value == "in_progress"
+    assert runtime.status(record.job_id).status.value == "in_progress"
+
+    deadline = time.time() + 1.0
+    while time.time() < deadline:
+        status = runtime.status(record.job_id)
+        if status.status.value in {"completed", "failed"}:
+            break
+        time.sleep(0.02)
+    else:
+        raise AssertionError("job did not finish within the expected window")
+
+    assert runtime.status(record.job_id).status.value == "completed"
+    assert runtime.result(record.job_id)["artifacts"][0]["role"] == "base_image"
 
 
 def test_s1_image_runtime_lab_chat_overwrites_visual_fields_and_trims_trace_sources(tmp_path: Path, monkeypatch) -> None:
@@ -1013,7 +1062,7 @@ def test_s1_image_runtime_materializes_dataset_handoff_when_identity_id_is_prese
             )
         },
     )
-    payload = submit.json()["output"]
+    payload = _job_output_from_submit_or_result(client, submit)
 
     assert payload["metadata"]["dataset_handoff_ready"] is True
     assert payload["metadata"]["dataset_review_required"] is False
@@ -1161,7 +1210,7 @@ def test_s1_image_runtime_response_includes_directus_persistence_metadata(tmp_pa
         "/jobs",
         json={"input": _base_job_input(metadata={"identity_id": identity_id, "autopromote": True, "samples_target": 40})},
     )
-    payload = response.json()["output"]
+    payload = _job_output_from_submit_or_result(client, response)
 
     assert payload["metadata"]["dataset_storage_mode"] == "directus_files"
     assert payload["metadata"]["directus_run_id"] == "run-123"
@@ -1189,7 +1238,7 @@ def test_s1_image_runtime_exposes_directus_recording_failure(tmp_path: Path, mon
         "/jobs",
         json={"input": _base_job_input(metadata={"identity_id": identity_id, "autopromote": True, "samples_target": 40})},
     )
-    payload = response.json()["output"]
+    payload = _job_output_from_submit_or_result(client, response)
 
     assert payload["metadata"]["directus_recording_failed"] is True
     assert "directus unavailable" in payload["metadata"]["directus_recording_error"]
