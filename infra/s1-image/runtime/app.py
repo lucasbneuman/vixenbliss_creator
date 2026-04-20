@@ -27,7 +27,13 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from vixenbliss_creator.agentic.models import CompletionStatus, GraphState
 from vixenbliss_creator.agentic.runner import run_agentic_brain
 from vixenbliss_creator.provider import Provider
-from vixenbliss_creator.s1_control import S1ControlSettings, S1RuntimeDirectusRecorder
+from vixenbliss_creator.s1_control import (
+    DirectusControlPlaneClient,
+    DirectusIdentityStore,
+    S1ControlSettings,
+    S1RuntimeDirectusRecorder,
+    build_identity_from_graph_state,
+)
 from vixenbliss_creator.s1_services import (
     DatasetServiceInput,
     GenerationManifest,
@@ -2871,9 +2877,22 @@ runtime = InMemoryServiceRuntime(processor=_processor)
 app = FastAPI(title="VixenBliss S1 Image Runtime", version="1.0.0")
 
 try:
-    _directus_recorder = S1RuntimeDirectusRecorder.from_settings(S1ControlSettings.from_env())
+    _s1_control_settings = S1ControlSettings.from_env()
 except Exception:
+    _s1_control_settings = None
+
+if _s1_control_settings is not None:
+    try:
+        _directus_recorder = S1RuntimeDirectusRecorder.from_settings(_s1_control_settings)
+    except Exception:
+        _directus_recorder = None
+    try:
+        _directus_identity_store = DirectusIdentityStore(client=_directus_recorder.client) if _directus_recorder is not None else DirectusIdentityStore(client=DirectusControlPlaneClient(_s1_control_settings))
+    except Exception:
+        _directus_identity_store = None
+else:
     _directus_recorder = None
+    _directus_identity_store = None
 
 
 def _record_directus_run(record: object, job_input: dict) -> None:
@@ -2903,6 +2922,29 @@ def _record_directus_run_when_ready(record: object, job_input: dict) -> None:
     if done_event is not None:
         done_event.wait()
     _record_directus_run(record, job_input)
+
+
+def _upsert_directus_identity_for_handoff(
+    state: GraphState,
+    *,
+    identity_id: str,
+    base_model_id: str,
+    reference_face_image_url: str | None,
+    source_prompt_request_id: str,
+) -> None:
+    if _directus_identity_store is None:
+        return
+    identity = build_identity_from_graph_state(
+        state,
+        identity_id=UUID(identity_id),
+        base_model_id=base_model_id,
+        reference_face_image_url=reference_face_image_url,
+    )
+    _directus_identity_store.upsert_identity(
+        identity,
+        created_by="langgraph_lab",
+        source_prompt_request_id=source_prompt_request_id,
+    )
 
 
 @app.get("/lab", response_class=HTMLResponse)
@@ -3078,6 +3120,25 @@ def handoff_langgraph_lab_to_s1(payload: dict, request: Request) -> dict:
     reference_face_image_url = str(payload.get("reference_face_image_url", "")).strip() or None
     reference_summary = _lab_reference_summary(session, fallback_reference_url=reference_face_image_url, locale=locale)
     job_input = _lab_s1_job_input(state, reference_face_image_url=reference_summary.get("effective_url"))
+    prompt_request_id = f"lab:{session_id}"
+    job_input["prompt_request_id"] = prompt_request_id
+    metadata = job_input.setdefault("metadata", {})
+    if isinstance(metadata, dict):
+        metadata["prompt_request_id"] = prompt_request_id
+    try:
+        _upsert_directus_identity_for_handoff(
+            state,
+            identity_id=str(metadata.get("identity_id") or job_input.get("identity_id")),
+            base_model_id=str(job_input.get("base_model_id") or "flux-schnell-v1"),
+            reference_face_image_url=job_input.get("reference_face_image_url"),
+            source_prompt_request_id=prompt_request_id,
+        )
+        if isinstance(metadata, dict):
+            metadata["directus_identity_synced"] = True
+    except Exception as exc:
+        if isinstance(metadata, dict):
+            metadata["directus_identity_synced"] = False
+            metadata["directus_identity_sync_error"] = str(exc)
     job_response = submit_job({"input": job_input})
     panel = _lab_state_summary(
         state,

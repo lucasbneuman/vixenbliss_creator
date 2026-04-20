@@ -764,6 +764,13 @@ def test_s1_image_runtime_lab_handoff_builds_job_payload_and_reuses_jobs_flow(tm
     _authenticate_test_client(module, client)
     captured: dict[str, object] = {}
 
+    class FakeIdentityStore:
+        def upsert_identity(self, identity, *, created_by=None, source_prompt_request_id=None):
+            captured["identity"] = identity
+            captured["identity_created_by"] = created_by
+            captured["identity_source_prompt_request_id"] = source_prompt_request_id
+            return identity
+
     def fake_submit_job(payload: dict) -> dict:
         captured["payload"] = payload
         return {
@@ -775,6 +782,7 @@ def test_s1_image_runtime_lab_handoff_builds_job_payload_and_reuses_jobs_flow(tm
         }
 
     monkeypatch.setattr(module, "submit_job", fake_submit_job)
+    monkeypatch.setattr(module, "_directus_identity_store", FakeIdentityStore())
 
     ready_payload = _ready_lab_session(client, "session-3")
     assert ready_payload["can_handoff"] is True
@@ -790,7 +798,14 @@ def test_s1_image_runtime_lab_handoff_builds_job_payload_and_reuses_jobs_flow(tm
     assert job_input["runtime_stage"] == "identity_image"
     assert job_input["workflow_id"] == "lora-dataset-ipadapter-batch"
     assert job_input["reference_face_image_url"] == "https://cdn.vixenbliss.local/custom.png"
+    assert job_input["prompt_request_id"] == "lab:session-3"
+    assert job_input["metadata"]["prompt_request_id"] == "lab:session-3"
+    assert job_input["metadata"]["directus_identity_synced"] is True
     assert job_input["metadata"]["source_mode"] == "langgraph_lab"
+    assert str(captured["identity"].id) == job_input["metadata"]["identity_id"]
+    assert captured["identity"].technical_sheet_json.identity_core.display_name
+    assert captured["identity_created_by"] == "langgraph_lab"
+    assert captured["identity_source_prompt_request_id"] == "lab:session-3"
     assert payload["handoff"]["job"]["job_id"] == "job-lab-123"
     assert payload["panel"]["s1_payload_preview"]["reference_face_image_url"] == "https://cdn.vixenbliss.local/custom.png"
 

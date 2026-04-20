@@ -308,6 +308,44 @@ def test_recorder_updates_existing_run_when_directus_run_id_is_present() -> None
     assert fake.store["s1_generation_runs"][0]["prompt_request_id"] == "101"
 
 
+def test_recorder_requires_canonical_identity_payload_before_creating_identity_snapshot(tmp_path: Path) -> None:
+    recorder = S1RuntimeDirectusRecorder(client=FakeControlPlane())
+    base_path = tmp_path / "base.png"
+    base_path.write_bytes(tiny_png_bytes())
+
+    try:
+        recorder.record_job(
+            service_name="s1_image",
+            job_id="job-no-identity-row",
+            status="completed",
+            input_payload={"identity_id": "missing-identity", "prompt": "test prompt"},
+            result_payload={
+                "provider": "modal",
+                "base_model_id": "flux-schnell-v1",
+                "workflow_id": "base-image-ipadapter-impact",
+                "workflow_version": "2026-04-02",
+                "metadata": {
+                    "prompt": "test prompt",
+                    "negative_prompt": "bad anatomy",
+                    "width": 1024,
+                    "height": 1024,
+                },
+                "artifacts": [
+                    {
+                        "artifact_type": "base_image",
+                        "storage_path": str(base_path),
+                        "content_type": "image/png",
+                        "metadata_json": {"sample_count": 1},
+                    }
+                ],
+            },
+        )
+    except ValueError as exc:
+        assert "canonical identity payload" in str(exc)
+    else:
+        raise AssertionError("expected validation error when creating s1_identities without canonical identity payload")
+
+
 def test_recorder_keeps_dataset_metadata_in_rows_when_only_non_visual_artifacts_exist(tmp_path: Path) -> None:
     class FailingControlPlane(FakeControlPlane):
         def upload_file(self, *args, **kwargs) -> dict[str, Any]:
@@ -551,6 +589,10 @@ def test_recorder_uploads_critical_dataset_artifacts_from_modal_like_handoff(tmp
 
 def test_recorder_reads_identity_id_from_metadata(tmp_path: Path) -> None:
     fake = FakeControlPlane()
+    fake.create_item(
+        "s1_identities",
+        {"avatar_id": "meta-identity", "status": "draft", "pipeline_state": "identity_created"},
+    )
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text("{}", encoding="utf-8")
     recorder = S1RuntimeDirectusRecorder(client=fake)

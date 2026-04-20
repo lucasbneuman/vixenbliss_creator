@@ -36,6 +36,63 @@ DIRECTUS_FILE_ARTIFACT_ROLES = {
 }
 CRITICAL_DIRECTUS_FILE_ARTIFACT_ROLES = {"base_image"}
 
+DIRECTUS_CREATE_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
+    "s1_generation_runs": ("identity_id", "run_type", "status", "provider", "external_job_id"),
+    "s1_artifacts": ("identity_id", "run_id", "role", "content_type"),
+    "s1_model_assets": ("identity_id", "asset_type", "provider", "model_id", "version", "storage_path", "status"),
+    "s1_events": ("event_type", "message", "created_by"),
+}
+
+
+def _has_meaningful_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict, tuple, set)):
+        return bool(value)
+    return True
+
+
+def _validate_directus_payload(collection: str, payload: dict[str, Any], *, operation: str) -> None:
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError(f"Directus {operation} for {collection} requires a non-empty payload")
+
+    if operation == "create":
+        required_fields = DIRECTUS_CREATE_REQUIRED_FIELDS.get(collection, ())
+        missing = [field_name for field_name in required_fields if not _has_meaningful_value(payload.get(field_name))]
+        if missing:
+            missing_fields = ", ".join(sorted(missing))
+            raise ValueError(f"Directus create for {collection} is missing required fields: {missing_fields}")
+
+        if collection == "s1_artifacts" and not any(_has_meaningful_value(payload.get(field_name)) for field_name in ("file", "uri")):
+            raise ValueError("Directus create for s1_artifacts requires file or uri")
+
+        if collection == "s1_identities":
+            missing = [
+                field_name
+                for field_name in ("avatar_id", "status", "pipeline_state", "display_name", "category", "vertical", "style", "technical_sheet_json")
+                if not _has_meaningful_value(payload.get(field_name))
+            ]
+            if missing:
+                missing_fields = ", ".join(sorted(missing))
+                raise ValueError(
+                    "Directus create for s1_identities requires a canonical identity payload before runtime snapshots. "
+                    f"Missing: {missing_fields}"
+                )
+
+    if operation == "update":
+        empty_fields = [
+            field_name
+            for field_name, value in payload.items()
+            if field_name not in {"file"}
+            and isinstance(value, str)
+            and not value.strip()
+        ]
+        if empty_fields:
+            empty_list = ", ".join(sorted(empty_fields))
+            raise ValueError(f"Directus update for {collection} includes empty values for: {empty_list}")
+
 
 def _stringify(value: Any) -> str | None:
     if value is None:
@@ -97,6 +154,14 @@ class S1RuntimeDirectusRecorder:
     def from_settings(cls, settings: S1ControlSettings) -> "S1RuntimeDirectusRecorder":
         return cls(client=DirectusControlPlaneClient(settings))
 
+    def _create_item(self, collection: str, payload: dict[str, Any]) -> dict[str, Any]:
+        _validate_directus_payload(collection, payload, operation="create")
+        return self.client.create_item(collection, payload)
+
+    def _update_item(self, collection: str, item_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        _validate_directus_payload(collection, payload, operation="update")
+        return self.client.update_item(collection, item_id, payload)
+
     def record_job(
         self,
         *,
@@ -122,9 +187,9 @@ class S1RuntimeDirectusRecorder:
         }
         existing_run_id = _stringify(_input_value(input_payload, "directus_run_id"))
         if existing_run_id:
-            run = self.client.update_item("s1_generation_runs", existing_run_id, run_payload)
+            run = self._update_item("s1_generation_runs", existing_run_id, run_payload)
         else:
-            run = self.client.create_item("s1_generation_runs", run_payload)
+            run = self._create_item("s1_generation_runs", run_payload)
         run_id = str(run["id"])
         uploaded_artifacts = self._persist_artifacts(
             identity_id=identity_id,
@@ -134,7 +199,7 @@ class S1RuntimeDirectusRecorder:
         )
         runtime_metadata = result_payload.get("metadata", {}) if isinstance(result_payload, dict) else {}
         artifact_rows: list[dict[str, Any]] = []
-        self.client.create_item(
+        self._create_item(
             "s1_events",
             {
                 "identity_id": identity_id,
@@ -149,7 +214,7 @@ class S1RuntimeDirectusRecorder:
             return run
         for artifact in uploaded_artifacts:
             artifact_rows.append(
-                self.client.create_item(
+                self._create_item(
                     "s1_artifacts",
                     {
                         "identity_id": identity_id,
@@ -205,7 +270,7 @@ class S1RuntimeDirectusRecorder:
             )
         training_manifest = result_payload.get("training_manifest")
         if isinstance(training_manifest, dict):
-            self.client.create_item(
+            self._create_item(
                 "s1_model_assets",
                 {
                     "identity_id": identity_id,
@@ -225,7 +290,7 @@ class S1RuntimeDirectusRecorder:
                 training_manifest=training_manifest,
             )
         if isinstance(result_payload, dict):
-            self.client.update_item(
+            self._update_item(
                 "s1_generation_runs",
                 run_id,
                 {
@@ -296,10 +361,10 @@ class S1RuntimeDirectusRecorder:
             "lora_version": version_name,
         }
         if identity_item is None:
-            self.client.create_item("s1_identities", snapshot_payload)
+            self._create_item("s1_identities", snapshot_payload)
         else:
-            self.client.update_item("s1_identities", str(identity_item["id"]), snapshot_payload)
-        self.client.create_item(
+            self._update_item("s1_identities", str(identity_item["id"]), snapshot_payload)
+        self._create_item(
             "s1_events",
             {
                 "identity_id": identity_id,
@@ -367,7 +432,7 @@ class S1RuntimeDirectusRecorder:
             if source is None:
                 if role in CRITICAL_DIRECTUS_FILE_ARTIFACT_ROLES:
                     artifact_copy["metadata_json"]["artifact_persistence_error"] = "failed_to_materialize_directus_file"
-                    self.client.create_item(
+                    self._create_item(
                         "s1_events",
                         {
                             "identity_id": identity_id,
@@ -405,7 +470,7 @@ class S1RuntimeDirectusRecorder:
                 )
             except Exception as exc:
                 artifact_copy["metadata_json"]["directus_upload_error"] = str(exc)
-                self.client.create_item(
+                self._create_item(
                     "s1_events",
                     {
                         "identity_id": identity_id,
@@ -663,9 +728,9 @@ class S1RuntimeDirectusRecorder:
         }
         identity_item = self._resolve_identity_item(identity_id)
         if identity_item is None:
-            self.client.create_item("s1_identities", snapshot_payload)
+            self._create_item("s1_identities", snapshot_payload)
             return
-        self.client.update_item("s1_identities", str(identity_item["id"]), snapshot_payload)
+        self._update_item("s1_identities", str(identity_item["id"]), snapshot_payload)
 
     def _record_dataset_validation(
         self,
@@ -690,7 +755,7 @@ class S1RuntimeDirectusRecorder:
             current_pipeline_state=current_pipeline_state,
         )
         result_payload["dataset_validation"] = validation.report
-        self.client.create_item(
+        self._create_item(
             "s1_artifacts",
             {
                 "identity_id": identity_id,
@@ -703,7 +768,7 @@ class S1RuntimeDirectusRecorder:
                 "metadata_json": validation.report,
             },
         )
-        self.client.create_item(
+        self._create_item(
             "s1_events",
             {
                 "identity_id": identity_id,
@@ -726,9 +791,9 @@ class S1RuntimeDirectusRecorder:
             },
         }
         if identity_item is None:
-            self.client.create_item("s1_identities", snapshot_payload)
+            self._create_item("s1_identities", snapshot_payload)
             return
-        self.client.update_item("s1_identities", str(identity_item["id"]), snapshot_payload)
+        self._update_item("s1_identities", str(identity_item["id"]), snapshot_payload)
 
     def _resolve_identity_item(self, identity_id: str) -> dict[str, Any] | None:
         matches = self.client.list_items(
@@ -767,7 +832,7 @@ class S1RuntimeDirectusRecorder:
         if content_candidate is None:
             return
         DirectusContentStore(client=self.client).upsert_content(content_candidate)
-        self.client.create_item(
+        self._create_item(
             "s1_events",
             {
                 "identity_id": identity_id,

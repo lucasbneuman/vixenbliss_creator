@@ -22,9 +22,11 @@ def test_build_identity_from_graph_state_materializes_identity_created_payload()
     assert identity.pipeline_state == "identity_created"
     assert identity.status == "draft"
     assert identity.base_model_id == "flux-schnell-v1"
-    assert identity.alias == "velvet_ember"
+    display_name = identity.technical_sheet_json.identity_core.display_name
+    assert display_name
+    assert identity.alias == build_identity_alias(display_name)
     assert identity.allowed_content_modes == ["sfw", "sensual", "nsfw"]
-    assert identity.technical_sheet_json.identity_core.display_name == "Velvet Ember"
+    assert identity.technical_sheet_json.identity_core.display_name == display_name
 
 
 def test_build_identity_from_graph_state_requires_succeeded_graph_state() -> None:

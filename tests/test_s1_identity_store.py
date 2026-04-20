@@ -57,7 +57,7 @@ def test_identity_store_persists_and_reads_identity_created_payload() -> None:
     assert restored.base_model_id == "flux-schnell-v1"
     assert restored.technical_sheet_json.identity_metadata.avatar_id == str(identity.id)
     row = store.client.store["s1_identities"][0]
-    assert row["display_name"] == "Velvet Ember"
+    assert row["display_name"] == identity.technical_sheet_json.identity_core.display_name
     assert row["category"] == "lifestyle_premium"
     assert row["style"] == "premium"
     assert row["created_by"] == "codex"
