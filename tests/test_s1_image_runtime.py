@@ -23,8 +23,14 @@ except ImportError:  # pragma: no cover - local fallback for contract tests with
         def from_name(*_args, **_kwargs):
             raise RuntimeError("modal package is not installed")
 
+    class _ModalFunctionCallStub:
+        @staticmethod
+        def from_id(*_args, **_kwargs):
+            raise RuntimeError("modal package is not installed")
+
     class _ModalStub:
         Function = _ModalFunctionStub
+        FunctionCall = _ModalFunctionCallStub
 
     modal = _ModalStub()
     sys.modules.setdefault("modal", modal)
@@ -1444,10 +1450,27 @@ def test_s1_image_runtime_can_delegate_execution_to_modal_worker(tmp_path: Path,
     monkeypatch.setenv("S1_IMAGE_EXECUTION_BACKEND", "modal")
     module = _load_runtime_module(tmp_path, monkeypatch)
 
+    class FakeFunctionCall:
+        def __init__(self, object_id: str, result: dict) -> None:
+            self.object_id = object_id
+            self._result = result
+            self._ready = False
+
+        def get(self, timeout=None, *, index: int = 0) -> dict:
+            if timeout == 0 and not self._ready:
+                raise TimeoutError("not ready")
+            while not self._ready:
+                time.sleep(0.01)
+            return self._result
+
+    calls: dict[str, FakeFunctionCall] = {}
+
     class FakeRemoteFunction:
-        def remote(self, payload: dict) -> dict:
+        def spawn(self, payload: dict) -> FakeFunctionCall:
             assert payload["runtime_stage"] == "identity_image"
-            return {
+            call = FakeFunctionCall(
+                "fc-test-modal-ok",
+                {
                 "provider": "modal",
                 "runtime_stage": "identity_image",
                 "artifacts": [{"role": "base_image", "uri": "modal://base.png", "content_type": "image/png", "metadata_json": {}}],
@@ -1457,29 +1480,69 @@ def test_s1_image_runtime_can_delegate_execution_to_modal_worker(tmp_path: Path,
                         {"stage": "base_render_complete", "message": "Base render finished", "progress": 0.94},
                     ]
                 },
-            }
+                },
+            )
+            calls[call.object_id] = call
+            return call
 
     monkeypatch.setattr(modal.Function, "from_name", lambda *_args, **_kwargs: FakeRemoteFunction())
+    monkeypatch.setattr(modal.FunctionCall, "from_id", lambda job_id: calls[job_id])
     client = TestClient(module.app)
 
     submit = client.post("/jobs", json={"input": _base_job_input()})
 
     assert submit.status_code == 200
-    assert submit.json()["output"]["artifacts"][0]["uri"] == "modal://base.png"
+    assert submit.json()["job_id"] == "fc-test-modal-ok"
+    assert submit.json()["status"] == "in_progress"
+    assert "output" not in submit.json()
     stages = [event["stage"] for event in submit.json()["metadata"]["progress_events"]]
+    assert "accepted" in stages
     assert "dispatching_modal_job" in stages
+
+    status_before = client.get("/jobs/fc-test-modal-ok")
+    assert status_before.status_code == 200
+    assert status_before.json()["status"] == "in_progress"
+
+    calls["fc-test-modal-ok"]._ready = True
+
+    status_after = client.get("/jobs/fc-test-modal-ok")
+    assert status_after.status_code == 200
+    assert status_after.json()["status"] == "completed"
+    stages = [event["stage"] for event in status_after.json()["metadata"]["progress_events"]]
     assert "building_workflow" in stages
     assert "modal_job_completed" in stages
+    assert stages[-1] == "completed"
+
+    result = client.get("/jobs/fc-test-modal-ok/result")
+    assert result.status_code == 200
+    assert result.json()["artifacts"][0]["uri"] == "modal://base.png"
 
 
 def test_s1_image_runtime_marks_modal_error_results_as_failed(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("S1_IMAGE_EXECUTION_BACKEND", "modal")
     module = _load_runtime_module(tmp_path, monkeypatch)
 
+    class FakeFunctionCall:
+        def __init__(self, object_id: str, result: dict) -> None:
+            self.object_id = object_id
+            self._result = result
+            self._ready = False
+
+        def get(self, timeout=None, *, index: int = 0) -> dict:
+            if timeout == 0 and not self._ready:
+                raise TimeoutError("not ready")
+            while not self._ready:
+                time.sleep(0.01)
+            return self._result
+
+    calls: dict[str, FakeFunctionCall] = {}
+
     class FakeRemoteFunction:
-        def remote(self, payload: dict) -> dict:
+        def spawn(self, payload: dict) -> FakeFunctionCall:
             assert payload["runtime_stage"] == "identity_image"
-            return {
+            call = FakeFunctionCall(
+                "fc-test-modal-failed",
+                {
                 "provider": "modal",
                 "runtime_stage": "identity_image",
                 "artifacts": [],
@@ -1490,21 +1553,90 @@ def test_s1_image_runtime_marks_modal_error_results_as_failed(tmp_path: Path, mo
                         {"stage": "building_workflow", "message": "Preparing workflow", "progress": 0.42},
                     ]
                 },
-            }
+                },
+            )
+            calls[call.object_id] = call
+            return call
 
     monkeypatch.setattr(modal.Function, "from_name", lambda *_args, **_kwargs: FakeRemoteFunction())
+    monkeypatch.setattr(modal.FunctionCall, "from_id", lambda job_id: calls[job_id])
     client = TestClient(module.app)
 
     submit = client.post("/jobs", json={"input": _base_job_input()})
 
     assert submit.status_code == 200
-    assert submit.json()["status"] == "failed"
-    stages = [event["stage"] for event in submit.json()["metadata"]["progress_events"]]
+    assert submit.json()["job_id"] == "fc-test-modal-failed"
+    assert submit.json()["status"] == "in_progress"
+
+    pending_result = client.get("/jobs/fc-test-modal-failed/result")
+    assert pending_result.status_code == 409
+
+    calls["fc-test-modal-failed"]._ready = True
+
+    status = client.get("/jobs/fc-test-modal-failed")
+    assert status.status_code == 200
+    assert status.json()["status"] == "failed"
+    stages = [event["stage"] for event in status.json()["metadata"]["progress_events"]]
     assert "dispatching_modal_job" in stages
     assert "building_workflow" in stages
     assert "modal_job_completed" in stages
     assert stages[-1] == "failed"
-    assert submit.json()["output"]["error_code"] == "REFERENCE_IMAGE_NOT_FOUND"
+
+    result = client.get("/jobs/fc-test-modal-failed/result")
+    assert result.status_code == 200
+    assert result.json()["error_code"] == "REFERENCE_IMAGE_NOT_FOUND"
+
+
+def test_s1_image_runtime_reuses_directus_run_id_for_modal_job_finalization(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("S1_IMAGE_EXECUTION_BACKEND", "modal")
+    module = _load_runtime_module(tmp_path, monkeypatch)
+
+    class FakeFunctionCall:
+        def __init__(self, object_id: str, result: dict) -> None:
+            self.object_id = object_id
+            self._result = result
+            self._ready = False
+
+        def get(self, timeout=None, *, index: int = 0) -> dict:
+            if timeout == 0 and not self._ready:
+                raise TimeoutError("not ready")
+            while not self._ready:
+                time.sleep(0.01)
+            return self._result
+
+    calls: dict[str, FakeFunctionCall] = {}
+
+    class FakeRemoteFunction:
+        def spawn(self, payload: dict) -> FakeFunctionCall:
+            call = FakeFunctionCall(
+                "fc-test-directus-link",
+                {"provider": "modal", "runtime_stage": "identity_image", "artifacts": [], "metadata": {}},
+            )
+            calls[call.object_id] = call
+            return call
+
+    recorder_calls: list[dict] = []
+
+    class FakeRecorder:
+        def record_job(self, **kwargs):
+            recorder_calls.append(kwargs)
+            return {"id": "run-123"}
+
+    monkeypatch.setattr(modal.Function, "from_name", lambda *_args, **_kwargs: FakeRemoteFunction())
+    monkeypatch.setattr(modal.FunctionCall, "from_id", lambda job_id: calls[job_id])
+    monkeypatch.setattr(module, "_directus_recorder", FakeRecorder())
+    client = TestClient(module.app)
+
+    submit = client.post("/jobs", json={"input": _base_job_input(identity_id="11111111-1111-1111-1111-111111111111")})
+    assert submit.status_code == 200
+    assert recorder_calls[0]["input_payload"].get("directus_run_id") == "run-123"
+
+    calls["fc-test-directus-link"]._ready = True
+    result = client.get("/jobs/fc-test-directus-link/result")
+
+    assert result.status_code == 200
+    assert len(recorder_calls) >= 2
+    assert recorder_calls[-1]["input_payload"].get("directus_run_id") == "run-123"
 
 
 def test_s1_image_runtime_healthcheck_can_delegate_to_modal_worker(tmp_path: Path, monkeypatch) -> None:

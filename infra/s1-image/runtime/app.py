@@ -15,8 +15,9 @@ import uuid
 import zipfile
 from collections.abc import Callable
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
-from threading import Thread
+from threading import Lock, Thread
 from typing import TextIO
 from urllib import error, parse, request
 from uuid import UUID
@@ -38,10 +39,13 @@ from vixenbliss_creator.s1_services import (
     DatasetServiceInput,
     GenerationManifest,
     InMemoryServiceRuntime,
+    JobRecord,
+    ProgressEvent,
     SeedBundle,
     build_dataset_result,
     build_dataset_shot_plan,
 )
+from vixenbliss_creator.runtime_providers.models import JobStatus
 from vixenbliss_creator.traceability import normalize_trace_source_text
 from vixenbliss_creator.visual_pipeline import ResumeCheckpoint, ResumeStage, RuntimeStage, VisualArtifact, VisualArtifactRole
 
@@ -147,8 +151,17 @@ COMFYUI_LOG_PATH = ARTIFACT_ROOT / "comfyui.log"
 _LAB_SESSIONS: dict[str, dict[str, object]] = {}
 _LAB_REFERENCE_UPLOADS: dict[str, dict[str, str]] = {}
 _WEB_AUTH_SESSIONS: dict[str, dict[str, object]] = {}
+_REMOTE_MODAL_JOBS: dict[str, "RemoteModalJobState"] = {}
+_REMOTE_MODAL_JOBS_LOCK = Lock()
 
 ProgressEmitter = Callable[[str, str, float], None]
+
+
+@dataclass
+class RemoteModalJobState:
+    record: JobRecord
+    job_input: dict
+    final_recorded: bool = False
 
 
 class ReferenceImageResolutionError(FileNotFoundError):
@@ -296,6 +309,122 @@ def _healthcheck(timeout_seconds: int = 2) -> bool:
 def _emit_progress(emit_progress: ProgressEmitter | None, *, stage: str, message: str, progress: float) -> None:
     if emit_progress is not None:
         emit_progress(stage, message, progress)
+
+
+def _progress_message(message: str) -> str:
+    normalized = str(message or "").strip()
+    if len(normalized) <= 280:
+        return normalized
+    return normalized[:277].rstrip() + "..."
+
+
+def _append_record_progress(record: JobRecord, *, stage: str, message: str, progress: float) -> None:
+    record.progress_events.append(
+        ProgressEvent(
+            job_id=record.job_id,
+            stage=stage,
+            message=_progress_message(message),
+            progress=progress,
+        )
+    )
+
+
+def _store_remote_modal_job(state: RemoteModalJobState) -> None:
+    with _REMOTE_MODAL_JOBS_LOCK:
+        _REMOTE_MODAL_JOBS[state.record.job_id] = state
+
+
+def _remote_modal_job_state(job_id: str) -> RemoteModalJobState:
+    with _REMOTE_MODAL_JOBS_LOCK:
+        return _REMOTE_MODAL_JOBS[job_id]
+
+
+def _remote_modal_function_call(job_id: str):
+    import modal
+
+    return modal.FunctionCall.from_id(job_id)
+
+
+def _is_error_result_payload(result: dict | None) -> bool:
+    if not isinstance(result, dict):
+        return False
+    return bool(result.get("error_code") or result.get("error_message"))
+
+
+def _finalize_remote_modal_job(
+    state: RemoteModalJobState,
+    *,
+    result: dict | None = None,
+    exception: Exception | None = None,
+) -> JobRecord:
+    record = state.record
+    if record.status in {JobStatus.COMPLETED, JobStatus.FAILED}:
+        return record
+
+    if isinstance(result, dict):
+        metadata = result.get("metadata", {})
+        remote_events = metadata.pop("modal_progress_events", []) if isinstance(metadata, dict) else []
+        for event in remote_events:
+            _append_record_progress(
+                record,
+                stage=str(event.get("stage", "modal_worker")),
+                message=str(event.get("message", event.get("stage", "modal_worker"))),
+                progress=float(event.get("progress", 0.5)),
+            )
+        record.result = result
+        _append_record_progress(
+            record,
+            stage="modal_job_completed",
+            message="Modal GPU worker finished S1 image job",
+            progress=0.96,
+        )
+        if _is_error_result_payload(result):
+            record.error_message = str(result.get("error_message") or result.get("error_code") or "job failed")
+            record.status = JobStatus.FAILED
+            _append_record_progress(record, stage="failed", message=record.error_message, progress=1.0)
+        else:
+            record.status = JobStatus.COMPLETED
+            _append_record_progress(record, stage="completed", message="job completed", progress=1.0)
+    else:
+        record.error_message = str(exception or "modal job failed")
+        record.status = JobStatus.FAILED
+        _append_record_progress(record, stage="failed", message=record.error_message, progress=1.0)
+
+    if not state.final_recorded:
+        _record_directus_run(record, state.job_input)
+        state.final_recorded = True
+    return record
+
+
+def _monitor_remote_modal_job(job_id: str) -> None:
+    try:
+        state = _remote_modal_job_state(job_id)
+    except KeyError:
+        return
+    try:
+        result = _remote_modal_function_call(job_id).get()
+    except Exception as exc:
+        _finalize_remote_modal_job(state, exception=exc)
+        return
+    if isinstance(result, dict):
+        _finalize_remote_modal_job(state, result=result)
+        return
+    _finalize_remote_modal_job(state, exception=RuntimeError("modal function returned a non-dict payload"))
+
+
+def _refresh_remote_modal_job(job_id: str) -> JobRecord:
+    state = _remote_modal_job_state(job_id)
+    if state.record.status in {JobStatus.COMPLETED, JobStatus.FAILED}:
+        return state.record
+    try:
+        result = _remote_modal_function_call(job_id).get(timeout=0)
+    except TimeoutError:
+        return state.record
+    except Exception as exc:
+        return _finalize_remote_modal_job(state, exception=exc)
+    if not isinstance(result, dict):
+        return _finalize_remote_modal_job(state, exception=RuntimeError("modal function returned a non-dict payload"))
+    return _finalize_remote_modal_job(state, result=result)
 
 
 def _ensure_comfyui_running(
@@ -1439,6 +1568,33 @@ def _run_generation_via_modal(job_input: dict, *, emit_progress: ProgressEmitter
         _emit_progress(emit_progress, stage=stage, message=message, progress=progress)
     _emit_progress(emit_progress, stage="modal_job_completed", message="Modal GPU worker finished S1 image job", progress=0.96)
     return result
+
+
+def _submit_remote_modal_job(job_input: dict) -> JobRecord:
+    try:
+        import modal
+    except Exception as exc:
+        raise RuntimeError(f"COMFYUI_EXECUTION_FAILED: modal backend is not available in this runtime ({exc})") from exc
+
+    modal_function = modal.Function.from_name(S1_IMAGE_MODAL_APP_NAME, S1_IMAGE_MODAL_FUNCTION_NAME)
+    function_call = modal_function.spawn(job_input)
+    job_id = str(getattr(function_call, "object_id", "") or "").strip()
+    if not job_id:
+        raise RuntimeError("COMFYUI_EXECUTION_FAILED: Modal accepted the job but did not return a function call id")
+
+    record = JobRecord(job_id=job_id, status=JobStatus.IN_PROGRESS)
+    _append_record_progress(record, stage="accepted", message="job accepted", progress=0.05)
+    _append_record_progress(
+        record,
+        stage="dispatching_modal_job",
+        message="Dispatching S1 image job to Modal GPU worker",
+        progress=0.2,
+    )
+    state = RemoteModalJobState(record=record, job_input=job_input)
+    _store_remote_modal_job(state)
+    _record_directus_run(record, job_input)
+    Thread(target=_monitor_remote_modal_job, args=(job_id,), daemon=True).start()
+    return record
 
 
 def _processor(payload: dict, *, emit_progress: ProgressEmitter | None = None) -> dict:
@@ -2895,9 +3051,9 @@ else:
     _directus_identity_store = None
 
 
-def _record_directus_run(record: object, job_input: dict) -> None:
+def _record_directus_run(record: object, job_input: dict) -> dict | None:
     if _directus_recorder is None:
-        return
+        return None
     try:
         run = _directus_recorder.record_job(
             service_name="s1_image",
@@ -2907,14 +3063,20 @@ def _record_directus_run(record: object, job_input: dict) -> None:
             result_payload=record.result,
             error_message=record.error_message,
         )
+        if isinstance(run, dict):
+            directus_run_id = str(run.get("id") or "").strip()
+            if directus_run_id:
+                job_input["directus_run_id"] = directus_run_id
         if record.result is not None and isinstance(run, dict):
             record.result.setdefault("metadata", {})
             record.result["metadata"]["directus_run_id"] = str(run.get("id"))
+        return run
     except Exception as exc:
         if record.result is not None:
             record.result.setdefault("metadata", {})
             record.result["metadata"]["directus_recording_failed"] = True
             record.result["metadata"]["directus_recording_error"] = str(exc)
+    return None
 
 
 def _record_directus_run_when_ready(record: object, job_input: dict) -> None:
@@ -3268,12 +3430,15 @@ def healthcheck(deep: bool = False) -> dict:
 @app.post("/jobs")
 def submit_job(payload: dict) -> dict:
     job_input = payload.get("input", payload)
-    record = runtime.submit(job_input)
-    done_event = getattr(record, "done_event", None)
-    if done_event is not None and not done_event.is_set():
-        Thread(target=_record_directus_run_when_ready, args=(record, job_input), daemon=True).start()
+    if S1_IMAGE_EXECUTION_BACKEND == "modal":
+        record = _submit_remote_modal_job(job_input)
     else:
-        _record_directus_run(record, job_input)
+        record = runtime.submit(job_input)
+        done_event = getattr(record, "done_event", None)
+        if done_event is not None and not done_event.is_set():
+            Thread(target=_record_directus_run_when_ready, args=(record, job_input), daemon=True).start()
+        else:
+            _record_directus_run(record, job_input)
     response = record.status_payload(
         progress_url=f"/ws/jobs/{record.job_id}",
         result_url=f"/jobs/{record.job_id}/result",
@@ -3285,10 +3450,16 @@ def submit_job(payload: dict) -> dict:
 
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str) -> dict:
-    try:
-        record = runtime.status(job_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="job not found") from exc
+    if S1_IMAGE_EXECUTION_BACKEND == "modal":
+        try:
+            record = _refresh_remote_modal_job(job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="job not found") from exc
+    else:
+        try:
+            record = runtime.status(job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="job not found") from exc
     return record.status_payload(
         progress_url=f"/ws/jobs/{record.job_id}",
         result_url=f"/jobs/{record.job_id}/result",
@@ -3297,6 +3468,14 @@ def get_job(job_id: str) -> dict:
 
 @app.get("/jobs/{job_id}/result")
 def get_result(job_id: str) -> dict:
+    if S1_IMAGE_EXECUTION_BACKEND == "modal":
+        try:
+            record = _refresh_remote_modal_job(job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="job not found") from exc
+        if record.result is None:
+            raise HTTPException(status_code=409, detail=record.error_message or "job result is not available")
+        return record.result
     try:
         return runtime.result(job_id)
     except KeyError as exc:
@@ -3308,16 +3487,24 @@ def get_result(job_id: str) -> dict:
 @app.websocket("/ws/jobs/{job_id}")
 async def stream_job(job_id: str, websocket: WebSocket) -> None:
     await websocket.accept()
-    try:
-        record = runtime.status(job_id)
-    except KeyError:
-        await websocket.send_json({"error": "job not found"})
-        await websocket.close(code=4404)
-        return
+    if S1_IMAGE_EXECUTION_BACKEND == "modal":
+        try:
+            record = _refresh_remote_modal_job(job_id)
+        except KeyError:
+            await websocket.send_json({"error": "job not found"})
+            await websocket.close(code=4404)
+            return
+    else:
+        try:
+            record = runtime.status(job_id)
+        except KeyError:
+            await websocket.send_json({"error": "job not found"})
+            await websocket.close(code=4404)
+            return
     try:
         sent = 0
         while True:
-            record = runtime.status(job_id)
+            record = _refresh_remote_modal_job(job_id) if S1_IMAGE_EXECUTION_BACKEND == "modal" else runtime.status(job_id)
             pending_events = record.progress_events[sent:]
             for event in pending_events:
                 await websocket.send_json(event.model_dump(mode="json"))
