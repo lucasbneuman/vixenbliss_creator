@@ -15,7 +15,6 @@ import uuid
 import zipfile
 from collections.abc import Callable
 from collections import Counter
-from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock, Thread
 from typing import TextIO
@@ -157,11 +156,11 @@ _REMOTE_MODAL_JOBS_LOCK = Lock()
 ProgressEmitter = Callable[[str, str, float], None]
 
 
-@dataclass
 class RemoteModalJobState:
-    record: JobRecord
-    job_input: dict
-    final_recorded: bool = False
+    def __init__(self, *, record: JobRecord, job_input: dict, final_recorded: bool = False) -> None:
+        self.record = record
+        self.job_input = job_input
+        self.final_recorded = final_recorded
 
 
 class ReferenceImageResolutionError(FileNotFoundError):
